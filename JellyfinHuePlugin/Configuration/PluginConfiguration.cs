@@ -18,7 +18,6 @@ namespace JellyfinHuePlugin.Configuration
         public string TargetIpAddress { get; set; } = string.Empty;
         
         // Light control settings
-        public bool UseLightGroups { get; set; } = true;
         public string TargetGroupId { get; set; } = "0";
         
         // Scenes

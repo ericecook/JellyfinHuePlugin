@@ -192,14 +192,6 @@
                                     <div id="tab-lights" class="profile-tab-content" style="display:none;">
                                         <h3>Light Control</h3>
 
-                                        <div class="checkboxContainer checkboxContainer-withDescription">
-                                            <label>
-                                                <input type="checkbox" is="emby-checkbox" id="profileUseLightGroups" checked />
-                                                <span>Use Light Groups</span>
-                                            </label>
-                                            <div class="fieldDescription">Enable group-based light control</div>
-                                        </div>
-
                                 <div class="inputContainer">
                                     <label class="inputLabel" for="profileTargetGroupId">Target Light Group</label>
                                     <select id="profileTargetGroupId" is="emby-select">
@@ -628,7 +620,6 @@
                     document.querySelector('#profileEnableForTvShows').checked = template.EnableForTvShows || false;
                     document.querySelector('#profileClientName').value = '';
                     document.querySelector('#profileIpAddress').value = '';
-                    document.querySelector('#profileUseLightGroups').checked = true;
                     document.querySelector('#profileTurnOffLightsOnPlay').checked = template.TurnOffLightsOnPlay || false;
                     document.querySelector('#profilePlayBrightness').value = template.PlayBrightness || 20;
                     document.querySelector('#profilePauseBrightness').value = template.PauseBrightness || 100;
@@ -908,7 +899,6 @@
                     document.querySelector('#profileEnableForTvShows').checked = profile.EnableForTvShows || false;
                     document.querySelector('#profileClientName').value = profile.TargetClientName || '';
                     document.querySelector('#profileIpAddress').value = profile.TargetIpAddress || '';
-                    document.querySelector('#profileUseLightGroups').checked = profile.UseLightGroups !== false;
                     document.querySelector('#profileTurnOffLightsOnPlay').checked = profile.TurnOffLightsOnPlay || false;
                     document.querySelector('#profilePlayBrightness').value = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20;
                     document.querySelector('#profilePauseBrightness').value = profile.PauseBrightness !== undefined ? profile.PauseBrightness : 100;
@@ -965,7 +955,6 @@
                     document.querySelector('#profileEnableForTvShows').checked = false; // Default: disabled for TV
                     document.querySelector('#profileClientName').value = '';
                     document.querySelector('#profileIpAddress').value = '';
-                    document.querySelector('#profileUseLightGroups').checked = true;
                     document.querySelector('#profileTurnOffLightsOnPlay').checked = false;
                     document.querySelector('#profilePlayBrightness').value = 20;
                     document.querySelector('#profilePauseBrightness').value = 100;
@@ -1011,7 +1000,6 @@
                         TargetClientName: document.querySelector('#profileClientName').value,
                         TargetDeviceIds: HuePluginConfig.profileDeviceIds,
                         TargetIpAddress: document.querySelector('#profileIpAddress').value,
-                        UseLightGroups: document.querySelector('#profileUseLightGroups').checked,
                         TargetGroupId: document.querySelector('#profileTargetGroupId').value,
                         PlaySceneId: document.querySelector('#profilePlaySceneId').value,
                         PauseSceneId: document.querySelector('#profilePauseSceneId').value,

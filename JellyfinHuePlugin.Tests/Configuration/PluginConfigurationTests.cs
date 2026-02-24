@@ -51,7 +51,6 @@ namespace JellyfinHuePlugin.Tests.Configuration
             profile.TargetClientName.Should().BeEmpty();
             profile.TargetDeviceIds.Should().NotBeNull().And.BeEmpty();
             profile.TargetIpAddress.Should().BeEmpty();
-            profile.UseLightGroups.Should().BeTrue();
             profile.TargetGroupId.Should().Be("0");
             profile.PlaySceneId.Should().BeEmpty();
             profile.PauseSceneId.Should().BeEmpty();
@@ -147,7 +146,6 @@ namespace JellyfinHuePlugin.Tests.Configuration
                 TargetClientName = "Roku",
                 TargetDeviceIds = new List<string> { "roku-123", "roku-456" },
                 TargetIpAddress = "192.168.1.100",
-                UseLightGroups = true,
                 TargetGroupId = "1",
                 PlaySceneId = "play-scene",
                 PauseSceneId = "pause-scene",
