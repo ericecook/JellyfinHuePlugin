@@ -1,0 +1,17 @@
+---
+name: "Hue Lighting Control"
+guid: "2a5f5b3e-8c9d-4f1a-9b7e-6d3c4e5f6a7b"
+version: "1.0.0.0"
+targetAbi: "10.9.0.0"
+framework: "net8.0"
+overview: "Control Philips Hue lights based on Jellyfin playback events"
+description: >
+  Automatically control Philips Hue lights based on media playback.
+  Supports multi-profile configuration, scene activation, brightness
+  control, transition duration, media type filtering, and IntroSkipper
+  outro detection.
+category: "General"
+owner: "ericecook"
+artifacts:
+  - "JellyfinHuePlugin.dll"
+changelog: "Initial release"

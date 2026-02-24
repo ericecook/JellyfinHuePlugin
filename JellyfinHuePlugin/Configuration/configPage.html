@@ -1,0 +1,1421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Hue Lighting Control</title>
+</head>
+<body>
+    <div id="HuePluginConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="HuePluginConfigForm">
+                    
+                    <!-- Connection Status Dashboard -->
+                    <div id="connectionStatus" style="display:none; background: rgba(0, 164, 220, 0.1); border: 2px solid #00a4dc; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+                        <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+                            <div style="flex: 1; min-width: 200px;">
+                                <h3 style="margin: 0 0 8px 0; font-size: 1.1em;">🔗 Bridge Status</h3>
+                                <div id="connectionStatusText" style="font-size: 0.95em; opacity: 0.9;">
+                                    <div id="bridgeConnectionStatus">✅ Connected to <span id="statusBridgeIp"></span></div>
+                                    <div id="bridgeResources" style="margin-top: 5px;">📊 <span id="resourceCounts">Loading...</span></div>
+                                </div>
+                            </div>
+                            <div>
+                                <button is="emby-button" type="button" class="raised" id="testConnectionButton" style="background-color: #00a4dc;">
+                                    <span>🔌 Test Connection</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <h2>Hue Bridge Setup</h2>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="bridgeIpAddress">Bridge IP Address</label>
+                        <input type="text" id="bridgeIpAddress" name="bridgeIpAddress" is="emby-input" readonly />
+                        <div class="fieldDescription">IP address of your Hue bridge (discovered automatically)</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <button is="emby-button" type="button" class="raised button-submit" id="discoverButton">
+                            <span>Discover Hue Bridge</span>
+                        </button>
+                    </div>
+
+                    <div id="authenticationSection" style="display:none;">
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="username">Authentication Status</label>
+                            <input type="text" id="username" name="username" is="emby-input" readonly />
+                        </div>
+
+                        <div class="inputContainer">
+                            <button is="emby-button" type="button" class="raised button-submit" id="authenticateButton">
+                                <span>Authenticate</span>
+                            </button>
+                            <div class="fieldDescription" style="margin-top: 10px; color: #e87c03;">
+                                <strong>IMPORTANT - How to authenticate:</strong><br>
+                                1. Press and HOLD the large round button on TOP of your Hue bridge for 2-3 seconds<br>
+                                2. The button should light up or flash<br>
+                                3. Click "Authenticate" above WITHIN 30 seconds<br>
+                                4. The plugin will retry 3 times automatically (takes ~10 seconds total)
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="configSection" style="display:none;">
+                        <h2>Light Control Profiles</h2>
+                        
+                        <div class="fieldDescription" style="margin-bottom: 20px;">
+                            Create multiple profiles to control different lights for different playback clients. 
+                            Profiles are checked in order - the first matching profile will be used.
+                        </div>
+
+                        <div id="profilesList" style="margin-bottom: 20px;">
+                            <!-- Profiles will be rendered here -->
+                        </div>
+
+                        <div class="inputContainer" style="display: flex; gap: 10px;">
+                            <button is="emby-button" type="button" class="raised button-submit" id="addProfileButton">
+                                <span>+ Add New Profile</span>
+                            </button>
+                            <button is="emby-button" type="button" class="raised" id="addProfileTemplateButton">
+                                <span>📋 From Template ▼</span>
+                            </button>
+                        </div>
+                        
+                        <!-- Template Selection Menu (hidden by default) -->
+                        <div id="templateMenu" style="display:none; background: #2a2a2a; border-radius: 6px; padding: 10px; margin-top: 10px; border: 1px solid #444;">
+                            <div style="font-weight: bold; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #444;">Select a Template:</div>
+                            <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('blank')" style="width: 100%; margin-bottom: 8px; text-align: left;">
+                                <span>📝 Blank Profile</span>
+                            </button>
+                            <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('movie-theater')" style="width: 100%; margin-bottom: 8px; text-align: left;">
+                                <span>🎬 Movie Theater - Complete darkness with outro detection</span>
+                            </button>
+                            <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('tv-viewing')" style="width: 100%; margin-bottom: 8px; text-align: left;">
+                                <span>📺 TV Viewing - Moderate dimming, no outro</span>
+                            </button>
+                            <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('bedroom-casual')" style="width: 100%; margin-bottom: 8px; text-align: left;">
+                                <span>🛏️ Bedroom Casual - Gentle dimming for comfort</span>
+                            </button>
+                            <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('gaming')" style="width: 100%; text-align: left;">
+                                <span>🎮 Gaming Setup - Minimal dim, fast response</span>
+                            </button>
+                        </div>
+
+                        <!-- Profile Editor Modal -->
+                        <div id="profileEditorModal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; overflow-y: auto;">
+                            <div style="max-width: 900px; margin: 50px auto; background: #1c1c1c; padding: 0; border-radius: 8px; overflow: hidden;">
+                                <div style="padding: 20px; border-bottom: 2px solid #2a2a2a;">
+                                    <h2 id="profileEditorTitle" style="margin: 0;">Add Profile</h2>
+                                </div>
+                                
+                                <!-- Tabs -->
+                                <div style="display: flex; background: #252525; border-bottom: 2px solid #00a4dc;">
+                                    <button type="button" class="profile-tab active" data-tab="general" style="flex: 1; padding: 15px; border: none; background: transparent; color: white; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s;">
+                                        📝 General
+                                    </button>
+                                    <button type="button" class="profile-tab" data-tab="filters" style="flex: 1; padding: 15px; border: none; background: transparent; color: white; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s;">
+                                        🎯 Filters
+                                    </button>
+                                    <button type="button" class="profile-tab" data-tab="lights" style="flex: 1; padding: 15px; border: none; background: transparent; color: white; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s;">
+                                        💡 Lights
+                                    </button>
+                                    <button type="button" class="profile-tab" data-tab="advanced" style="flex: 1; padding: 15px; border: none; background: transparent; color: white; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s;">
+                                        ⚙️ Advanced
+                                    </button>
+                                </div>
+                                
+                                <div style="padding: 20px; max-height: 60vh; overflow-y: auto;">
+                                    <!-- General Tab -->
+                                    <div id="tab-general" class="profile-tab-content">
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="profileName">Profile Name</label>
+                                            <input type="text" id="profileName" is="emby-input" placeholder="e.g., Living Room Roku" />
+                                        </div>
+
+                                        <h3>Media Type Filters</h3>
+                                        <div class="fieldDescription" style="margin-bottom: 15px;">
+                                            Choose which media types will trigger this profile. At least one must be enabled.
+                                        </div>
+
+                                        <div class="checkboxContainer checkboxContainer-withDescription">
+                                            <label>
+                                                <input type="checkbox" is="emby-checkbox" id="profileEnableForMovies" checked />
+                                                <span>Enable for Movies</span>
+                                            </label>
+                                            <div class="fieldDescription">Control lights when playing movies</div>
+                                        </div>
+
+                                        <div class="checkboxContainer checkboxContainer-withDescription">
+                                            <label>
+                                                <input type="checkbox" is="emby-checkbox" id="profileEnableForTvShows" />
+                                                <span>Enable for TV Shows</span>
+                                            </label>
+                                            <div class="fieldDescription">Control lights when playing TV episodes</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Filters Tab -->
+                                    <div id="tab-filters" class="profile-tab-content" style="display:none;">
+                                        <h3>Client Filters (AND logic)</h3>
+                                        <div class="fieldDescription" style="margin-bottom: 15px;">
+                                            Leave all filters empty to match ALL clients. Otherwise, the device must match ALL specified filters.
+                                        </div>
+
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="profileClientName">Target Client Name (Optional)</label>
+                                            <input type="text" id="profileClientName" is="emby-input" placeholder="e.g., Roku, Web, Android" />
+                                            <div class="fieldDescription">Substring match - filters by client type</div>
+                                        </div>
+
+                                        <div class="inputContainer">
+                                            <label class="inputLabel">Target Device IDs (Optional)</label>
+                                            <div id="profileDeviceIdList" style="margin-bottom: 10px;"></div>
+                                            <div style="display: flex; gap: 10px;">
+                                                <input type="text" id="profileNewDeviceId" is="emby-input" placeholder="Enter Device ID" style="flex: 1;" />
+                                                <button is="emby-button" type="button" class="raised" id="profileAddDeviceIdButton">
+                                                    <span>Add</span>
+                                                </button>
+                                            </div>
+                                            <div class="fieldDescription">Find Device ID in logs: "Playback started on [Client] (Device: [DeviceID], IP: [IP])"</div>
+                                        </div>
+
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="profileIpAddress">Target IP Address (Optional)</label>
+                                            <input type="text" id="profileIpAddress" is="emby-input" placeholder="192.168.1.100" />
+                                            <div class="fieldDescription">Most specific filter - matches exact IP address</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Lights Tab -->
+                                    <div id="tab-lights" class="profile-tab-content" style="display:none;">
+                                        <h3>Light Control</h3>
+
+                                        <div class="checkboxContainer checkboxContainer-withDescription">
+                                            <label>
+                                                <input type="checkbox" is="emby-checkbox" id="profileUseLightGroups" checked />
+                                                <span>Use Light Groups</span>
+                                            </label>
+                                            <div class="fieldDescription">Enable group-based light control</div>
+                                        </div>
+
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="profileTargetGroupId">Target Light Group</label>
+                                    <select id="profileTargetGroupId" is="emby-select">
+                                        <option value="0">All Lights</option>
+                                    </select>
+                                </div>
+
+                                <h3>Scenes (Optional)</h3>
+                                <div class="fieldDescription" style="margin-bottom: 15px;">
+                                    Scenes override brightness settings. Leave empty to use brightness control instead.
+                                </div>
+
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="profilePlaySceneId">Play Scene</label>
+                                            <select id="profilePlaySceneId" is="emby-select">
+                                                <option value="">None (Use Brightness)</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="profilePauseSceneId">Pause Scene</label>
+                                            <select id="profilePauseSceneId" is="emby-select">
+                                                <option value="">None (Use Brightness)</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="profileStopSceneId">Stop Scene</label>
+                                            <select id="profileStopSceneId" is="emby-select">
+                                                <option value="">None (Use Brightness)</option>
+                                            </select>
+                                        </div>
+
+                                        <h3>Brightness Settings</h3>
+
+                                        <div class="checkboxContainer checkboxContainer-withDescription">
+                                            <label>
+                                                <input type="checkbox" is="emby-checkbox" id="profileTurnOffLightsOnPlay" />
+                                                <span>Turn Off Lights When Playing</span>
+                                            </label>
+                                            <div class="fieldDescription">Completely turn off lights during playback (overrides Play Brightness)</div>
+                                        </div>
+
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="profilePlayBrightness">Play Brightness</label>
+                                            <div style="display: flex; align-items: center; gap: 15px;">
+                                                <input type="range" id="profilePlayBrightnessSlider" min="0" max="254" value="20" style="flex: 1;" />
+                                                <input type="number" id="profilePlayBrightness" is="emby-input" min="0" max="254" value="20" style="width: 80px;" />
+                                            </div>
+                                            <div id="profilePlayBrightnessDesc" class="fieldDescription">💡 Dim (20 / 254)</div>
+                                        </div>
+
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="profilePauseBrightness">Pause Brightness</label>
+                                            <div style="display: flex; align-items: center; gap: 15px;">
+                                                <input type="range" id="profilePauseBrightnessSlider" min="0" max="254" value="100" style="flex: 1;" />
+                                                <input type="number" id="profilePauseBrightness" is="emby-input" min="0" max="254" value="100" style="width: 80px;" />
+                                            </div>
+                                            <div id="profilePauseBrightnessDesc" class="fieldDescription">💡 Medium (100 / 254)</div>
+                                        </div>
+
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="profileStopBrightness">Stop Brightness</label>
+                                            <div style="display: flex; align-items: center; gap: 15px;">
+                                                <input type="range" id="profileStopBrightnessSlider" min="0" max="254" value="254" style="flex: 1;" />
+                                                <input type="number" id="profileStopBrightness" is="emby-input" min="0" max="254" value="254" style="width: 80px;" />
+                                            </div>
+                                            <div id="profileStopBrightnessDesc" class="fieldDescription">💡 Very Bright (254 / 254)</div>
+                                        </div>
+                                        
+                                        <!-- Transition Duration -->
+                                        <div class="inputContainer" style="margin-top: 30px;">
+                                            <label class="inputLabel inputLabelUnfocused" for="profileTransitionDuration">Transition Duration</label>
+                                            <div style="display: flex; align-items: center; gap: 10px;">
+                                                <input type="range" id="profileTransitionDurationSlider" min="0" max="150" value="4" style="flex: 1;" />
+                                                <input type="number" id="profileTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
+                                            </div>
+                                            <div id="profileTransitionDurationDesc" class="fieldDescription">⏱️ Instant (0.0s)</div>
+                                            <div class="fieldDescription" style="margin-top: 5px;">How long it takes for lights to transition between states. 0 = instant, higher values = smoother fades. (0-15 seconds)</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Advanced Tab -->
+                                    <div id="tab-advanced" class="profile-tab-content" style="display:none;">
+                                        <h3>Advanced Options</h3>
+
+                                        <div class="checkboxContainer checkboxContainer-withDescription">
+                                            <label>
+                                                <input type="checkbox" is="emby-checkbox" id="profileEnableOutroLights" />
+                                                <span>Enable Outro Detection</span>
+                                            </label>
+                                            <div class="fieldDescription">Automatically trigger Stop Scene/Brightness when end credits (outro segment) begin. Requires media to have outro segments detected by Jellyfin.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <!-- Modal Footer -->
+                                <div style="padding: 20px; border-top: 2px solid #2a2a2a; display: flex; gap: 10px; justify-content: flex-end; background: #1a1a1a;">
+                                    <button is="emby-button" type="button" class="raised" id="cancelProfileButton">
+                                        <span>Cancel</span>
+                                    </button>
+                                    <button is="emby-button" type="button" class="raised button-submit" id="saveProfileButton">
+                                        <span>💾 Save Profile</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div> <!-- End of configSection -->
+
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block">
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <script type="text/javascript">
+            var HuePluginConfig = {
+                pluginId: "2a5f5b3e-8c9d-4f1a-9b7e-6d3c4e5f6a7b",
+                profiles: [],
+                currentEditingProfile: null,
+                profileDeviceIds: [],
+
+                // Helper: Get brightness description
+                getBrightnessDescription: function(value) {
+                    if (value === 0) return '💡 OFF (responsive)';
+                    if (value < 50) return '💡 Very Dim';
+                    if (value < 100) return '💡 Dim';
+                    if (value < 150) return '💡 Medium';
+                    if (value < 200) return '💡 Bright';
+                    return '💡 Very Bright';
+                },
+                
+                // Helper: Get transition duration description
+                getTransitionDescription: function(value) {
+                    var seconds = value / 10.0;
+                    if (value === 0) return '⏱️ Instant (0.0s)';
+                    if (value < 10) return '⏱️ Very Fast (' + seconds.toFixed(1) + 's)';
+                    if (value < 30) return '⏱️ Fast (' + seconds.toFixed(1) + 's)';
+                    if (value < 70) return '⏱️ Medium (' + seconds.toFixed(1) + 's)';
+                    if (value < 100) return '⏱️ Slow (' + seconds.toFixed(1) + 's)';
+                    return '⏱️ Very Slow (' + seconds.toFixed(1) + 's)';
+                },
+
+                // Helper: Get media type icons
+                getMediaTypeIcons: function(profile) {
+                    var icons = [];
+                    if (profile.EnableForMovies !== false) icons.push('🎬');
+                    if (profile.EnableForTvShows) icons.push('📺');
+                    return icons.length > 0 ? icons.join(' ') : '🎬';
+                },
+
+                // Helper: Get profile status badges
+                getProfileStatusBadges: function(profile) {
+                    var badges = [];
+                    if (profile.TurnOffLightsOnPlay) badges.push('💤 Turn OFF');
+                    if (profile.EnableOutroLights) badges.push('🎭 Outro');
+                    if (profile.PlaySceneId || profile.PauseSceneId || profile.StopSceneId) badges.push('🎨 Scenes');
+                    return badges.length > 0 ? badges.join(' • ') : null;
+                },
+
+                // Helper: Get profile light action description
+                getProfileLightAction: function(profile) {
+                    if (profile.TurnOffLightsOnPlay) {
+                        return 'Turn OFF lights during playback';
+                    }
+                    if (profile.PlaySceneId) {
+                        return 'Activate Scene during playback';
+                    }
+                    var brightness = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20;
+                    return 'Dim to ' + brightness + ' (' + this.getBrightnessDescription(brightness).replace('💡 ', '') + ')';
+                },
+
+                // Toggle profile menu
+                toggleProfileMenu: function(index) {
+                    var menu = document.querySelector('#profileMenu' + index);
+                    if (menu) {
+                        // Close all other menus first
+                        document.querySelectorAll('[id^="profileMenu"]').forEach(function(m) {
+                            if (m !== menu) m.style.display = 'none';
+                        });
+                        menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+                    }
+                },
+
+                // Test profile
+                testProfile: function(index) {
+                    var profile = HuePluginConfig.profiles[index];
+                    if (!profile) return;
+                    
+                    // Close menu
+                    var menu = document.querySelector('#profileMenu' + index);
+                    if (menu) menu.style.display = 'none';
+                    
+                    Dashboard.showLoadingMsg();
+                    
+                    var groupId = profile.TargetGroupId || '0';
+                    var brightness = profile.TurnOffLightsOnPlay ? 0 : (profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20);
+                    
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('api/hueplugin/test'),
+                        data: JSON.stringify({ GroupId: groupId, Brightness: brightness }),
+                        contentType: 'application/json'
+                    }).then(function() {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('✅ Profile "' + profile.Name + '" tested successfully! Lights should have changed.');
+                    }).catch(function(error) {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('❌ Test failed: ' + error);
+                    });
+                },
+
+                // Duplicate profile
+                duplicateProfile: function(index) {
+                    var profile = HuePluginConfig.profiles[index];
+                    if (!profile) return;
+                    
+                    // Close menu
+                    var menu = document.querySelector('#profileMenu' + index);
+                    if (menu) menu.style.display = 'none';
+                    
+                    var newProfile = JSON.parse(JSON.stringify(profile)); // Deep clone
+                    newProfile.Id = HuePluginConfig.generateGuid();
+                    newProfile.Name = profile.Name + ' (Copy)';
+                    
+                    HuePluginConfig.profiles.push(newProfile);
+                    HuePluginConfig.renderProfiles();
+                    Dashboard.alert('✅ Profile duplicated! Don\'t forget to save your changes.');
+                },
+
+                // Initialize drag and drop
+                initializeDragAndDrop: function() {
+                    var cards = document.querySelectorAll('.profile-card');
+                    var draggedElement = null;
+                    var draggedIndex = null;
+                    
+                    cards.forEach(function(card, index) {
+                        card.addEventListener('dragstart', function(e) {
+                            draggedElement = this;
+                            draggedIndex = parseInt(this.getAttribute('data-index'));
+                            this.style.opacity = '0.5';
+                            e.dataTransfer.effectAllowed = 'move';
+                        });
+                        
+                        card.addEventListener('dragend', function() {
+                            this.style.opacity = '1';
+                            cards.forEach(function(c) {
+                                c.style.borderTop = '';
+                                c.style.borderBottom = '';
+                            });
+                        });
+                        
+                        card.addEventListener('dragover', function(e) {
+                            if (e.preventDefault) e.preventDefault();
+                            e.dataTransfer.dropEffect = 'move';
+                            
+                            var targetIndex = parseInt(this.getAttribute('data-index'));
+                            if (draggedIndex < targetIndex) {
+                                this.style.borderBottom = '3px solid #00a4dc';
+                                this.style.borderTop = '';
+                            } else {
+                                this.style.borderTop = '3px solid #00a4dc';
+                                this.style.borderBottom = '';
+                            }
+                            return false;
+                        });
+                        
+                        card.addEventListener('dragleave', function() {
+                            this.style.borderTop = '';
+                            this.style.borderBottom = '';
+                        });
+                        
+                        card.addEventListener('drop', function(e) {
+                            if (e.stopPropagation) e.stopPropagation();
+                            
+                            var targetIndex = parseInt(this.getAttribute('data-index'));
+                            if (draggedIndex !== targetIndex) {
+                                var movedProfile = HuePluginConfig.profiles[draggedIndex];
+                                HuePluginConfig.profiles.splice(draggedIndex, 1);
+                                HuePluginConfig.profiles.splice(targetIndex, 0, movedProfile);
+                                HuePluginConfig.renderProfiles();
+                            }
+                            
+                            return false;
+                        });
+                    });
+                    
+                    // Close menus when clicking outside
+                    document.addEventListener('click', function(e) {
+                        if (!e.target.closest('.profile-menu')) {
+                            document.querySelectorAll('[id^="profileMenu"]').forEach(function(menu) {
+                                menu.style.display = 'none';
+                            });
+                        }
+                    });
+                },
+
+                // Switch tabs in profile editor
+                switchTab: function(tabName) {
+                    // Hide all tab contents
+                    document.querySelectorAll('.profile-tab-content').forEach(function(content) {
+                        content.style.display = 'none';
+                    });
+                    
+                    // Remove active class from all tabs
+                    document.querySelectorAll('.profile-tab').forEach(function(tab) {
+                        tab.style.borderBottom = '3px solid transparent';
+                        tab.style.background = 'transparent';
+                    });
+                    
+                    // Show selected tab content
+                    var tabContent = document.querySelector('#tab-' + tabName);
+                    if (tabContent) {
+                        tabContent.style.display = 'block';
+                    }
+                    
+                    // Highlight selected tab
+                    var selectedTab = document.querySelector('.profile-tab[data-tab="' + tabName + '"]');
+                    if (selectedTab) {
+                        selectedTab.style.borderBottom = '3px solid #00a4dc';
+                        selectedTab.style.background = 'rgba(0, 164, 220, 0.1)';
+                    }
+                },
+
+                // Sync brightness slider with input
+                setupBrightnessSlider: function(sliderId, inputId, descId) {
+                    var slider = document.querySelector('#' + sliderId);
+                    var input = document.querySelector('#' + inputId);
+                    var desc = document.querySelector('#' + descId);
+                    
+                    if (slider && input) {
+                        slider.addEventListener('input', function() {
+                            input.value = slider.value;
+                            if (desc) {
+                                desc.textContent = HuePluginConfig.getBrightnessDescription(parseInt(slider.value)) + ' (' + slider.value + ' / 254)';
+                            }
+                        });
+                        
+                        input.addEventListener('input', function() {
+                            slider.value = input.value;
+                            if (desc) {
+                                desc.textContent = HuePluginConfig.getBrightnessDescription(parseInt(input.value)) + ' (' + input.value + ' / 254)';
+                            }
+                        });
+                    }
+                },
+                
+                setupTransitionSlider: function(sliderId, inputId, descId) {
+                    var slider = document.querySelector('#' + sliderId);
+                    var input = document.querySelector('#' + inputId);
+                    var desc = document.querySelector('#' + descId);
+                    
+                    if (slider && input) {
+                        slider.addEventListener('input', function() {
+                            input.value = slider.value;
+                            if (desc) {
+                                desc.textContent = HuePluginConfig.getTransitionDescription(parseInt(slider.value));
+                            }
+                        });
+                        
+                        input.addEventListener('input', function() {
+                            slider.value = input.value;
+                            if (desc) {
+                                desc.textContent = HuePluginConfig.getTransitionDescription(parseInt(input.value));
+                            }
+                        });
+                    }
+                },
+
+                // Create profile from template
+                createFromTemplate: function(templateName) {
+                    document.querySelector('#templateMenu').style.display = 'none';
+                    
+                    var templates = {
+                        'blank': {
+                            Name: 'New Profile',
+                            EnableForMovies: true,
+                            EnableForTvShows: false,
+                            PlayBrightness: 20
+                        },
+                        'movie-theater': {
+                            Name: 'Movie Theater',
+                            EnableForMovies: true,
+                            EnableForTvShows: false,
+                            TurnOffLightsOnPlay: true,
+                            StopBrightness: 254,
+                            EnableOutroLights: true
+                        },
+                        'tv-viewing': {
+                            Name: 'TV Viewing',
+                            EnableForMovies: false,
+                            EnableForTvShows: true,
+                            PlayBrightness: 60,
+                            PauseBrightness: 120,
+                            StopBrightness: 200,
+                            EnableOutroLights: false
+                        },
+                        'bedroom-casual': {
+                            Name: 'Bedroom Casual',
+                            EnableForMovies: true,
+                            EnableForTvShows: true,
+                            PlayBrightness: 80,
+                            PauseBrightness: 150,
+                            StopBrightness: 200
+                        },
+                        'gaming': {
+                            Name: 'Gaming Setup',
+                            EnableForMovies: false,
+                            EnableForTvShows: false,
+                            PlayBrightness: 50,
+                            EnableOutroLights: false
+                        }
+                    };
+                    
+                    var template = templates[templateName] || templates['blank'];
+                    HuePluginConfig.currentEditingProfile = null;
+                    
+                    // Populate form with template values
+                    document.querySelector('#profileEditorTitle').textContent = 'Add Profile from Template';
+                    document.querySelector('#profileName').value = template.Name;
+                    document.querySelector('#profileEnableForMovies').checked = template.EnableForMovies !== false;
+                    document.querySelector('#profileEnableForTvShows').checked = template.EnableForTvShows || false;
+                    document.querySelector('#profileClientName').value = '';
+                    document.querySelector('#profileIpAddress').value = '';
+                    document.querySelector('#profileUseLightGroups').checked = true;
+                    document.querySelector('#profileTurnOffLightsOnPlay').checked = template.TurnOffLightsOnPlay || false;
+                    document.querySelector('#profilePlayBrightness').value = template.PlayBrightness || 20;
+                    document.querySelector('#profilePauseBrightness').value = template.PauseBrightness || 100;
+                    document.querySelector('#profileStopBrightness').value = template.StopBrightness || 254;
+                    document.querySelector('#profileTransitionDuration').value = template.TransitionDuration || 4;
+                    document.querySelector('#profileEnableOutroLights').checked = template.EnableOutroLights || false;
+                    
+                    // Sync sliders
+                    var playBrightness = template.PlayBrightness || 20;
+                    var pauseBrightness = template.PauseBrightness || 100;
+                    var stopBrightness = template.StopBrightness || 254;
+                    var transitionDuration = template.TransitionDuration || 4;
+                    
+                    document.querySelector('#profilePlayBrightnessSlider').value = playBrightness;
+                    document.querySelector('#profilePauseBrightnessSlider').value = pauseBrightness;
+                    document.querySelector('#profileStopBrightnessSlider').value = stopBrightness;
+                    document.querySelector('#profileTransitionDurationSlider').value = transitionDuration;
+                    
+                    // Update descriptions
+                    document.querySelector('#profilePlayBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(playBrightness) + ' (' + playBrightness + ' / 254)';
+                    document.querySelector('#profilePauseBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(pauseBrightness) + ' (' + pauseBrightness + ' / 254)';
+                    document.querySelector('#profileStopBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(stopBrightness) + ' (' + stopBrightness + ' / 254)';
+                    document.querySelector('#profileTransitionDurationDesc').textContent = HuePluginConfig.getTransitionDescription(transitionDuration);
+                    
+                    HuePluginConfig.profileDeviceIds = [];
+                    HuePluginConfig.renderProfileDeviceIdList();
+                    HuePluginConfig.loadProfileGroups('0');
+                    HuePluginConfig.loadProfileScenes('', '', '');
+                    
+                    // Show modal
+                    document.querySelector('#profileEditorModal').style.display = 'block';
+                    
+                    // Initialize tabs - show General tab first
+                    setTimeout(function() {
+                        HuePluginConfig.switchTab('general');
+                    }, 50);
+                },
+
+                // Update connection status
+                updateConnectionStatus: function(bridgeIp) {
+                    var statusDiv = document.querySelector('#connectionStatus');
+                    var statusIp = document.querySelector('#statusBridgeIp');
+                    var resourceCounts = document.querySelector('#resourceCounts');
+                    
+                    if (statusDiv && bridgeIp) {
+                        statusDiv.style.display = 'block';
+                        if (statusIp) statusIp.textContent = bridgeIp;
+                        
+                        // Fetch resource counts
+                        Promise.all([
+                            ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/groups')),
+                            ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/scenes'))
+                        ]).then(function(results) {
+                            var groups = results[0] || {};
+                            var scenes = results[1] || {};
+                            var groupCount = Object.keys(groups).length;
+                            var sceneCount = Object.keys(scenes).length;
+                            
+                            if (resourceCounts) {
+                                resourceCounts.textContent = groupCount + ' groups • ' + sceneCount + ' scenes';
+                            }
+                        }).catch(function() {
+                            if (resourceCounts) {
+                                resourceCounts.textContent = 'Unable to fetch resource counts';
+                            }
+                        });
+                    }
+                },
+
+                loadConfiguration: function () {
+                    Dashboard.showLoadingMsg();
+
+                    ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function (config) {
+                        console.log('Loading configuration:', config);
+                        console.log('Profiles in config:', config.Profiles);
+                        
+                        try {
+                            document.querySelector('#bridgeIpAddress').value = config.BridgeIpAddress || '';
+                            document.querySelector('#username').value = config.Username ? 'Authenticated' : 'Not authenticated';
+                            
+                            // Load profiles
+                            HuePluginConfig.profiles = config.Profiles || [];
+                            console.log('Loaded profiles:', HuePluginConfig.profiles);
+                            console.log('Profile count:', HuePluginConfig.profiles.length);
+                            
+                            HuePluginConfig.renderProfiles();
+
+                            if (config.BridgeIpAddress) {
+                                document.querySelector('#authenticationSection').style.display = 'block';
+                            }
+
+                            if (config.Username) {
+                                document.querySelector('#configSection').style.display = 'block';
+                                console.log('Config section displayed');
+                            } else {
+                                console.log('Username not set, config section hidden');
+                            }
+
+                            Dashboard.hideLoadingMsg();
+                        } catch (error) {
+                            console.error('Error loading configuration:', error);
+                            Dashboard.hideLoadingMsg();
+                            Dashboard.alert('Error loading configuration: ' + error.message);
+                        }
+                    }).catch(function(error) {
+                        console.error('Error fetching configuration:', error);
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('Error fetching configuration from server: ' + error);
+                    });
+                },
+
+                discoverBridge: function () {
+                    Dashboard.showLoadingMsg();
+
+                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/discover')).then(function (bridges) {
+                        if (bridges && bridges.length > 0) {
+                            document.querySelector('#bridgeIpAddress').value = bridges[0].InternalIpAddress;
+                            document.querySelector('#authenticationSection').style.display = 'block';
+                            Dashboard.alert('Bridge found at ' + bridges[0].InternalIpAddress);
+                        } else {
+                            Dashboard.alert('No Hue bridges found. Please check your network connection.');
+                        }
+                        Dashboard.hideLoadingMsg();
+                    }).catch(function (error) {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('Error discovering bridge: ' + error);
+                    });
+                },
+
+                renderProfiles: function() {
+                    try {
+                        var container = document.querySelector('#profilesList');
+                        if (!container) {
+                            console.error('profilesList container not found!');
+                            return;
+                        }
+                        
+                        console.log('Rendering profiles, count:', HuePluginConfig.profiles ? HuePluginConfig.profiles.length : 0);
+                        
+                        if (!HuePluginConfig.profiles || HuePluginConfig.profiles.length === 0) {
+                            container.innerHTML = '<div class="fieldDescription">No profiles configured. Add your first profile to get started!</div>';
+                            console.log('No profiles to display');
+                            return;
+                        }
+
+                        var html = '<div style="display: flex; flex-direction: column; gap: 15px;">';
+                        
+                        HuePluginConfig.profiles.forEach(function(profile, index) {
+                            var mediaIcons = HuePluginConfig.getMediaTypeIcons(profile);
+                            var badges = HuePluginConfig.getProfileStatusBadges(profile);
+                            var filterSummary = HuePluginConfig.getProfileFilterSummary(profile);
+                            var lightAction = HuePluginConfig.getProfileLightAction(profile);
+                            
+                            // Enhanced profile card
+                            html += '<div class="profile-card" draggable="true" data-index="' + index + '" style="background: linear-gradient(135deg, rgba(0,164,220,0.08) 0%, rgba(255,255,255,0.03) 100%); padding: 15px; border-radius: 8px; border: 1px solid rgba(0,164,220,0.2); border-left: 4px solid #00a4dc; transition: transform 0.2s, box-shadow 0.2s; cursor: move;" onmouseover="this.style.transform=\'translateY(-2px)\'; this.style.boxShadow=\'0 4px 12px rgba(0,164,220,0.3)\';" onmouseout="this.style.transform=\'translateY(0)\'; this.style.boxShadow=\'none\';">';
+                            
+                            // Header row with icon, name, and menu
+                            html += '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">';
+                            html += '<div style="display: flex; align-items: center; gap: 10px; flex: 1;">';
+                            html += '<span style="font-size: 1.3em;">' + mediaIcons + '</span>';
+                            html += '<h3 style="margin: 0; flex: 1; color: #00a4dc;">' + (profile.Name || 'Unnamed Profile') + '</h3>';
+                            html += '</div>';
+                            html += '<div class="profile-menu" style="position: relative;">';
+                            html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.toggleProfileMenu(' + index + ')" style="font-size: 1.2em; padding: 4px 12px;">⋮</button>';
+                            html += '<div id="profileMenu' + index + '" style="display: none; position: absolute; right: 0; top: 100%; background: #2a2a2a; border: 1px solid #444; border-radius: 4px; margin-top: 5px; min-width: 150px; z-index: 1000; box-shadow: 0 4px 8px rgba(0,0,0,0.3);">';
+                            html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.testProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">⚡ Test Profile</button>';
+                            html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.duplicateProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">📋 Duplicate</button>';
+                            if (index > 0) {
+                                html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.moveProfile(' + index + ', -1)" style="width: 100%; text-align: left; border-radius: 0;">⬆️ Move Up</button>';
+                            }
+                            if (index < HuePluginConfig.profiles.length - 1) {
+                                html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.moveProfile(' + index + ', 1)" style="width: 100%; text-align: left; border-radius: 0;">⬇️ Move Down</button>';
+                            }
+                            html += '</div>';
+                            html += '</div>';
+                            html += '</div>';
+                            
+                            // Divider
+                            html += '<div style="height: 1px; background: rgba(0,164,220,0.2); margin: 10px 0;"></div>';
+                            
+                            // Info row with badges
+                            html += '<div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; font-size: 0.9em;">';
+                            html += '<span style="background: rgba(0,164,220,0.15); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(0,164,220,0.3);">' + filterSummary + '</span>';
+                            if (badges) {
+                                html += '<span style="background: rgba(255,193,7,0.15); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(255,193,7,0.3);">' + badges + '</span>';
+                            }
+                            html += '</div>';
+                            
+                            // Light action
+                            html += '<div style="font-size: 0.95em; opacity: 0.9; margin-bottom: 10px;">';
+                            html += '<strong>💡 Action:</strong> ' + lightAction;
+                            html += '</div>';
+                            
+                            // Divider
+                            html += '<div style="height: 1px; background: rgba(0,164,220,0.2); margin: 10px 0;"></div>';
+                            
+                            // Quick actions row
+                            html += '<div style="display: flex; gap: 8px; flex-wrap: wrap;">';
+                            html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.testProfile(' + index + ')" style="padding: 6px 12px; font-size: 0.9em;">⚡ Test</button>';
+                            html += '<button is="emby-button" type="button" class="raised button-submit" onclick="HuePluginConfig.editProfile(' + index + ')" style="padding: 6px 12px; font-size: 0.9em;">✏️ Edit</button>';
+                            html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.duplicateProfile(' + index + ')" style="padding: 6px 12px; font-size: 0.9em;">📋 Copy</button>';
+                            html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.deleteProfile(' + index + ')" style="background-color: #c33; padding: 6px 12px; font-size: 0.9em;">🗑️ Delete</button>';
+                            html += '</div>';
+                            
+                            html += '</div>';
+                        });
+                        
+                        html += '</div>';
+                        container.innerHTML = html;
+                        
+                        // Add drag and drop event listeners
+                        HuePluginConfig.initializeDragAndDrop();
+                        
+                        console.log('Profiles rendered successfully');
+                    } catch (error) {
+                        console.error('Error rendering profiles:', error);
+                        Dashboard.alert('Error rendering profiles: ' + error.message);
+                    }
+                },
+
+                getProfileFilterSummary: function(profile) {
+                    if (!profile) return 'Invalid Profile';
+                    var filters = [];
+                    
+                    // Media type filter
+                    var mediaTypes = [];
+                    if (profile.EnableForMovies !== false) mediaTypes.push('Movies');
+                    if (profile.EnableForTvShows) mediaTypes.push('TV');
+                    if (mediaTypes.length > 0) {
+                        filters.push('Media: ' + mediaTypes.join(' + '));
+                    }
+                    
+                    // Client filters
+                    if (profile.TargetClientName) filters.push('Client: ' + profile.TargetClientName);
+                    if (profile.TargetDeviceIds && profile.TargetDeviceIds.length > 0) {
+                        filters.push('Devices: ' + profile.TargetDeviceIds.length);
+                    }
+                    if (profile.TargetIpAddress) filters.push('IP: ' + profile.TargetIpAddress);
+                    
+                    return filters.length > 0 ? filters.join(', ') : 'All Clients';
+                },
+
+                getProfileLightSummary: function(profile) {
+                    if (!profile) return 'Invalid Profile';
+                    var parts = [];
+                    parts.push('Group ' + (profile.TargetGroupId || '0'));
+                    
+                    if (profile.PlaySceneId || profile.PauseSceneId || profile.StopSceneId) {
+                        parts.push('Using Scenes');
+                    } else if (profile.TurnOffLightsOnPlay) {
+                        parts.push('Turn OFF on play');
+                    } else {
+                        parts.push('Dim to ' + (profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20));
+                    }
+                    
+                    return parts.join(', ');
+                },
+
+                moveProfile: function(index, direction) {
+                    var newIndex = index + direction;
+                    if (newIndex < 0 || newIndex >= HuePluginConfig.profiles.length) return;
+                    
+                    var temp = HuePluginConfig.profiles[index];
+                    HuePluginConfig.profiles[index] = HuePluginConfig.profiles[newIndex];
+                    HuePluginConfig.profiles[newIndex] = temp;
+                    
+                    HuePluginConfig.renderProfiles();
+                },
+
+                editProfile: function(index) {
+                    HuePluginConfig.currentEditingProfile = index;
+                    var profile = HuePluginConfig.profiles[index];
+                    
+                    document.querySelector('#profileEditorTitle').textContent = 'Edit Profile';
+                    document.querySelector('#profileName').value = profile.Name || '';
+                    document.querySelector('#profileEnableForMovies').checked = profile.EnableForMovies !== false;
+                    document.querySelector('#profileEnableForTvShows').checked = profile.EnableForTvShows || false;
+                    document.querySelector('#profileClientName').value = profile.TargetClientName || '';
+                    document.querySelector('#profileIpAddress').value = profile.TargetIpAddress || '';
+                    document.querySelector('#profileUseLightGroups').checked = profile.UseLightGroups !== false;
+                    document.querySelector('#profileTurnOffLightsOnPlay').checked = profile.TurnOffLightsOnPlay || false;
+                    document.querySelector('#profilePlayBrightness').value = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20;
+                    document.querySelector('#profilePauseBrightness').value = profile.PauseBrightness !== undefined ? profile.PauseBrightness : 100;
+                    document.querySelector('#profileStopBrightness').value = profile.StopBrightness !== undefined ? profile.StopBrightness : 254;
+                    document.querySelector('#profileTransitionDuration').value = profile.TransitionDuration !== undefined ? profile.TransitionDuration : 4;
+                    document.querySelector('#profileEnableOutroLights').checked = profile.EnableOutroLights || false;
+                    
+                    // Sync sliders with input values
+                    var playBrightness = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20;
+                    var pauseBrightness = profile.PauseBrightness !== undefined ? profile.PauseBrightness : 100;
+                    var stopBrightness = profile.StopBrightness !== undefined ? profile.StopBrightness : 254;
+                    var transitionDuration = profile.TransitionDuration !== undefined ? profile.TransitionDuration : 4;
+                    
+                    document.querySelector('#profilePlayBrightnessSlider').value = playBrightness;
+                    document.querySelector('#profilePauseBrightnessSlider').value = pauseBrightness;
+                    document.querySelector('#profileStopBrightnessSlider').value = stopBrightness;
+                    document.querySelector('#profileTransitionDurationSlider').value = transitionDuration;
+                    
+                    // Update descriptions
+                    document.querySelector('#profilePlayBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(playBrightness) + ' (' + playBrightness + ' / 254)';
+                    document.querySelector('#profilePauseBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(pauseBrightness) + ' (' + pauseBrightness + ' / 254)';
+                    document.querySelector('#profileStopBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(stopBrightness) + ' (' + stopBrightness + ' / 254)';
+                    document.querySelector('#profileTransitionDurationDesc').textContent = HuePluginConfig.getTransitionDescription(transitionDuration);
+                    
+                    HuePluginConfig.profileDeviceIds = profile.TargetDeviceIds || [];
+                    HuePluginConfig.renderProfileDeviceIdList();
+                    
+                    // Load groups and scenes for this profile
+                    HuePluginConfig.loadProfileGroups(profile.TargetGroupId);
+                    HuePluginConfig.loadProfileScenes(profile.PlaySceneId, profile.PauseSceneId, profile.StopSceneId);
+                    
+                    // Show modal
+                    document.querySelector('#profileEditorModal').style.display = 'block';
+                    
+                    // Initialize tabs - show General tab first
+                    setTimeout(function() {
+                        HuePluginConfig.switchTab('general');
+                    }, 50);
+                },
+
+                deleteProfile: function(index) {
+                    if (confirm('Are you sure you want to delete this profile?')) {
+                        HuePluginConfig.profiles.splice(index, 1);
+                        HuePluginConfig.renderProfiles();
+                    }
+                },
+
+                openNewProfile: function() {
+                    HuePluginConfig.currentEditingProfile = null;
+                    
+                    document.querySelector('#profileEditorTitle').textContent = 'Add Profile';
+                    document.querySelector('#profileName').value = 'New Profile';
+                    document.querySelector('#profileEnableForMovies').checked = true;  // Default: enabled for movies
+                    document.querySelector('#profileEnableForTvShows').checked = false; // Default: disabled for TV
+                    document.querySelector('#profileClientName').value = '';
+                    document.querySelector('#profileIpAddress').value = '';
+                    document.querySelector('#profileUseLightGroups').checked = true;
+                    document.querySelector('#profileTurnOffLightsOnPlay').checked = false;
+                    document.querySelector('#profilePlayBrightness').value = 20;
+                    document.querySelector('#profilePauseBrightness').value = 100;
+                    document.querySelector('#profileStopBrightness').value = 254;
+                    document.querySelector('#profileTransitionDuration').value = 4;
+                    document.querySelector('#profileEnableOutroLights').checked = false; // Default: disabled
+                    
+                    // Sync sliders with input values
+                    document.querySelector('#profilePlayBrightnessSlider').value = 20;
+                    document.querySelector('#profilePauseBrightnessSlider').value = 100;
+                    document.querySelector('#profileStopBrightnessSlider').value = 254;
+                    document.querySelector('#profileTransitionDurationSlider').value = 4;
+                    
+                    // Update descriptions
+                    document.querySelector('#profilePlayBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(20) + ' (20 / 254)';
+                    document.querySelector('#profilePauseBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(100) + ' (100 / 254)';
+                    document.querySelector('#profileStopBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(254) + ' (254 / 254)';
+                    document.querySelector('#profileTransitionDurationDesc').textContent = HuePluginConfig.getTransitionDescription(4);
+                    
+                    HuePluginConfig.profileDeviceIds = [];
+                    HuePluginConfig.renderProfileDeviceIdList();
+                    
+                    HuePluginConfig.loadProfileGroups('0');
+                    HuePluginConfig.loadProfileScenes('', '', '');
+                    
+                    // Show modal
+                    document.querySelector('#profileEditorModal').style.display = 'block';
+                    
+                    // Initialize tabs - show General tab first
+                    setTimeout(function() {
+                        HuePluginConfig.switchTab('general');
+                    }, 50);
+                },
+
+                saveCurrentProfile: function() {
+                    var profile = {
+                        Id: HuePluginConfig.currentEditingProfile !== null ? 
+                            HuePluginConfig.profiles[HuePluginConfig.currentEditingProfile].Id : 
+                            HuePluginConfig.generateGuid(),
+                        Name: document.querySelector('#profileName').value,
+                        EnableForMovies: document.querySelector('#profileEnableForMovies').checked,
+                        EnableForTvShows: document.querySelector('#profileEnableForTvShows').checked,
+                        TargetClientName: document.querySelector('#profileClientName').value,
+                        TargetDeviceIds: HuePluginConfig.profileDeviceIds,
+                        TargetIpAddress: document.querySelector('#profileIpAddress').value,
+                        UseLightGroups: document.querySelector('#profileUseLightGroups').checked,
+                        TargetGroupId: document.querySelector('#profileTargetGroupId').value,
+                        PlaySceneId: document.querySelector('#profilePlaySceneId').value,
+                        PauseSceneId: document.querySelector('#profilePauseSceneId').value,
+                        StopSceneId: document.querySelector('#profileStopSceneId').value,
+                        TurnOffLightsOnPlay: document.querySelector('#profileTurnOffLightsOnPlay').checked,
+                        PlayBrightness: parseInt(document.querySelector('#profilePlayBrightness').value),
+                        PauseBrightness: parseInt(document.querySelector('#profilePauseBrightness').value),
+                        StopBrightness: parseInt(document.querySelector('#profileStopBrightness').value),
+                        TransitionDuration: parseInt(document.querySelector('#profileTransitionDuration').value),
+                        EnableOutroLights: document.querySelector('#profileEnableOutroLights').checked
+                    };
+                    
+                    // Validate at least one media type is enabled
+                    if (!profile.EnableForMovies && !profile.EnableForTvShows) {
+                        Dashboard.alert('At least one media type (Movies or TV Shows) must be enabled.');
+                        return;
+                    }
+                    
+                    if (HuePluginConfig.currentEditingProfile !== null) {
+                        HuePluginConfig.profiles[HuePluginConfig.currentEditingProfile] = profile;
+                    } else {
+                        HuePluginConfig.profiles.push(profile);
+                    }
+                    
+                    HuePluginConfig.closeProfileEditor();
+                    HuePluginConfig.renderProfiles();
+                },
+
+                closeProfileEditor: function() {
+                    document.querySelector('#profileEditorModal').style.display = 'none';
+                },
+
+                renderProfileDeviceIdList: function() {
+                    var container = document.querySelector('#profileDeviceIdList');
+                    if (HuePluginConfig.profileDeviceIds.length === 0) {
+                        container.innerHTML = '<div style="font-style: italic; opacity: 0.6;">No device IDs configured</div>';
+                        return;
+                    }
+                    
+                    var html = '';
+                    HuePluginConfig.profileDeviceIds.forEach(function(id, index) {
+                        html += '<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 4px;">';
+                        html += '<span style="flex: 1; font-family: monospace;">' + id + '</span>';
+                        html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.removeProfileDeviceId(' + index + ')">Remove</button>';
+                        html += '</div>';
+                    });
+                    
+                    container.innerHTML = html;
+                },
+
+                addProfileDeviceId: function() {
+                    var input = document.querySelector('#profileNewDeviceId');
+                    var deviceId = input.value.trim();
+                    
+                    if (!deviceId) {
+                        Dashboard.alert('Please enter a Device ID');
+                        return;
+                    }
+                    
+                    if (HuePluginConfig.profileDeviceIds.includes(deviceId)) {
+                        Dashboard.alert('This Device ID is already in the list');
+                        return;
+                    }
+                    
+                    HuePluginConfig.profileDeviceIds.push(deviceId);
+                    input.value = '';
+                    HuePluginConfig.renderProfileDeviceIdList();
+                },
+
+                removeProfileDeviceId: function(index) {
+                    HuePluginConfig.profileDeviceIds.splice(index, 1);
+                    HuePluginConfig.renderProfileDeviceIdList();
+                },
+
+                loadProfileGroups: function(savedValue) {
+                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/groups')).then(function (groups) {
+                        var select = document.querySelector('#profileTargetGroupId');
+                        select.innerHTML = '<option value="0">All Lights</option>';
+                        
+                        for (var id in groups) {
+                            var option = document.createElement('option');
+                            option.value = id;
+                            option.text = groups[id].Name;
+                            select.appendChild(option);
+                        }
+                        
+                        // Set the saved value after populating
+                        if (savedValue) {
+                            select.value = savedValue;
+                        }
+                    }).catch(function(err) {
+                        console.error('Error loading groups for profile:', err);
+                    });
+                },
+
+                loadProfileScenes: function(savedPlayId, savedPauseId, savedStopId) {
+                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/scenes')).then(function (scenes) {
+                        var playSelect = document.querySelector('#profilePlaySceneId');
+                        var pauseSelect = document.querySelector('#profilePauseSceneId');
+                        var stopSelect = document.querySelector('#profileStopSceneId');
+                        
+                        // Clear and populate all dropdowns
+                        [playSelect, pauseSelect, stopSelect].forEach(function(select) {
+                            select.innerHTML = '<option value="">None (Use Brightness)</option>';
+                            
+                            for (var id in scenes) {
+                                var option = document.createElement('option');
+                                option.value = id;
+                                option.text = scenes[id].Name + ' (Group: ' + scenes[id].Group + ')';
+                                select.appendChild(option);
+                            }
+                        });
+                        
+                        // Set saved values after populating
+                        if (savedPlayId) {
+                            playSelect.value = savedPlayId;
+                        }
+                        if (savedPauseId) {
+                            pauseSelect.value = savedPauseId;
+                        }
+                        if (savedStopId) {
+                            stopSelect.value = savedStopId;
+                        }
+                    }).catch(function(err) {
+                        console.error('Error loading scenes for profile:', err);
+                    });
+                },
+
+                generateGuid: function() {
+                    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                        var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+                        return v.toString(16);
+                    });
+                },
+
+                authenticate: function () {
+                    var bridgeIp = document.querySelector('#bridgeIpAddress').value;
+                    if (!bridgeIp) {
+                        Dashboard.alert('Please discover a bridge first.');
+                        return;
+                    }
+
+                    Dashboard.showLoadingMsg();
+
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('api/hueplugin/authenticate'),
+                        data: JSON.stringify({ BridgeIp: bridgeIp }),
+                        contentType: 'application/json'
+                    }).then(function (result) {
+                        Dashboard.hideLoadingMsg();
+                        if (result.Success) {
+                            document.querySelector('#username').value = 'Authenticated';
+                            document.querySelector('#configSection').style.display = 'block';
+                            HuePluginConfig.loadGroups();
+                            HuePluginConfig.loadScenes();
+                            Dashboard.alert('Successfully authenticated with Hue bridge!');
+                        } else {
+                            Dashboard.alert(result.Error || 'Authentication failed after 3 retries. Make sure to:\n\n1. Press and HOLD the button on TOP of the bridge for 2-3 seconds\n2. Wait for the button to light up\n3. Click Authenticate within 30 seconds\n\nThen try again.');
+                        }
+                    }).catch(function (error) {
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('Error during authentication: ' + error + '\n\nMake sure to:\n1. Press and HOLD the button on top of the bridge\n2. Wait for it to light up\n3. Click Authenticate within 30 seconds');
+                    });
+                },
+
+                loadGroups: function (savedValue) {
+                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/groups')).then(function (groups) {
+                        var select = document.querySelector('#targetGroupId');
+                        select.innerHTML = '<option value="0">All Lights</option>';
+                        
+                        for (var id in groups) {
+                            var option = document.createElement('option');
+                            option.value = id;
+                            option.text = groups[id].Name;
+                            select.appendChild(option);
+                        }
+                        
+                        // Set the saved value after populating
+                        if (savedValue) {
+                            select.value = savedValue;
+                        }
+                    });
+                },
+
+                loadScenes: function (savedPlaySceneId, savedPauseSceneId, savedStopSceneId) {
+                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/scenes')).then(function (scenes) {
+                        var playSelect = document.querySelector('#playSceneId');
+                        var pauseSelect = document.querySelector('#pauseSceneId');
+                        var stopSelect = document.querySelector('#stopSceneId');
+                        
+                        // Clear and populate all dropdowns
+                        [playSelect, pauseSelect, stopSelect].forEach(function(select) {
+                            select.innerHTML = '<option value="">None (Use Brightness)</option>';
+                            
+                            for (var id in scenes) {
+                                var option = document.createElement('option');
+                                option.value = id;
+                                option.text = scenes[id].Name + ' (Group: ' + scenes[id].Group + ')';
+                                select.appendChild(option);
+                            }
+                        });
+                        
+                        // Set saved values after populating
+                        if (savedPlaySceneId) {
+                            playSelect.value = savedPlaySceneId;
+                        }
+                        if (savedPauseSceneId) {
+                            pauseSelect.value = savedPauseSceneId;
+                        }
+                        if (savedStopSceneId) {
+                            stopSelect.value = savedStopSceneId;
+                        }
+                    });
+                },
+
+                testLights: function () {
+                    var groupId = document.querySelector('#targetGroupId').value;
+                    var brightness = parseInt(document.querySelector('#playBrightness').value);
+
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('api/hueplugin/test'),
+                        data: JSON.stringify({ GroupId: groupId, Brightness: brightness }),
+                        contentType: 'application/json'
+                    }).then(function () {
+                        Dashboard.alert('Test successful! Lights should have changed.');
+                    }).catch(function (error) {
+                        Dashboard.alert('Test failed: ' + error);
+                    });
+                },
+
+                saveConfiguration: function () {
+                    Dashboard.showLoadingMsg();
+
+                    ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function (config) {
+                        try {
+                            console.log('Saving configuration...');
+                            console.log('Current profiles:', HuePluginConfig.profiles);
+                            
+                            config.BridgeIpAddress = document.querySelector('#bridgeIpAddress').value;
+                            config.Profiles = HuePluginConfig.profiles;
+
+                            console.log('Config to save:', config);
+
+                            ApiClient.updatePluginConfiguration(HuePluginConfig.pluginId, config).then(function () {
+                                console.log('Configuration saved successfully');
+                                Dashboard.processPluginConfigurationUpdateResult();
+                            }).catch(function(error) {
+                                console.error('Error saving configuration:', error);
+                                Dashboard.hideLoadingMsg();
+                                Dashboard.alert('Error saving configuration: ' + error);
+                            });
+                        } catch (error) {
+                            console.error('Error preparing configuration:', error);
+                            Dashboard.hideLoadingMsg();
+                            Dashboard.alert('Error preparing configuration: ' + error.message);
+                        }
+                    }).catch(function(error) {
+                        console.error('Error fetching configuration for save:', error);
+                        Dashboard.hideLoadingMsg();
+                        Dashboard.alert('Error fetching configuration: ' + error);
+                    });
+                },
+                
+            };
+
+            // Initialize event listeners when page is ready
+            function initializeEventListeners() {
+                console.log('Initializing event listeners...');
+                
+                var form = document.querySelector('#HuePluginConfigForm');
+                if (form) {
+                    form.addEventListener('submit', function (e) {
+                        e.preventDefault();
+                        HuePluginConfig.saveConfiguration();
+                        return false;
+                    });
+                } else {
+                    console.error('HuePluginConfigForm not found');
+                }
+
+                var discoverButton = document.querySelector('#discoverButton');
+                if (discoverButton) {
+                    discoverButton.addEventListener('click', function () {
+                        HuePluginConfig.discoverBridge();
+                    });
+                }
+
+                var authenticateButton = document.querySelector('#authenticateButton');
+                if (authenticateButton) {
+                    authenticateButton.addEventListener('click', function () {
+                        HuePluginConfig.authenticate();
+                    });
+                }
+
+                var testButton = document.querySelector('#testButton');
+                if (testButton) {
+                    testButton.addEventListener('click', function () {
+                        HuePluginConfig.testLights();
+                    });
+                }
+
+                // Profile management event handlers
+                var addProfileButton = document.querySelector('#addProfileButton');
+                if (addProfileButton) {
+                    addProfileButton.addEventListener('click', function () {
+                        HuePluginConfig.openNewProfile();
+                    });
+                }
+
+                var addProfileTemplateButton = document.querySelector('#addProfileTemplateButton');
+                if (addProfileTemplateButton) {
+                    addProfileTemplateButton.addEventListener('click', function () {
+                        var templateMenu = document.querySelector('#templateMenu');
+                        if (templateMenu) {
+                            templateMenu.style.display = templateMenu.style.display === 'none' ? 'block' : 'none';
+                        }
+                    });
+                }
+
+                var saveProfileButton = document.querySelector('#saveProfileButton');
+                if (saveProfileButton) {
+                    saveProfileButton.addEventListener('click', function () {
+                        HuePluginConfig.saveCurrentProfile();
+                    });
+                }
+
+                var cancelProfileButton = document.querySelector('#cancelProfileButton');
+                if (cancelProfileButton) {
+                    cancelProfileButton.addEventListener('click', function () {
+                        HuePluginConfig.closeProfileEditor();
+                    });
+                }
+
+                var profileAddDeviceIdButton = document.querySelector('#profileAddDeviceIdButton');
+                if (profileAddDeviceIdButton) {
+                    profileAddDeviceIdButton.addEventListener('click', function () {
+                        HuePluginConfig.addProfileDeviceId();
+                    });
+                }
+
+                var profileNewDeviceId = document.querySelector('#profileNewDeviceId');
+                if (profileNewDeviceId) {
+                    profileNewDeviceId.addEventListener('keypress', function (e) {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            HuePluginConfig.addProfileDeviceId();
+                        }
+                    });
+                }
+
+                // Tab switching event listeners
+                document.querySelectorAll('.profile-tab').forEach(function(tab) {
+                    tab.addEventListener('click', function() {
+                        var tabName = this.getAttribute('data-tab');
+                        HuePluginConfig.switchTab(tabName);
+                    });
+                });
+
+                // Close template menu when clicking outside
+                document.addEventListener('click', function(e) {
+                    var templateButton = document.querySelector('#addProfileTemplateButton');
+                    var templateMenu = document.querySelector('#templateMenu');
+                    
+                    if (templateButton && templateMenu && 
+                        !templateButton.contains(e.target) && 
+                        !templateMenu.contains(e.target)) {
+                        templateMenu.style.display = 'none';
+                    }
+                });
+
+                // Close modal when clicking outside
+                var profileEditorModal = document.querySelector('#profileEditorModal');
+                if (profileEditorModal) {
+                    profileEditorModal.addEventListener('click', function (e) {
+                        if (e.target === this) {
+                            HuePluginConfig.closeProfileEditor();
+                        }
+                    });
+                }
+
+                // Setup brightness sliders
+                HuePluginConfig.setupBrightnessSlider('profilePlayBrightnessSlider', 'profilePlayBrightness', 'profilePlayBrightnessDesc');
+                HuePluginConfig.setupBrightnessSlider('profilePauseBrightnessSlider', 'profilePauseBrightness', 'profilePauseBrightnessDesc');
+                HuePluginConfig.setupBrightnessSlider('profileStopBrightnessSlider', 'profileStopBrightness', 'profileStopBrightnessDesc');
+                
+                // Setup transition duration slider
+                HuePluginConfig.setupTransitionSlider('profileTransitionDurationSlider', 'profileTransitionDuration', 'profileTransitionDurationDesc');
+
+                console.log('Event listeners initialized');
+                
+                // Load configuration after everything is set up
+                HuePluginConfig.loadConfiguration();
+            }
+
+            // Wait for page to be ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initializeEventListeners);
+            } else {
+                // DOM is already ready
+                initializeEventListeners();
+            }
+        </script>
+    </div>
+</body>
+</html>
