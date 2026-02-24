@@ -341,7 +341,7 @@ namespace JellyfinHuePlugin.Tests.Managers
 
             // Assert - Should return first matching profile
             profile.Should().NotBeNull();
-            profile.Name.Should().Be("Profile1");
+            profile!.Name.Should().Be("Profile1");
         }
 
         [Fact]
@@ -373,10 +373,10 @@ namespace JellyfinHuePlugin.Tests.Managers
 
             // Assert
             profile1.Should().NotBeNull();
-            profile1.Name.Should().Be("Specific"); // Matches first (more specific) profile
-            
+            profile1!.Name.Should().Be("Specific"); // Matches first (more specific) profile
+
             profile2.Should().NotBeNull();
-            profile2.Name.Should().Be("General"); // Falls through to second profile
+            profile2!.Name.Should().Be("General"); // Falls through to second profile
         }
 
         #endregion
