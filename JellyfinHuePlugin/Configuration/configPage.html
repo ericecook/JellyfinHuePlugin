@@ -11,18 +11,18 @@
                 <form id="HuePluginConfigForm">
                     
                     <!-- Connection Status Dashboard -->
-                    <div id="connectionStatus" style="display:none; background: rgba(0, 164, 220, 0.1); border: 2px solid #00a4dc; border-radius: 8px; padding: 15px; margin-bottom: 20px;">
+                    <div id="connectionStatus" style="display:none; background: rgba(0, 164, 220, 0.1); border: 2px solid #00a4dc; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
                         <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
                             <div style="flex: 1; min-width: 200px;">
-                                <h3 style="margin: 0 0 8px 0; font-size: 1.1em;">🔗 Bridge Status</h3>
+                                <h3 style="margin: 0 0 8px 0; font-size: 1.1em;">Bridge Status</h3>
                                 <div id="connectionStatusText" style="font-size: 0.95em; opacity: 0.9;">
-                                    <div id="bridgeConnectionStatus">✅ Connected to <span id="statusBridgeIp"></span></div>
-                                    <div id="bridgeResources" style="margin-top: 5px;">📊 <span id="resourceCounts">Loading...</span></div>
+                                    <div id="bridgeConnectionStatus">Connected to <span id="statusBridgeIp"></span></div>
+                                    <div id="bridgeResources" style="margin-top: 5px;"><span id="resourceCounts">Loading...</span></div>
                                 </div>
                             </div>
                             <div>
                                 <button is="emby-button" type="button" class="raised" id="testConnectionButton" style="background-color: #00a4dc;">
-                                    <span>🔌 Test Connection</span>
+                                    <span>Test Connection</span>
                                 </button>
                             </div>
                         </div>
@@ -79,7 +79,7 @@
                                 <span>+ Add New Profile</span>
                             </button>
                             <button is="emby-button" type="button" class="raised" id="addProfileTemplateButton">
-                                <span>📋 From Template ▼</span>
+                                <span>From Template ▼</span>
                             </button>
                         </div>
                         
@@ -87,19 +87,19 @@
                         <div id="templateMenu" style="display:none; background: #2a2a2a; border-radius: 6px; padding: 10px; margin-top: 10px; border: 1px solid #444;">
                             <div style="font-weight: bold; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #444;">Select a Template:</div>
                             <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('blank')" style="width: 100%; margin-bottom: 8px; text-align: left;">
-                                <span>📝 Blank Profile</span>
+                                <span>Blank Profile</span>
                             </button>
                             <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('movie-theater')" style="width: 100%; margin-bottom: 8px; text-align: left;">
-                                <span>🎬 Movie Theater - Complete darkness with outro detection</span>
+                                <span>Movie Theater - Complete darkness with outro detection</span>
                             </button>
                             <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('tv-viewing')" style="width: 100%; margin-bottom: 8px; text-align: left;">
-                                <span>📺 TV Viewing - Moderate dimming, no outro</span>
+                                <span>TV Viewing - Moderate dimming, no outro</span>
                             </button>
                             <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('bedroom-casual')" style="width: 100%; margin-bottom: 8px; text-align: left;">
-                                <span>🛏️ Bedroom Casual - Gentle dimming for comfort</span>
+                                <span>Bedroom Casual - Gentle dimming for comfort</span>
                             </button>
                             <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('gaming')" style="width: 100%; text-align: left;">
-                                <span>🎮 Gaming Setup - Minimal dim, fast response</span>
+                                <span>Gaming Setup - Minimal dim, fast response</span>
                             </button>
                         </div>
 
@@ -113,16 +113,16 @@
                                 <!-- Tabs -->
                                 <div style="display: flex; background: #252525; border-bottom: 2px solid #00a4dc;">
                                     <button type="button" class="profile-tab active" data-tab="general" style="flex: 1; padding: 15px; border: none; background: transparent; color: white; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s;">
-                                        📝 General
+                                        General
                                     </button>
                                     <button type="button" class="profile-tab" data-tab="filters" style="flex: 1; padding: 15px; border: none; background: transparent; color: white; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s;">
-                                        🎯 Filters
+                                        Filters
                                     </button>
                                     <button type="button" class="profile-tab" data-tab="lights" style="flex: 1; padding: 15px; border: none; background: transparent; color: white; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s;">
-                                        💡 Lights
+                                        Lights
                                     </button>
                                     <button type="button" class="profile-tab" data-tab="advanced" style="flex: 1; padding: 15px; border: none; background: transparent; color: white; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s;">
-                                        ⚙️ Advanced
+                                        Advanced
                                     </button>
                                 </div>
                                 
@@ -241,7 +241,7 @@
                                                 <input type="range" id="profilePlayBrightnessSlider" min="0" max="254" value="20" style="flex: 1;" />
                                                 <input type="number" id="profilePlayBrightness" is="emby-input" min="0" max="254" value="20" style="width: 80px;" />
                                             </div>
-                                            <div id="profilePlayBrightnessDesc" class="fieldDescription">💡 Dim (20 / 254)</div>
+                                            <div id="profilePlayBrightnessDesc" class="fieldDescription">Dim (20 / 254)</div>
                                         </div>
 
                                         <div class="inputContainer">
@@ -250,7 +250,7 @@
                                                 <input type="range" id="profilePauseBrightnessSlider" min="0" max="254" value="100" style="flex: 1;" />
                                                 <input type="number" id="profilePauseBrightness" is="emby-input" min="0" max="254" value="100" style="width: 80px;" />
                                             </div>
-                                            <div id="profilePauseBrightnessDesc" class="fieldDescription">💡 Medium (100 / 254)</div>
+                                            <div id="profilePauseBrightnessDesc" class="fieldDescription">Medium (100 / 254)</div>
                                         </div>
 
                                         <div class="inputContainer">
@@ -259,17 +259,17 @@
                                                 <input type="range" id="profileStopBrightnessSlider" min="0" max="254" value="254" style="flex: 1;" />
                                                 <input type="number" id="profileStopBrightness" is="emby-input" min="0" max="254" value="254" style="width: 80px;" />
                                             </div>
-                                            <div id="profileStopBrightnessDesc" class="fieldDescription">💡 Very Bright (254 / 254)</div>
+                                            <div id="profileStopBrightnessDesc" class="fieldDescription">Very Bright (254 / 254)</div>
                                         </div>
                                         
                                         <!-- Transition Duration -->
-                                        <div class="inputContainer" style="margin-top: 30px;">
+                                        <div class="inputContainer" style="margin-top: 20px;">
                                             <label class="inputLabel inputLabelUnfocused" for="profileTransitionDuration">Transition Duration</label>
                                             <div style="display: flex; align-items: center; gap: 10px;">
                                                 <input type="range" id="profileTransitionDurationSlider" min="0" max="150" value="4" style="flex: 1;" />
                                                 <input type="number" id="profileTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
                                             </div>
-                                            <div id="profileTransitionDurationDesc" class="fieldDescription">⏱️ Instant (0.0s)</div>
+                                            <div id="profileTransitionDurationDesc" class="fieldDescription">Instant (0.0s)</div>
                                             <div class="fieldDescription" style="margin-top: 5px;">How long it takes for lights to transition between states. 0 = instant, higher values = smoother fades. (0-15 seconds)</div>
                                         </div>
                                     </div>
@@ -294,7 +294,7 @@
                                         <span>Cancel</span>
                                     </button>
                                     <button is="emby-button" type="button" class="raised button-submit" id="saveProfileButton">
-                                        <span>💾 Save Profile</span>
+                                        <span>Save Profile</span>
                                     </button>
                                 </div>
                             </div>
@@ -320,39 +320,39 @@
 
                 // Helper: Get brightness description
                 getBrightnessDescription: function(value) {
-                    if (value === 0) return '💡 OFF (responsive)';
-                    if (value < 50) return '💡 Very Dim';
-                    if (value < 100) return '💡 Dim';
-                    if (value < 150) return '💡 Medium';
-                    if (value < 200) return '💡 Bright';
-                    return '💡 Very Bright';
+                    if (value === 0) return 'OFF (responsive)';
+                    if (value < 50) return 'Very Dim';
+                    if (value < 100) return 'Dim';
+                    if (value < 150) return 'Medium';
+                    if (value < 200) return 'Bright';
+                    return 'Very Bright';
                 },
                 
                 // Helper: Get transition duration description
                 getTransitionDescription: function(value) {
                     var seconds = value / 10.0;
-                    if (value === 0) return '⏱️ Instant (0.0s)';
-                    if (value < 10) return '⏱️ Very Fast (' + seconds.toFixed(1) + 's)';
-                    if (value < 30) return '⏱️ Fast (' + seconds.toFixed(1) + 's)';
-                    if (value < 70) return '⏱️ Medium (' + seconds.toFixed(1) + 's)';
-                    if (value < 100) return '⏱️ Slow (' + seconds.toFixed(1) + 's)';
-                    return '⏱️ Very Slow (' + seconds.toFixed(1) + 's)';
+                    if (value === 0) return 'Instant (0.0s)';
+                    if (value < 10) return 'Very Fast (' + seconds.toFixed(1) + 's)';
+                    if (value < 30) return 'Fast (' + seconds.toFixed(1) + 's)';
+                    if (value < 70) return 'Medium (' + seconds.toFixed(1) + 's)';
+                    if (value < 100) return 'Slow (' + seconds.toFixed(1) + 's)';
+                    return 'Very Slow (' + seconds.toFixed(1) + 's)';
                 },
 
                 // Helper: Get media type icons
                 getMediaTypeIcons: function(profile) {
                     var icons = [];
-                    if (profile.EnableForMovies !== false) icons.push('🎬');
-                    if (profile.EnableForTvShows) icons.push('📺');
-                    return icons.length > 0 ? icons.join(' ') : '🎬';
+                    if (profile.EnableForMovies !== false) icons.push('Movies');
+                    if (profile.EnableForTvShows) icons.push('TV');
+                    return icons.length > 0 ? icons.join(', ') : 'Movies';
                 },
 
                 // Helper: Get profile status badges
                 getProfileStatusBadges: function(profile) {
                     var badges = [];
-                    if (profile.TurnOffLightsOnPlay) badges.push('💤 Turn OFF');
-                    if (profile.EnableOutroLights) badges.push('🎭 Outro');
-                    if (profile.PlaySceneId || profile.PauseSceneId || profile.StopSceneId) badges.push('🎨 Scenes');
+                    if (profile.TurnOffLightsOnPlay) badges.push('Turn OFF');
+                    if (profile.EnableOutroLights) badges.push('Outro');
+                    if (profile.PlaySceneId || profile.PauseSceneId || profile.StopSceneId) badges.push('Scenes');
                     return badges.length > 0 ? badges.join(' • ') : null;
                 },
 
@@ -365,7 +365,7 @@
                         return 'Activate Scene during playback';
                     }
                     var brightness = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20;
-                    return 'Dim to ' + brightness + ' (' + this.getBrightnessDescription(brightness).replace('💡 ', '') + ')';
+                    return 'Dim to ' + brightness + ' (' + this.getBrightnessDescription(brightness) + ')';
                 },
 
                 // Toggle profile menu
@@ -401,10 +401,10 @@
                         contentType: 'application/json'
                     }).then(function() {
                         Dashboard.hideLoadingMsg();
-                        Dashboard.alert('✅ Profile "' + profile.Name + '" tested successfully! Lights should have changed.');
+                        Dashboard.alert('Profile "' + profile.Name + '" tested successfully. Lights should have changed.');
                     }).catch(function(error) {
                         Dashboard.hideLoadingMsg();
-                        Dashboard.alert('❌ Test failed: ' + error);
+                        Dashboard.alert('Test failed: ' + error);
                     });
                 },
 
@@ -423,7 +423,7 @@
                     
                     HuePluginConfig.profiles.push(newProfile);
                     HuePluginConfig.renderProfiles();
-                    Dashboard.alert('✅ Profile duplicated! Don\'t forget to save your changes.');
+                    Dashboard.alert('Profile duplicated. Don\'t forget to save your changes.');
                 },
 
                 // Initialize drag and drop
@@ -765,7 +765,7 @@
                             return;
                         }
 
-                        var html = '<div style="display: flex; flex-direction: column; gap: 15px;">';
+                        var html = '<div style="display: flex; flex-direction: column; gap: 12px;">';
                         
                         HuePluginConfig.profiles.forEach(function(profile, index) {
                             var mediaIcons = HuePluginConfig.getMediaTypeIcons(profile);
@@ -774,7 +774,7 @@
                             var lightAction = HuePluginConfig.getProfileLightAction(profile);
                             
                             // Enhanced profile card
-                            html += '<div class="profile-card" draggable="true" data-index="' + index + '" style="background: linear-gradient(135deg, rgba(0,164,220,0.08) 0%, rgba(255,255,255,0.03) 100%); padding: 15px; border-radius: 8px; border: 1px solid rgba(0,164,220,0.2); border-left: 4px solid #00a4dc; transition: transform 0.2s, box-shadow 0.2s; cursor: move;" onmouseover="this.style.transform=\'translateY(-2px)\'; this.style.boxShadow=\'0 4px 12px rgba(0,164,220,0.3)\';" onmouseout="this.style.transform=\'translateY(0)\'; this.style.boxShadow=\'none\';">';
+                            html += '<div class="profile-card" draggable="true" data-index="' + index + '" style="background: rgba(0,164,220,0.06); padding: 12px; border-radius: 8px; border: 1px solid rgba(0,164,220,0.2); border-left: 4px solid #00a4dc; transition: transform 0.2s, box-shadow 0.2s; cursor: move;" onmouseover="this.style.transform=\'translateY(-2px)\'; this.style.boxShadow=\'0 4px 12px rgba(0,164,220,0.3)\';" onmouseout="this.style.transform=\'translateY(0)\'; this.style.boxShadow=\'none\';">';
                             
                             // Header row with icon, name, and menu
                             html += '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">';
@@ -785,13 +785,13 @@
                             html += '<div class="profile-menu" style="position: relative;">';
                             html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.toggleProfileMenu(' + index + ')" style="font-size: 1.2em; padding: 4px 12px;">⋮</button>';
                             html += '<div id="profileMenu' + index + '" style="display: none; position: absolute; right: 0; top: 100%; background: #2a2a2a; border: 1px solid #444; border-radius: 4px; margin-top: 5px; min-width: 150px; z-index: 1000; box-shadow: 0 4px 8px rgba(0,0,0,0.3);">';
-                            html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.testProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">⚡ Test Profile</button>';
-                            html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.duplicateProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">📋 Duplicate</button>';
+                            html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.testProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">Test Profile</button>';
+                            html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.duplicateProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">Duplicate</button>';
                             if (index > 0) {
-                                html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.moveProfile(' + index + ', -1)" style="width: 100%; text-align: left; border-radius: 0;">⬆️ Move Up</button>';
+                                html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.moveProfile(' + index + ', -1)" style="width: 100%; text-align: left; border-radius: 0;">Move Up</button>';
                             }
                             if (index < HuePluginConfig.profiles.length - 1) {
-                                html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.moveProfile(' + index + ', 1)" style="width: 100%; text-align: left; border-radius: 0;">⬇️ Move Down</button>';
+                                html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.moveProfile(' + index + ', 1)" style="width: 100%; text-align: left; border-radius: 0;">Move Down</button>';
                             }
                             html += '</div>';
                             html += '</div>';
@@ -801,7 +801,7 @@
                             html += '<div style="height: 1px; background: rgba(0,164,220,0.2); margin: 10px 0;"></div>';
                             
                             // Info row with badges
-                            html += '<div style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; font-size: 0.9em;">';
+                            html += '<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; font-size: 0.9em;">';
                             html += '<span style="background: rgba(0,164,220,0.15); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(0,164,220,0.3);">' + filterSummary + '</span>';
                             if (badges) {
                                 html += '<span style="background: rgba(255,193,7,0.15); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(255,193,7,0.3);">' + badges + '</span>';
@@ -810,7 +810,7 @@
                             
                             // Light action
                             html += '<div style="font-size: 0.95em; opacity: 0.9; margin-bottom: 10px;">';
-                            html += '<strong>💡 Action:</strong> ' + lightAction;
+                            html += '<strong>Action:</strong> ' + lightAction;
                             html += '</div>';
                             
                             // Divider
@@ -818,10 +818,10 @@
                             
                             // Quick actions row
                             html += '<div style="display: flex; gap: 8px; flex-wrap: wrap;">';
-                            html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.testProfile(' + index + ')" style="padding: 6px 12px; font-size: 0.9em;">⚡ Test</button>';
-                            html += '<button is="emby-button" type="button" class="raised button-submit" onclick="HuePluginConfig.editProfile(' + index + ')" style="padding: 6px 12px; font-size: 0.9em;">✏️ Edit</button>';
-                            html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.duplicateProfile(' + index + ')" style="padding: 6px 12px; font-size: 0.9em;">📋 Copy</button>';
-                            html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.deleteProfile(' + index + ')" style="background-color: #c33; padding: 6px 12px; font-size: 0.9em;">🗑️ Delete</button>';
+                            html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.testProfile(' + index + ')" style="padding: 6px 12px; font-size: 0.9em;">Test</button>';
+                            html += '<button is="emby-button" type="button" class="raised button-submit" onclick="HuePluginConfig.editProfile(' + index + ')" style="padding: 6px 12px; font-size: 0.9em;">Edit</button>';
+                            html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.duplicateProfile(' + index + ')" style="padding: 6px 12px; font-size: 0.9em;">Copy</button>';
+                            html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.deleteProfile(' + index + ')" style="background-color: #c33; padding: 6px 12px; font-size: 0.9em;">Delete</button>';
                             html += '</div>';
                             
                             html += '</div>';
