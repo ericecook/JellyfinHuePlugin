@@ -56,5 +56,6 @@ jobs:
       - name: Generate manifest and publish to gh-pages
         uses: Kevinjil/jellyfin-plugin-repo-action@v0.4.3
         with:
-          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          githubToken: ${{ github.token }}
           repository: ${{ github.repository }}
+          pagesFile: manifest.json
