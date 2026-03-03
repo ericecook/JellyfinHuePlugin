@@ -307,12 +307,14 @@ namespace JellyfinHuePlugin.Services
         }
 
         // Activate a scene
-        public async Task<bool> ActivateSceneAsync(string bridgeIp, string username, string groupId, string sceneId, CancellationToken cancellationToken = default)
+        public async Task<bool> ActivateSceneAsync(string bridgeIp, string username, string groupId, string sceneId, int? transitionTime = null, CancellationToken cancellationToken = default)
         {
             try
             {
                 bridgeIp = NormalizeBridgeIp(bridgeIp);
-                var requestBody = new { scene = sceneId };
+                object requestBody = transitionTime.HasValue
+                    ? new { scene = sceneId, transitiontime = transitionTime.Value }
+                    : new { scene = sceneId };
                 var response = await _httpClient.PutAsJsonAsync(
                     $"https://{bridgeIp}/api/{username}/groups/{groupId}/action",
                     requestBody,

@@ -244,6 +244,21 @@
                                             <div id="profilePlayBrightnessDesc" class="fieldDescription">Dim (20 / 254)</div>
                                         </div>
 
+                                        <!-- Play Transition -->
+                                        <div class="checkboxContainer" style="margin-top: 5px;">
+                                            <label>
+                                                <input type="checkbox" is="emby-checkbox" id="profileEnablePlayTransition" />
+                                                <span>Custom Play Transition</span>
+                                            </label>
+                                        </div>
+                                        <div id="playTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
+                                            <div style="display: flex; align-items: center; gap: 10px;">
+                                                <input type="range" id="profilePlayTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
+                                                <input type="number" id="profilePlayTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
+                                            </div>
+                                            <div id="profilePlayTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
+                                        </div>
+
                                         <div class="inputContainer">
                                             <label class="inputLabel" for="profilePauseBrightness">Pause Brightness</label>
                                             <div style="display: flex; align-items: center; gap: 15px;">
@@ -251,6 +266,21 @@
                                                 <input type="number" id="profilePauseBrightness" is="emby-input" min="0" max="254" value="100" style="width: 80px;" />
                                             </div>
                                             <div id="profilePauseBrightnessDesc" class="fieldDescription">Medium (100 / 254)</div>
+                                        </div>
+
+                                        <!-- Pause Transition -->
+                                        <div class="checkboxContainer" style="margin-top: 5px;">
+                                            <label>
+                                                <input type="checkbox" is="emby-checkbox" id="profileEnablePauseTransition" />
+                                                <span>Custom Pause Transition</span>
+                                            </label>
+                                        </div>
+                                        <div id="pauseTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
+                                            <div style="display: flex; align-items: center; gap: 10px;">
+                                                <input type="range" id="profilePauseTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
+                                                <input type="number" id="profilePauseTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
+                                            </div>
+                                            <div id="profilePauseTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
                                         </div>
 
                                         <div class="inputContainer">
@@ -261,16 +291,20 @@
                                             </div>
                                             <div id="profileStopBrightnessDesc" class="fieldDescription">Very Bright (254 / 254)</div>
                                         </div>
-                                        
-                                        <!-- Transition Duration -->
-                                        <div class="inputContainer" style="margin-top: 20px;">
-                                            <label class="inputLabel inputLabelUnfocused" for="profileTransitionDuration">Transition Duration</label>
+
+                                        <!-- Stop Transition -->
+                                        <div class="checkboxContainer" style="margin-top: 5px;">
+                                            <label>
+                                                <input type="checkbox" is="emby-checkbox" id="profileEnableStopTransition" />
+                                                <span>Custom Stop Transition</span>
+                                            </label>
+                                        </div>
+                                        <div id="stopTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
                                             <div style="display: flex; align-items: center; gap: 10px;">
-                                                <input type="range" id="profileTransitionDurationSlider" min="0" max="150" value="4" style="flex: 1;" />
-                                                <input type="number" id="profileTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
+                                                <input type="range" id="profileStopTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
+                                                <input type="number" id="profileStopTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
                                             </div>
-                                            <div id="profileTransitionDurationDesc" class="fieldDescription">Instant (0.0s)</div>
-                                            <div class="fieldDescription" style="margin-top: 5px;">How long it takes for lights to transition between states. 0 = instant, higher values = smoother fades. (0-15 seconds)</div>
+                                            <div id="profileStopTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
                                         </div>
                                     </div>
                                     
@@ -624,25 +658,40 @@
                     document.querySelector('#profilePlayBrightness').value = template.PlayBrightness || 20;
                     document.querySelector('#profilePauseBrightness').value = template.PauseBrightness || 100;
                     document.querySelector('#profileStopBrightness').value = template.StopBrightness || 254;
-                    document.querySelector('#profileTransitionDuration').value = template.TransitionDuration || 4;
                     document.querySelector('#profileEnableOutroLights').checked = template.EnableOutroLights || false;
-                    
+
+                    // Per-state transitions (defaults: disabled, 0.4s)
+                    document.querySelector('#profileEnablePlayTransition').checked = false;
+                    document.querySelector('#profilePlayTransitionDuration').value = 4;
+                    document.querySelector('#profilePlayTransitionSlider').value = 4;
+                    document.querySelector('#profilePlayTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(4);
+                    document.querySelector('#playTransitionContainer').style.display = 'none';
+
+                    document.querySelector('#profileEnablePauseTransition').checked = false;
+                    document.querySelector('#profilePauseTransitionDuration').value = 4;
+                    document.querySelector('#profilePauseTransitionSlider').value = 4;
+                    document.querySelector('#profilePauseTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(4);
+                    document.querySelector('#pauseTransitionContainer').style.display = 'none';
+
+                    document.querySelector('#profileEnableStopTransition').checked = false;
+                    document.querySelector('#profileStopTransitionDuration').value = 4;
+                    document.querySelector('#profileStopTransitionSlider').value = 4;
+                    document.querySelector('#profileStopTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(4);
+                    document.querySelector('#stopTransitionContainer').style.display = 'none';
+
                     // Sync sliders
                     var playBrightness = template.PlayBrightness || 20;
                     var pauseBrightness = template.PauseBrightness || 100;
                     var stopBrightness = template.StopBrightness || 254;
-                    var transitionDuration = template.TransitionDuration || 4;
-                    
+
                     document.querySelector('#profilePlayBrightnessSlider').value = playBrightness;
                     document.querySelector('#profilePauseBrightnessSlider').value = pauseBrightness;
                     document.querySelector('#profileStopBrightnessSlider').value = stopBrightness;
-                    document.querySelector('#profileTransitionDurationSlider').value = transitionDuration;
-                    
+
                     // Update descriptions
                     document.querySelector('#profilePlayBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(playBrightness) + ' (' + playBrightness + ' / 254)';
                     document.querySelector('#profilePauseBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(pauseBrightness) + ' (' + pauseBrightness + ' / 254)';
                     document.querySelector('#profileStopBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(stopBrightness) + ' (' + stopBrightness + ' / 254)';
-                    document.querySelector('#profileTransitionDurationDesc').textContent = HuePluginConfig.getTransitionDescription(transitionDuration);
                     
                     HuePluginConfig.profileDeviceIds = [];
                     HuePluginConfig.renderProfileDeviceIdList();
@@ -903,25 +952,43 @@
                     document.querySelector('#profilePlayBrightness').value = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20;
                     document.querySelector('#profilePauseBrightness').value = profile.PauseBrightness !== undefined ? profile.PauseBrightness : 100;
                     document.querySelector('#profileStopBrightness').value = profile.StopBrightness !== undefined ? profile.StopBrightness : 254;
-                    document.querySelector('#profileTransitionDuration').value = profile.TransitionDuration !== undefined ? profile.TransitionDuration : 4;
                     document.querySelector('#profileEnableOutroLights').checked = profile.EnableOutroLights || false;
-                    
+
+                    // Per-state transitions
+                    var playTransition = profile.PlayTransitionDuration !== undefined ? profile.PlayTransitionDuration : 4;
+                    document.querySelector('#profileEnablePlayTransition').checked = profile.EnablePlayTransition || false;
+                    document.querySelector('#profilePlayTransitionDuration').value = playTransition;
+                    document.querySelector('#profilePlayTransitionSlider').value = playTransition;
+                    document.querySelector('#profilePlayTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(playTransition);
+                    document.querySelector('#playTransitionContainer').style.display = profile.EnablePlayTransition ? '' : 'none';
+
+                    var pauseTransition = profile.PauseTransitionDuration !== undefined ? profile.PauseTransitionDuration : 4;
+                    document.querySelector('#profileEnablePauseTransition').checked = profile.EnablePauseTransition || false;
+                    document.querySelector('#profilePauseTransitionDuration').value = pauseTransition;
+                    document.querySelector('#profilePauseTransitionSlider').value = pauseTransition;
+                    document.querySelector('#profilePauseTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(pauseTransition);
+                    document.querySelector('#pauseTransitionContainer').style.display = profile.EnablePauseTransition ? '' : 'none';
+
+                    var stopTransition = profile.StopTransitionDuration !== undefined ? profile.StopTransitionDuration : 4;
+                    document.querySelector('#profileEnableStopTransition').checked = profile.EnableStopTransition || false;
+                    document.querySelector('#profileStopTransitionDuration').value = stopTransition;
+                    document.querySelector('#profileStopTransitionSlider').value = stopTransition;
+                    document.querySelector('#profileStopTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(stopTransition);
+                    document.querySelector('#stopTransitionContainer').style.display = profile.EnableStopTransition ? '' : 'none';
+
                     // Sync sliders with input values
                     var playBrightness = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20;
                     var pauseBrightness = profile.PauseBrightness !== undefined ? profile.PauseBrightness : 100;
                     var stopBrightness = profile.StopBrightness !== undefined ? profile.StopBrightness : 254;
-                    var transitionDuration = profile.TransitionDuration !== undefined ? profile.TransitionDuration : 4;
-                    
+
                     document.querySelector('#profilePlayBrightnessSlider').value = playBrightness;
                     document.querySelector('#profilePauseBrightnessSlider').value = pauseBrightness;
                     document.querySelector('#profileStopBrightnessSlider').value = stopBrightness;
-                    document.querySelector('#profileTransitionDurationSlider').value = transitionDuration;
-                    
+
                     // Update descriptions
                     document.querySelector('#profilePlayBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(playBrightness) + ' (' + playBrightness + ' / 254)';
                     document.querySelector('#profilePauseBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(pauseBrightness) + ' (' + pauseBrightness + ' / 254)';
                     document.querySelector('#profileStopBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(stopBrightness) + ' (' + stopBrightness + ' / 254)';
-                    document.querySelector('#profileTransitionDurationDesc').textContent = HuePluginConfig.getTransitionDescription(transitionDuration);
                     
                     HuePluginConfig.profileDeviceIds = profile.TargetDeviceIds || [];
                     HuePluginConfig.renderProfileDeviceIdList();
@@ -959,20 +1026,36 @@
                     document.querySelector('#profilePlayBrightness').value = 20;
                     document.querySelector('#profilePauseBrightness').value = 100;
                     document.querySelector('#profileStopBrightness').value = 254;
-                    document.querySelector('#profileTransitionDuration').value = 4;
-                    document.querySelector('#profileEnableOutroLights').checked = false; // Default: disabled
-                    
+                    document.querySelector('#profileEnableOutroLights').checked = false;
+
+                    // Per-state transitions (defaults: disabled, 0.4s)
+                    document.querySelector('#profileEnablePlayTransition').checked = false;
+                    document.querySelector('#profilePlayTransitionDuration').value = 4;
+                    document.querySelector('#profilePlayTransitionSlider').value = 4;
+                    document.querySelector('#profilePlayTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(4);
+                    document.querySelector('#playTransitionContainer').style.display = 'none';
+
+                    document.querySelector('#profileEnablePauseTransition').checked = false;
+                    document.querySelector('#profilePauseTransitionDuration').value = 4;
+                    document.querySelector('#profilePauseTransitionSlider').value = 4;
+                    document.querySelector('#profilePauseTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(4);
+                    document.querySelector('#pauseTransitionContainer').style.display = 'none';
+
+                    document.querySelector('#profileEnableStopTransition').checked = false;
+                    document.querySelector('#profileStopTransitionDuration').value = 4;
+                    document.querySelector('#profileStopTransitionSlider').value = 4;
+                    document.querySelector('#profileStopTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(4);
+                    document.querySelector('#stopTransitionContainer').style.display = 'none';
+
                     // Sync sliders with input values
                     document.querySelector('#profilePlayBrightnessSlider').value = 20;
                     document.querySelector('#profilePauseBrightnessSlider').value = 100;
                     document.querySelector('#profileStopBrightnessSlider').value = 254;
-                    document.querySelector('#profileTransitionDurationSlider').value = 4;
-                    
+
                     // Update descriptions
                     document.querySelector('#profilePlayBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(20) + ' (20 / 254)';
                     document.querySelector('#profilePauseBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(100) + ' (100 / 254)';
                     document.querySelector('#profileStopBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(254) + ' (254 / 254)';
-                    document.querySelector('#profileTransitionDurationDesc').textContent = HuePluginConfig.getTransitionDescription(4);
                     
                     HuePluginConfig.profileDeviceIds = [];
                     HuePluginConfig.renderProfileDeviceIdList();
@@ -1008,7 +1091,12 @@
                         PlayBrightness: parseInt(document.querySelector('#profilePlayBrightness').value),
                         PauseBrightness: parseInt(document.querySelector('#profilePauseBrightness').value),
                         StopBrightness: parseInt(document.querySelector('#profileStopBrightness').value),
-                        TransitionDuration: parseInt(document.querySelector('#profileTransitionDuration').value),
+                        EnablePlayTransition: document.querySelector('#profileEnablePlayTransition').checked,
+                        PlayTransitionDuration: parseInt(document.querySelector('#profilePlayTransitionDuration').value),
+                        EnablePauseTransition: document.querySelector('#profileEnablePauseTransition').checked,
+                        PauseTransitionDuration: parseInt(document.querySelector('#profilePauseTransitionDuration').value),
+                        EnableStopTransition: document.querySelector('#profileEnableStopTransition').checked,
+                        StopTransitionDuration: parseInt(document.querySelector('#profileStopTransitionDuration').value),
                         EnableOutroLights: document.querySelector('#profileEnableOutroLights').checked
                     };
                     
@@ -1387,8 +1475,21 @@
                 HuePluginConfig.setupBrightnessSlider('profilePauseBrightnessSlider', 'profilePauseBrightness', 'profilePauseBrightnessDesc');
                 HuePluginConfig.setupBrightnessSlider('profileStopBrightnessSlider', 'profileStopBrightness', 'profileStopBrightnessDesc');
                 
-                // Setup transition duration slider
-                HuePluginConfig.setupTransitionSlider('profileTransitionDurationSlider', 'profileTransitionDuration', 'profileTransitionDurationDesc');
+                // Setup per-state transition sliders
+                HuePluginConfig.setupTransitionSlider('profilePlayTransitionSlider', 'profilePlayTransitionDuration', 'profilePlayTransitionDesc');
+                HuePluginConfig.setupTransitionSlider('profilePauseTransitionSlider', 'profilePauseTransitionDuration', 'profilePauseTransitionDesc');
+                HuePluginConfig.setupTransitionSlider('profileStopTransitionSlider', 'profileStopTransitionDuration', 'profileStopTransitionDesc');
+
+                // Toggle visibility for per-state transition sliders
+                document.querySelector('#profileEnablePlayTransition').addEventListener('change', function() {
+                    document.querySelector('#playTransitionContainer').style.display = this.checked ? '' : 'none';
+                });
+                document.querySelector('#profileEnablePauseTransition').addEventListener('change', function() {
+                    document.querySelector('#pauseTransitionContainer').style.display = this.checked ? '' : 'none';
+                });
+                document.querySelector('#profileEnableStopTransition').addEventListener('change', function() {
+                    document.querySelector('#stopTransitionContainer').style.display = this.checked ? '' : 'none';
+                });
 
                 console.log('Event listeners initialized');
                 

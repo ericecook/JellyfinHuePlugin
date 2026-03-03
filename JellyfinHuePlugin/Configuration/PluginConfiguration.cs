@@ -31,8 +31,13 @@ namespace JellyfinHuePlugin.Configuration
         public int PauseBrightness { get; set; } = 100;
         public int StopBrightness { get; set; } = 254;
         
-        // Transition settings
-        public int TransitionDuration { get; set; } = 4; // In deciseconds (0.1s increments), default 0.4s
+        // Per-state transition settings (in deciseconds, 0.1s increments)
+        public bool EnablePlayTransition { get; set; } = false;
+        public int PlayTransitionDuration { get; set; } = 4;
+        public bool EnablePauseTransition { get; set; } = false;
+        public int PauseTransitionDuration { get; set; } = 4;
+        public bool EnableStopTransition { get; set; } = false;
+        public int StopTransitionDuration { get; set; } = 4;
         
         // Outro detection
         public bool EnableOutroLights { get; set; } = false;

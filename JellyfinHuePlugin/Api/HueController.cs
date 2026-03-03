@@ -183,7 +183,7 @@ namespace JellyfinHuePlugin.Api
                     config.Username,
                     request.GroupId ?? "0",
                     request.SceneId,
-                    cancellationToken);
+                    cancellationToken: cancellationToken);
             }
             else
             {

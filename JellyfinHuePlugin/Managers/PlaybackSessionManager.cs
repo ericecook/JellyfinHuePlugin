@@ -510,6 +510,8 @@ namespace JellyfinHuePlugin.Managers
 
         private async Task HandlePlayingStateAsync(PluginConfiguration config, LightControlProfile profile)
         {
+            int? transitionTime = profile.EnablePlayTransition ? profile.PlayTransitionDuration : null;
+
             if (!string.IsNullOrWhiteSpace(profile.PlaySceneId))
             {
                 _logger.LogInformation("[{ProfileName}] Activating play scene {SceneId}", profile.Name, profile.PlaySceneId);
@@ -517,7 +519,8 @@ namespace JellyfinHuePlugin.Managers
                     config.BridgeIpAddress,
                     config.Username,
                     profile.TargetGroupId,
-                    profile.PlaySceneId);
+                    profile.PlaySceneId,
+                    transitionTime);
             }
             else if (profile.TurnOffLightsOnPlay)
             {
@@ -526,7 +529,7 @@ namespace JellyfinHuePlugin.Managers
                     config.BridgeIpAddress,
                     config.Username,
                     profile.TargetGroupId,
-                    new HueLightState { On = false, TransitionTime = profile.TransitionDuration });
+                    new HueLightState { On = false, TransitionTime = transitionTime });
             }
             else
             {
@@ -535,12 +538,14 @@ namespace JellyfinHuePlugin.Managers
                     config.BridgeIpAddress,
                     config.Username,
                     profile.TargetGroupId,
-                    new HueLightState { On = true, Bri = profile.PlayBrightness, TransitionTime = profile.TransitionDuration });
+                    new HueLightState { On = true, Bri = profile.PlayBrightness, TransitionTime = transitionTime });
             }
         }
 
         private async Task HandlePausedStateAsync(PluginConfiguration config, LightControlProfile profile)
         {
+            int? transitionTime = profile.EnablePauseTransition ? profile.PauseTransitionDuration : null;
+
             if (!string.IsNullOrWhiteSpace(profile.PauseSceneId))
             {
                 _logger.LogInformation("[{ProfileName}] Activating pause scene {SceneId}", profile.Name, profile.PauseSceneId);
@@ -548,7 +553,8 @@ namespace JellyfinHuePlugin.Managers
                     config.BridgeIpAddress,
                     config.Username,
                     profile.TargetGroupId,
-                    profile.PauseSceneId);
+                    profile.PauseSceneId,
+                    transitionTime);
             }
             else
             {
@@ -557,12 +563,14 @@ namespace JellyfinHuePlugin.Managers
                     config.BridgeIpAddress,
                     config.Username,
                     profile.TargetGroupId,
-                    new HueLightState { On = true, Bri = profile.PauseBrightness, TransitionTime = profile.TransitionDuration });
+                    new HueLightState { On = true, Bri = profile.PauseBrightness, TransitionTime = transitionTime });
             }
         }
 
         private async Task HandleStoppedStateAsync(PluginConfiguration config, LightControlProfile profile)
         {
+            int? transitionTime = profile.EnableStopTransition ? profile.StopTransitionDuration : null;
+
             if (!string.IsNullOrWhiteSpace(profile.StopSceneId))
             {
                 _logger.LogInformation("[{ProfileName}] Activating stop scene {SceneId}", profile.Name, profile.StopSceneId);
@@ -570,7 +578,8 @@ namespace JellyfinHuePlugin.Managers
                     config.BridgeIpAddress,
                     config.Username,
                     profile.TargetGroupId,
-                    profile.StopSceneId);
+                    profile.StopSceneId,
+                    transitionTime);
             }
             else
             {
@@ -579,7 +588,7 @@ namespace JellyfinHuePlugin.Managers
                     config.BridgeIpAddress,
                     config.Username,
                     profile.TargetGroupId,
-                    new HueLightState { On = true, Bri = profile.StopBrightness, TransitionTime = profile.TransitionDuration });
+                    new HueLightState { On = true, Bri = profile.StopBrightness, TransitionTime = transitionTime });
             }
         }
 
