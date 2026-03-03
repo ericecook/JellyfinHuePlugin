@@ -1,1 +1,20 @@
-{}
+[
+  {
+    "category": "General",
+    "description": "Automatically control Philips Hue lights based on media playback. Supports multi-profile configuration, scene activation, brightness control, transition duration, media type filtering, and IntroSkipper outro detection.\n",
+    "guid": "2a5f5b3e-8c9d-4f1a-9b7e-6d3c4e5f6a7b",
+    "name": "Hue Lighting Control",
+    "overview": "Control Philips Hue lights based on Jellyfin playback events",
+    "owner": "ericecook",
+    "versions": [
+      {
+        "changelog": "",
+        "checksum": "ad0f04fbe93c78827b9a313c4e03730e",
+        "sourceUrl": "https://github.com/ericecook/JellyfinHuePlugin/releases/download/v0.9.5/JellyfinHuePlugin_1.0.0.0.zip",
+        "targetAbi": "10.9.0.0",
+        "timestamp": "2026-03-03T22:31:41Z",
+        "version": "1.0.0.0"
+      }
+    ]
+  }
+]
