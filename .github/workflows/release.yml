@@ -57,3 +57,4 @@ jobs:
         uses: Kevinjil/jellyfin-plugin-repo-action@v0.4.3
         with:
           githubToken: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
