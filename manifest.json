@@ -9,11 +9,11 @@
     "versions": [
       {
         "changelog": "",
-        "checksum": "ad0f04fbe93c78827b9a313c4e03730e",
-        "sourceUrl": "https://github.com/ericecook/JellyfinHuePlugin/releases/download/v0.9.5/JellyfinHuePlugin_1.0.0.0.zip",
+        "checksum": "16013da417c325a08d3053d83391574f",
+        "sourceUrl": "https://github.com/ericecook/JellyfinHuePlugin/releases/download/v1.0.0.1/JellyfinHuePlugin_1.0.0.1.zip",
         "targetAbi": "10.9.0.0",
-        "timestamp": "2026-03-03T22:31:41Z",
-        "version": "1.0.0.0"
+        "timestamp": "2026-03-03T22:38:53Z",
+        "version": "1.0.0.1"
       }
     ]
   }
