@@ -420,3 +420,6 @@ FodyWeavers.xsd
 
 # Project internal docs
 PRD.md
+
+# Claude Code local directory
+.claude/
