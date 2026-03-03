@@ -3,6 +3,119 @@
 <head>
     <meta charset="utf-8">
     <title>Hue Lighting Control</title>
+    <style>
+        /* Modal */
+        .hue-modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.8);
+            z-index: 1000;
+            overflow-y: auto;
+        }
+        .hue-modal {
+            max-width: 900px;
+            margin: 50px auto;
+            background: rgba(0,0,0,0.85);
+            padding: 0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .hue-modal-header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .hue-modal-header h2 { margin: 0; }
+        .hue-modal-body {
+            padding: 20px;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+        .hue-modal-footer {
+            padding: 20px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+
+        /* Tabs */
+        .hue-tab-bar {
+            display: flex;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        .hue-tab {
+            flex: 1;
+            padding: 15px;
+            border: none;
+            background: transparent;
+            color: inherit;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            transition: border-color 0.2s;
+        }
+        .hue-tab:hover {
+            border-bottom-color: rgba(255,255,255,0.3);
+        }
+        .hue-tab.active {
+            border-bottom-color: #00a4dc;
+        }
+
+        /* Profile cards */
+        .hue-card {
+            background: rgba(255,255,255,0.05);
+            padding: 12px;
+            border-radius: 4px;
+            border: 1px solid rgba(255,255,255,0.1);
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .hue-card:hover {
+            background: rgba(255,255,255,0.08);
+        }
+
+        /* Badges */
+        .hue-badge {
+            background: rgba(255,255,255,0.08);
+            padding: 4px 10px;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.15);
+            font-size: 0.9em;
+        }
+
+        /* Dividers */
+        .hue-divider {
+            height: 1px;
+            background: rgba(255,255,255,0.08);
+            margin: 10px 0;
+        }
+
+        /* Dropdown menus */
+        .hue-dropdown {
+            display: none;
+            position: absolute;
+            right: 0;
+            top: 100%;
+            background: rgba(0,0,0,0.9);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 4px;
+            margin-top: 5px;
+            min-width: 150px;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+
+        /* Template menu */
+        .hue-template-menu {
+            display: none;
+            background: rgba(0,0,0,0.4);
+            border-radius: 6px;
+            padding: 10px;
+            margin-top: 10px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+    </style>
 </head>
 <body>
     <div id="HuePluginConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
@@ -84,8 +197,8 @@
                         </div>
                         
                         <!-- Template Selection Menu (hidden by default) -->
-                        <div id="templateMenu" style="display:none; background: #2a2a2a; border-radius: 6px; padding: 10px; margin-top: 10px; border: 1px solid #444;">
-                            <div style="font-weight: bold; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid #444;">Select a Template:</div>
+                        <div id="templateMenu" class="hue-template-menu">
+                            <div style="font-weight: bold; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1);">Select a Template:</div>
                             <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('blank')" style="width: 100%; margin-bottom: 8px; text-align: left;">
                                 <span>Blank Profile</span>
                             </button>
@@ -104,29 +217,21 @@
                         </div>
 
                         <!-- Profile Editor Modal -->
-                        <div id="profileEditorModal" style="display:none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; overflow-y: auto;">
-                            <div style="max-width: 900px; margin: 50px auto; background: #1c1c1c; padding: 0; border-radius: 8px; overflow: hidden;">
-                                <div style="padding: 20px; border-bottom: 2px solid #2a2a2a;">
+                        <div id="profileEditorModal" class="hue-modal-overlay">
+                            <div class="hue-modal">
+                                <div class="hue-modal-header">
                                     <h2 id="profileEditorTitle" style="margin: 0;">Add Profile</h2>
                                 </div>
                                 
                                 <!-- Tabs -->
-                                <div style="display: flex; background: #252525; border-bottom: 2px solid #00a4dc;">
-                                    <button type="button" class="profile-tab active" data-tab="general" style="flex: 1; padding: 15px; border: none; background: transparent; color: white; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s;">
-                                        General
-                                    </button>
-                                    <button type="button" class="profile-tab" data-tab="filters" style="flex: 1; padding: 15px; border: none; background: transparent; color: white; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s;">
-                                        Filters
-                                    </button>
-                                    <button type="button" class="profile-tab" data-tab="lights" style="flex: 1; padding: 15px; border: none; background: transparent; color: white; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s;">
-                                        Lights
-                                    </button>
-                                    <button type="button" class="profile-tab" data-tab="advanced" style="flex: 1; padding: 15px; border: none; background: transparent; color: white; cursor: pointer; border-bottom: 3px solid transparent; transition: all 0.2s;">
-                                        Advanced
-                                    </button>
+                                <div class="hue-tab-bar">
+                                    <button type="button" class="hue-tab profile-tab active" data-tab="general">General</button>
+                                    <button type="button" class="hue-tab profile-tab" data-tab="filters">Filters</button>
+                                    <button type="button" class="hue-tab profile-tab" data-tab="lights">Lights</button>
+                                    <button type="button" class="hue-tab profile-tab" data-tab="advanced">Advanced</button>
                                 </div>
                                 
-                                <div style="padding: 20px; max-height: 60vh; overflow-y: auto;">
+                                <div class="hue-modal-body">
                                     <!-- General Tab -->
                                     <div id="tab-general" class="profile-tab-content">
                                         <div class="inputContainer">
@@ -323,7 +428,7 @@
                                 </div>
                                 
                                 <!-- Modal Footer -->
-                                <div style="padding: 20px; border-top: 2px solid #2a2a2a; display: flex; gap: 10px; justify-content: flex-end; background: #1a1a1a;">
+                                <div class="hue-modal-footer">
                                     <button is="emby-button" type="button" class="raised" id="cancelProfileButton">
                                         <span>Cancel</span>
                                     </button>
@@ -400,6 +505,12 @@
                     }
                     var brightness = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20;
                     return 'Dim to ' + brightness + ' (' + this.getBrightnessDescription(brightness) + ')';
+                },
+
+                // Click on card to edit (ignore clicks on menu buttons)
+                onCardClick: function(event, index) {
+                    if (event.target.closest('.profile-menu')) return;
+                    HuePluginConfig.editProfile(index);
                 },
 
                 // Toggle profile menu
@@ -488,10 +599,10 @@
                             
                             var targetIndex = parseInt(this.getAttribute('data-index'));
                             if (draggedIndex < targetIndex) {
-                                this.style.borderBottom = '3px solid #00a4dc';
+                                this.style.borderBottom = '3px solid rgba(255,255,255,0.4)';
                                 this.style.borderTop = '';
                             } else {
-                                this.style.borderTop = '3px solid #00a4dc';
+                                this.style.borderTop = '3px solid rgba(255,255,255,0.4)';
                                 this.style.borderBottom = '';
                             }
                             return false;
@@ -529,28 +640,22 @@
 
                 // Switch tabs in profile editor
                 switchTab: function(tabName) {
-                    // Hide all tab contents
                     document.querySelectorAll('.profile-tab-content').forEach(function(content) {
                         content.style.display = 'none';
                     });
-                    
-                    // Remove active class from all tabs
+
                     document.querySelectorAll('.profile-tab').forEach(function(tab) {
-                        tab.style.borderBottom = '3px solid transparent';
-                        tab.style.background = 'transparent';
+                        tab.classList.remove('active');
                     });
-                    
-                    // Show selected tab content
+
                     var tabContent = document.querySelector('#tab-' + tabName);
                     if (tabContent) {
                         tabContent.style.display = 'block';
                     }
-                    
-                    // Highlight selected tab
+
                     var selectedTab = document.querySelector('.profile-tab[data-tab="' + tabName + '"]');
                     if (selectedTab) {
-                        selectedTab.style.borderBottom = '3px solid #00a4dc';
-                        selectedTab.style.background = 'rgba(0, 164, 220, 0.1)';
+                        selectedTab.classList.add('active');
                     }
                 },
 
@@ -805,36 +910,32 @@
                             console.error('profilesList container not found!');
                             return;
                         }
-                        
-                        console.log('Rendering profiles, count:', HuePluginConfig.profiles ? HuePluginConfig.profiles.length : 0);
-                        
+
                         if (!HuePluginConfig.profiles || HuePluginConfig.profiles.length === 0) {
                             container.innerHTML = '<div class="fieldDescription">No profiles configured. Add your first profile to get started!</div>';
-                            console.log('No profiles to display');
                             return;
                         }
 
-                        var html = '<div style="display: flex; flex-direction: column; gap: 12px;">';
-                        
+                        var html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+
                         HuePluginConfig.profiles.forEach(function(profile, index) {
                             var mediaIcons = HuePluginConfig.getMediaTypeIcons(profile);
                             var badges = HuePluginConfig.getProfileStatusBadges(profile);
                             var filterSummary = HuePluginConfig.getProfileFilterSummary(profile);
                             var lightAction = HuePluginConfig.getProfileLightAction(profile);
-                            
-                            // Enhanced profile card
-                            html += '<div class="profile-card" draggable="true" data-index="' + index + '" style="background: rgba(0,164,220,0.06); padding: 12px; border-radius: 8px; border: 1px solid rgba(0,164,220,0.2); border-left: 4px solid #00a4dc; transition: transform 0.2s, box-shadow 0.2s; cursor: move;" onmouseover="this.style.transform=\'translateY(-2px)\'; this.style.boxShadow=\'0 4px 12px rgba(0,164,220,0.3)\';" onmouseout="this.style.transform=\'translateY(0)\'; this.style.boxShadow=\'none\';">';
-                            
-                            // Header row with icon, name, and menu
-                            html += '<div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">';
+
+                            html += '<div class="hue-card profile-card" draggable="true" data-index="' + index + '" onclick="HuePluginConfig.onCardClick(event, ' + index + ')">';
+
+                            // Header row
+                            html += '<div style="display: flex; align-items: center; justify-content: space-between;">';
                             html += '<div style="display: flex; align-items: center; gap: 10px; flex: 1;">';
-                            html += '<span style="font-size: 1.3em;">' + mediaIcons + '</span>';
-                            html += '<h3 style="margin: 0; flex: 1; color: #00a4dc;">' + (profile.Name || 'Unnamed Profile') + '</h3>';
+                            html += '<h3 style="margin: 0; flex: 1;">' + (profile.Name || 'Unnamed Profile') + '</h3>';
                             html += '</div>';
                             html += '<div class="profile-menu" style="position: relative;">';
-                            html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.toggleProfileMenu(' + index + ')" style="font-size: 1.2em; padding: 4px 12px;">⋮</button>';
-                            html += '<div id="profileMenu' + index + '" style="display: none; position: absolute; right: 0; top: 100%; background: #2a2a2a; border: 1px solid #444; border-radius: 4px; margin-top: 5px; min-width: 150px; z-index: 1000; box-shadow: 0 4px 8px rgba(0,0,0,0.3);">';
-                            html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.testProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">Test Profile</button>';
+                            html += '<button is="emby-button" type="button" class="raised" onclick="event.stopPropagation(); HuePluginConfig.toggleProfileMenu(' + index + ')" style="padding: 4px 12px;">&#x22EE;</button>';
+                            html += '<div id="profileMenu' + index + '" class="hue-dropdown">';
+                            html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.editProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">Edit</button>';
+                            html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.testProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">Test</button>';
                             html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.duplicateProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">Duplicate</button>';
                             if (index > 0) {
                                 html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.moveProfile(' + index + ', -1)" style="width: 100%; text-align: left; border-radius: 0;">Move Up</button>';
@@ -842,47 +943,28 @@
                             if (index < HuePluginConfig.profiles.length - 1) {
                                 html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.moveProfile(' + index + ', 1)" style="width: 100%; text-align: left; border-radius: 0;">Move Down</button>';
                             }
+                            html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.deleteProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">Delete</button>';
                             html += '</div>';
                             html += '</div>';
                             html += '</div>';
-                            
-                            // Divider
-                            html += '<div style="height: 1px; background: rgba(0,164,220,0.2); margin: 10px 0;"></div>';
-                            
-                            // Info row with badges
-                            html += '<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px; font-size: 0.9em;">';
-                            html += '<span style="background: rgba(0,164,220,0.15); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(0,164,220,0.3);">' + filterSummary + '</span>';
+
+                            // Info row
+                            html += '<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">';
+                            html += '<span class="hue-badge">' + mediaIcons + '</span>';
+                            html += '<span class="hue-badge">' + filterSummary + '</span>';
                             if (badges) {
-                                html += '<span style="background: rgba(255,193,7,0.15); padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(255,193,7,0.3);">' + badges + '</span>';
+                                html += '<span class="hue-badge">' + badges + '</span>';
                             }
+                            html += '<span class="hue-badge">' + lightAction + '</span>';
                             html += '</div>';
-                            
-                            // Light action
-                            html += '<div style="font-size: 0.95em; opacity: 0.9; margin-bottom: 10px;">';
-                            html += '<strong>Action:</strong> ' + lightAction;
-                            html += '</div>';
-                            
-                            // Divider
-                            html += '<div style="height: 1px; background: rgba(0,164,220,0.2); margin: 10px 0;"></div>';
-                            
-                            // Quick actions row
-                            html += '<div style="display: flex; gap: 8px; flex-wrap: wrap;">';
-                            html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.testProfile(' + index + ')" style="padding: 6px 12px; font-size: 0.9em;">Test</button>';
-                            html += '<button is="emby-button" type="button" class="raised button-submit" onclick="HuePluginConfig.editProfile(' + index + ')" style="padding: 6px 12px; font-size: 0.9em;">Edit</button>';
-                            html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.duplicateProfile(' + index + ')" style="padding: 6px 12px; font-size: 0.9em;">Copy</button>';
-                            html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.deleteProfile(' + index + ')" style="background-color: #c33; padding: 6px 12px; font-size: 0.9em;">Delete</button>';
-                            html += '</div>';
-                            
+
                             html += '</div>';
                         });
-                        
+
                         html += '</div>';
                         container.innerHTML = html;
-                        
-                        // Add drag and drop event listeners
+
                         HuePluginConfig.initializeDragAndDrop();
-                        
-                        console.log('Profiles rendered successfully');
                     } catch (error) {
                         console.error('Error rendering profiles:', error);
                         Dashboard.alert('Error rendering profiles: ' + error.message);
