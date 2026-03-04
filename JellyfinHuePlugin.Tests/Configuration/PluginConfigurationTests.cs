@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Xml.Serialization;
 using FluentAssertions;
 using JellyfinHuePlugin.Configuration;
 using Xunit;
@@ -212,6 +214,108 @@ namespace JellyfinHuePlugin.Tests.Configuration
 
             // Assert
             profile.EnableOutroLights.Should().BeFalse("outro detection should be opt-in");
+        }
+
+        [Fact]
+        public void XmlDeserialization_OldConfigFormat_ShouldPreserveAllSettings()
+        {
+            // Simulate a config XML from before the TransitionDuration refactor
+            var oldXml = @"<?xml version=""1.0"" encoding=""utf-8""?>
+<PluginConfiguration xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xmlns:xsd=""http://www.w3.org/2001/XMLSchema"">
+  <BridgeIpAddress>192.168.1.50</BridgeIpAddress>
+  <BridgeId>001788FFFE123456</BridgeId>
+  <Username>abc123</Username>
+  <EnablePlugin>true</EnablePlugin>
+  <UseLightGroups>true</UseLightGroups>
+  <Profiles>
+    <LightControlProfile>
+      <Id>test-id-1</Id>
+      <Name>Living Room</Name>
+      <EnableForMovies>true</EnableForMovies>
+      <EnableForTvShows>true</EnableForTvShows>
+      <TargetClientName>Roku</TargetClientName>
+      <TargetDeviceIds>
+        <string>device-123</string>
+      </TargetDeviceIds>
+      <TargetIpAddress>192.168.1.100</TargetIpAddress>
+      <TargetGroupId>1</TargetGroupId>
+      <PlayBrightness>10</PlayBrightness>
+      <PauseBrightness>80</PauseBrightness>
+      <StopBrightness>200</StopBrightness>
+      <TransitionDuration>8</TransitionDuration>
+      <EnableOutroLights>true</EnableOutroLights>
+    </LightControlProfile>
+  </Profiles>
+</PluginConfiguration>";
+
+            var serializer = new XmlSerializer(typeof(PluginConfiguration));
+            using var reader = new StringReader(oldXml);
+            var config = (PluginConfiguration)serializer.Deserialize(reader)!;
+
+            // Top-level settings preserved
+            config.BridgeIpAddress.Should().Be("192.168.1.50");
+            config.Username.Should().Be("abc123");
+            config.EnablePlugin.Should().BeTrue();
+            config.Profiles.Should().HaveCount(1);
+
+            // Profile settings preserved
+            var p = config.Profiles[0];
+            p.Id.Should().Be("test-id-1");
+            p.Name.Should().Be("Living Room");
+            p.EnableForMovies.Should().BeTrue();
+            p.EnableForTvShows.Should().BeTrue();
+            p.TargetClientName.Should().Be("Roku");
+            p.TargetDeviceIds.Should().ContainSingle("device-123");
+            p.TargetIpAddress.Should().Be("192.168.1.100");
+            p.TargetGroupId.Should().Be("1");
+            p.PlayBrightness.Should().Be(10);
+            p.PauseBrightness.Should().Be(80);
+            p.StopBrightness.Should().Be(200);
+            p.EnableOutroLights.Should().BeTrue();
+
+            // Legacy TransitionDuration migrated to per-state settings
+            p.PlayTransitionDuration.Should().Be(8);
+            p.PauseTransitionDuration.Should().Be(8);
+            p.StopTransitionDuration.Should().Be(8);
+            p.EnablePlayTransition.Should().BeTrue();
+            p.EnablePauseTransition.Should().BeTrue();
+            p.EnableStopTransition.Should().BeTrue();
+        }
+
+        [Fact]
+        public void XmlDeserialization_NewConfigFormat_ShouldWork()
+        {
+            // Config XML with the new per-state transition properties
+            var newXml = @"<?xml version=""1.0"" encoding=""utf-8""?>
+<PluginConfiguration xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xmlns:xsd=""http://www.w3.org/2001/XMLSchema"">
+  <BridgeIpAddress>10.0.0.5</BridgeIpAddress>
+  <Username>newuser</Username>
+  <EnablePlugin>true</EnablePlugin>
+  <Profiles>
+    <LightControlProfile>
+      <Id>new-id</Id>
+      <Name>Bedroom</Name>
+      <EnableForMovies>true</EnableForMovies>
+      <EnablePlayTransition>true</EnablePlayTransition>
+      <PlayTransitionDuration>10</PlayTransitionDuration>
+      <EnablePauseTransition>false</EnablePauseTransition>
+      <PauseTransitionDuration>4</PauseTransitionDuration>
+    </LightControlProfile>
+  </Profiles>
+</PluginConfiguration>";
+
+            var serializer = new XmlSerializer(typeof(PluginConfiguration));
+            using var reader = new StringReader(newXml);
+            var config = (PluginConfiguration)serializer.Deserialize(reader)!;
+
+            config.BridgeIpAddress.Should().Be("10.0.0.5");
+            config.Profiles.Should().HaveCount(1);
+
+            var p = config.Profiles[0];
+            p.EnablePlayTransition.Should().BeTrue();
+            p.PlayTransitionDuration.Should().Be(10);
+            p.EnablePauseTransition.Should().BeFalse();
+            p.PauseTransitionDuration.Should().Be(4);
         }
     }
 }

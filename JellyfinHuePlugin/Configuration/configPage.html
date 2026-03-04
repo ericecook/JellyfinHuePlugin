@@ -234,6 +234,18 @@
                 currentEditingProfile: null,
                 profileDeviceIds: [],
 
+                // Normalize camelCase keys from Jellyfin API to PascalCase
+                toPascalCase: function(obj) {
+                    if (Array.isArray(obj)) return obj.map(function(item) { return HuePluginConfig.toPascalCase(item); });
+                    if (obj === null || typeof obj !== 'object') return obj;
+                    var result = {};
+                    Object.keys(obj).forEach(function(key) {
+                        var pascalKey = key.charAt(0).toUpperCase() + key.slice(1);
+                        result[pascalKey] = HuePluginConfig.toPascalCase(obj[key]);
+                    });
+                    return result;
+                },
+
                 // Helper: Get brightness description
                 getBrightnessDescription: function(value) {
                     if (value === 0) return 'OFF (responsive)';
@@ -624,10 +636,11 @@
                 loadConfiguration: function () {
                     Dashboard.showLoadingMsg();
 
-                    ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function (config) {
+                    ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function (rawConfig) {
+                        var config = HuePluginConfig.toPascalCase(rawConfig);
                         console.log('Loading configuration:', config);
                         console.log('Profiles in config:', config.Profiles);
-                        
+
                         try {
                             document.querySelector('#bridgeIpAddress').value = config.BridgeIpAddress || '';
                             document.querySelector('#username').value = config.Username ? 'Authenticated' : 'Not authenticated';
@@ -1183,11 +1196,12 @@
                 saveConfiguration: function () {
                     Dashboard.showLoadingMsg();
 
-                    ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function (config) {
+                    ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function (rawConfig) {
+                        var config = HuePluginConfig.toPascalCase(rawConfig);
                         try {
                             console.log('Saving configuration...');
                             console.log('Current profiles:', HuePluginConfig.profiles);
-                            
+
                             config.BridgeIpAddress = document.querySelector('#bridgeIpAddress').value;
                             config.Profiles = HuePluginConfig.profiles;
 
