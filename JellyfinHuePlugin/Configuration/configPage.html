@@ -87,6 +87,18 @@
                 font-size: 0.9em;
             }
 
+            /* State section cards (Play/Pause/Stop) */
+            .hue-state-section {
+                background: rgba(255,255,255,0.04);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 6px;
+                padding: 16px;
+                margin-bottom: 16px;
+            }
+            .hue-state-section h3 {
+                margin-top: 0;
+            }
+
             /* Dividers */
             .hue-divider {
                 height: 1px;
@@ -324,112 +336,117 @@
                                         </select>
                                     </div>
 
-                                    <h3>Scenes (Optional)</h3>
-                                    <div class="fieldDescription" style="margin-bottom: 15px;">
-                                        Scenes override brightness settings. Leave empty to use brightness control instead.
-                                    </div>
+                                    <!-- Play Section -->
+                                    <div class="hue-state-section">
+                                        <h3>Play</h3>
 
-                                    <div class="inputContainer">
-                                        <label class="inputLabel" for="profilePlaySceneId">Play Scene</label>
-                                        <select id="profilePlaySceneId" is="emby-select">
-                                            <option value="">None (Use Brightness)</option>
-                                        </select>
-                                    </div>
-
-                                    <div class="inputContainer">
-                                        <label class="inputLabel" for="profilePauseSceneId">Pause Scene</label>
-                                        <select id="profilePauseSceneId" is="emby-select">
-                                            <option value="">None (Use Brightness)</option>
-                                        </select>
-                                    </div>
-
-                                    <div class="inputContainer">
-                                        <label class="inputLabel" for="profileStopSceneId">Stop Scene</label>
-                                        <select id="profileStopSceneId" is="emby-select">
-                                            <option value="">None (Use Brightness)</option>
-                                        </select>
-                                    </div>
-
-                                    <h3>Brightness Settings</h3>
-
-                                    <div class="checkboxContainer checkboxContainer-withDescription">
-                                        <label>
-                                            <input type="checkbox" is="emby-checkbox" id="profileTurnOffLightsOnPlay" />
-                                            <span>Turn Off Lights When Playing</span>
-                                        </label>
-                                        <div class="fieldDescription">Completely turn off lights during playback (overrides Play Brightness)</div>
-                                    </div>
-
-                                    <div class="inputContainer">
-                                        <label class="inputLabel" for="profilePlayBrightness">Play Brightness</label>
-                                        <div style="display: flex; align-items: center; gap: 15px;">
-                                            <input type="range" id="profilePlayBrightnessSlider" min="0" max="254" value="20" style="flex: 1;" />
-                                            <input type="number" id="profilePlayBrightness" is="emby-input" min="0" max="254" value="20" style="width: 80px;" />
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="profilePlaySceneId">Scene</label>
+                                            <select id="profilePlaySceneId" is="emby-select">
+                                                <option value="">None (Use Brightness)</option>
+                                            </select>
                                         </div>
-                                        <div id="profilePlayBrightnessDesc" class="fieldDescription">Dim (20 / 254)</div>
+
+                                        <div class="checkboxContainer checkboxContainer-withDescription" id="playTurnOffContainer">
+                                            <label>
+                                                <input type="checkbox" is="emby-checkbox" id="profileTurnOffLightsOnPlay" />
+                                                <span>Turn Off Lights</span>
+                                            </label>
+                                            <div class="fieldDescription">Completely turn off lights during playback</div>
+                                        </div>
+
+                                        <div id="playBrightnessContainer" class="inputContainer">
+                                            <label class="inputLabel" for="profilePlayBrightness">Brightness</label>
+                                            <div style="display: flex; align-items: center; gap: 15px;">
+                                                <input type="range" id="profilePlayBrightnessSlider" min="0" max="254" value="20" style="flex: 1;" />
+                                                <input type="number" id="profilePlayBrightness" is="emby-input" min="0" max="254" value="20" style="width: 80px;" />
+                                            </div>
+                                            <div id="profilePlayBrightnessDesc" class="fieldDescription">Dim (20 / 254)</div>
+                                        </div>
+
+                                        <div class="checkboxContainer" style="margin-top: 5px;">
+                                            <label>
+                                                <input type="checkbox" is="emby-checkbox" id="profileEnablePlayTransition" />
+                                                <span>Custom Transition Duration</span>
+                                            </label>
+                                        </div>
+                                        <div id="playTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
+                                            <div style="display: flex; align-items: center; gap: 10px;">
+                                                <input type="range" id="profilePlayTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
+                                                <input type="number" id="profilePlayTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
+                                            </div>
+                                            <div id="profilePlayTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
+                                        </div>
                                     </div>
 
-                                    <!-- Play Transition -->
-                                    <div class="checkboxContainer" style="margin-top: 5px;">
-                                        <label>
-                                            <input type="checkbox" is="emby-checkbox" id="profileEnablePlayTransition" />
-                                            <span>Custom Play Transition</span>
-                                        </label>
-                                    </div>
-                                    <div id="playTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
-                                        <div style="display: flex; align-items: center; gap: 10px;">
-                                            <input type="range" id="profilePlayTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
-                                            <input type="number" id="profilePlayTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
+                                    <!-- Pause Section -->
+                                    <div class="hue-state-section">
+                                        <h3>Pause</h3>
+
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="profilePauseSceneId">Scene</label>
+                                            <select id="profilePauseSceneId" is="emby-select">
+                                                <option value="">None (Use Brightness)</option>
+                                            </select>
                                         </div>
-                                        <div id="profilePlayTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
+
+                                        <div id="pauseBrightnessContainer" class="inputContainer">
+                                            <label class="inputLabel" for="profilePauseBrightness">Brightness</label>
+                                            <div style="display: flex; align-items: center; gap: 15px;">
+                                                <input type="range" id="profilePauseBrightnessSlider" min="0" max="254" value="100" style="flex: 1;" />
+                                                <input type="number" id="profilePauseBrightness" is="emby-input" min="0" max="254" value="100" style="width: 80px;" />
+                                            </div>
+                                            <div id="profilePauseBrightnessDesc" class="fieldDescription">Medium (100 / 254)</div>
+                                        </div>
+
+                                        <div class="checkboxContainer" style="margin-top: 5px;">
+                                            <label>
+                                                <input type="checkbox" is="emby-checkbox" id="profileEnablePauseTransition" />
+                                                <span>Custom Transition Duration</span>
+                                            </label>
+                                        </div>
+                                        <div id="pauseTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
+                                            <div style="display: flex; align-items: center; gap: 10px;">
+                                                <input type="range" id="profilePauseTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
+                                                <input type="number" id="profilePauseTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
+                                            </div>
+                                            <div id="profilePauseTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
+                                        </div>
                                     </div>
 
-                                    <div class="inputContainer">
-                                        <label class="inputLabel" for="profilePauseBrightness">Pause Brightness</label>
-                                        <div style="display: flex; align-items: center; gap: 15px;">
-                                            <input type="range" id="profilePauseBrightnessSlider" min="0" max="254" value="100" style="flex: 1;" />
-                                            <input type="number" id="profilePauseBrightness" is="emby-input" min="0" max="254" value="100" style="width: 80px;" />
-                                        </div>
-                                        <div id="profilePauseBrightnessDesc" class="fieldDescription">Medium (100 / 254)</div>
-                                    </div>
+                                    <!-- Stop Section -->
+                                    <div class="hue-state-section">
+                                        <h3>Stop</h3>
 
-                                    <!-- Pause Transition -->
-                                    <div class="checkboxContainer" style="margin-top: 5px;">
-                                        <label>
-                                            <input type="checkbox" is="emby-checkbox" id="profileEnablePauseTransition" />
-                                            <span>Custom Pause Transition</span>
-                                        </label>
-                                    </div>
-                                    <div id="pauseTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
-                                        <div style="display: flex; align-items: center; gap: 10px;">
-                                            <input type="range" id="profilePauseTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
-                                            <input type="number" id="profilePauseTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
+                                        <div class="inputContainer">
+                                            <label class="inputLabel" for="profileStopSceneId">Scene</label>
+                                            <select id="profileStopSceneId" is="emby-select">
+                                                <option value="">None (Use Brightness)</option>
+                                            </select>
                                         </div>
-                                        <div id="profilePauseTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
-                                    </div>
 
-                                    <div class="inputContainer">
-                                        <label class="inputLabel" for="profileStopBrightness">Stop Brightness</label>
-                                        <div style="display: flex; align-items: center; gap: 15px;">
-                                            <input type="range" id="profileStopBrightnessSlider" min="0" max="254" value="254" style="flex: 1;" />
-                                            <input type="number" id="profileStopBrightness" is="emby-input" min="0" max="254" value="254" style="width: 80px;" />
+                                        <div id="stopBrightnessContainer" class="inputContainer">
+                                            <label class="inputLabel" for="profileStopBrightness">Brightness</label>
+                                            <div style="display: flex; align-items: center; gap: 15px;">
+                                                <input type="range" id="profileStopBrightnessSlider" min="0" max="254" value="254" style="flex: 1;" />
+                                                <input type="number" id="profileStopBrightness" is="emby-input" min="0" max="254" value="254" style="width: 80px;" />
+                                            </div>
+                                            <div id="profileStopBrightnessDesc" class="fieldDescription">Very Bright (254 / 254)</div>
                                         </div>
-                                        <div id="profileStopBrightnessDesc" class="fieldDescription">Very Bright (254 / 254)</div>
-                                    </div>
 
-                                    <!-- Stop Transition -->
-                                    <div class="checkboxContainer" style="margin-top: 5px;">
-                                        <label>
-                                            <input type="checkbox" is="emby-checkbox" id="profileEnableStopTransition" />
-                                            <span>Custom Stop Transition</span>
-                                        </label>
-                                    </div>
-                                    <div id="stopTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
-                                        <div style="display: flex; align-items: center; gap: 10px;">
-                                            <input type="range" id="profileStopTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
-                                            <input type="number" id="profileStopTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
+                                        <div class="checkboxContainer" style="margin-top: 5px;">
+                                            <label>
+                                                <input type="checkbox" is="emby-checkbox" id="profileEnableStopTransition" />
+                                                <span>Custom Transition Duration</span>
+                                            </label>
                                         </div>
-                                        <div id="profileStopTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
+                                        <div id="stopTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
+                                            <div style="display: flex; align-items: center; gap: 10px;">
+                                                <input type="range" id="profileStopTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
+                                                <input type="number" id="profileStopTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
+                                            </div>
+                                            <div id="profileStopTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -496,33 +513,41 @@
                     return 'Very Slow (' + seconds.toFixed(1) + 's)';
                 },
 
-                // Helper: Get media type icons
-                getMediaTypeIcons: function(profile) {
-                    var icons = [];
-                    if (profile.EnableForMovies !== false) icons.push('Movies');
-                    if (profile.EnableForTvShows) icons.push('TV');
-                    return icons.length > 0 ? icons.join(', ') : 'Movies';
-                },
+                // Helper: Get single-line profile summary
+                getProfileSummaryItems: function(profile) {
+                    var items = [];
 
-                // Helper: Get profile status badges
-                getProfileStatusBadges: function(profile) {
-                    var badges = [];
-                    if (profile.TurnOffLightsOnPlay) badges.push('Turn OFF');
-                    if (profile.EnableOutroLights) badges.push('Outro');
-                    if (profile.PlaySceneId || profile.PauseSceneId || profile.StopSceneId) badges.push('Scenes');
-                    return badges.length > 0 ? badges.join(' • ') : null;
-                },
+                    // Media types
+                    var media = [];
+                    if (profile.EnableForMovies !== false) media.push('Movies');
+                    if (profile.EnableForTvShows) media.push('TV Shows');
+                    items.push('Triggers on: ' + (media.length > 0 ? media.join(' and ') : 'Movies'));
 
-                // Helper: Get profile light action description
-                getProfileLightAction: function(profile) {
+                    // Client filter
+                    if (profile.TargetClientName) {
+                        items.push('Client: ' + profile.TargetClientName);
+                    }
+                    if (profile.TargetIpAddress) {
+                        items.push('IP filter: ' + profile.TargetIpAddress);
+                    }
+                    if (profile.TargetDeviceIds && profile.TargetDeviceIds.length > 0) {
+                        items.push('Device filter: ' + profile.TargetDeviceIds.length + ' device(s)');
+                    }
+
+                    // Light action on play
                     if (profile.TurnOffLightsOnPlay) {
-                        return 'Turn OFF lights during playback';
+                        items.push('Lights off during playback');
+                    } else if (profile.PlaySceneId) {
+                        items.push('Activates scene on play');
+                    } else {
+                        var bri = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20;
+                        items.push('Dims to ' + bri + ' on play');
                     }
-                    if (profile.PlaySceneId) {
-                        return 'Activate Scene during playback';
-                    }
-                    var brightness = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20;
-                    return 'Dim to ' + brightness + ' (' + this.getBrightnessDescription(brightness) + ')';
+
+                    // Special flags
+                    if (profile.EnableOutroLights) items.push('Outro detection enabled');
+
+                    return items;
                 },
 
                 // Click on card to edit (ignore clicks on menu buttons)
@@ -938,10 +963,7 @@
                         var html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
 
                         HuePluginConfig.profiles.forEach(function(profile, index) {
-                            var mediaIcons = HuePluginConfig.getMediaTypeIcons(profile);
-                            var badges = HuePluginConfig.getProfileStatusBadges(profile);
-                            var filterSummary = HuePluginConfig.getProfileFilterSummary(profile);
-                            var lightAction = HuePluginConfig.getProfileLightAction(profile);
+                            var summaryItems = HuePluginConfig.getProfileSummaryItems(profile);
 
                             html += '<div class="hue-card profile-card" draggable="true" data-index="' + index + '" onclick="HuePluginConfig.onCardClick(event, ' + index + ')">';
 
@@ -967,15 +989,12 @@
                             html += '</div>';
                             html += '</div>';
 
-                            // Info row
-                            html += '<div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px;">';
-                            html += '<span class="hue-badge">' + mediaIcons + '</span>';
-                            html += '<span class="hue-badge">' + filterSummary + '</span>';
-                            if (badges) {
-                                html += '<span class="hue-badge">' + badges + '</span>';
-                            }
-                            html += '<span class="hue-badge">' + lightAction + '</span>';
-                            html += '</div>';
+                            // Summary list
+                            html += '<ul style="margin: 6px 0 0 0; padding-left: 20px; font-size: 0.88em; opacity: 0.6;">';
+                            summaryItems.forEach(function(item) {
+                                html += '<li>' + item + '</li>';
+                            });
+                            html += '</ul>';
 
                             html += '</div>';
                         });
@@ -988,44 +1007,6 @@
                         console.error('Error rendering profiles:', error);
                         Dashboard.alert('Error rendering profiles: ' + error.message);
                     }
-                },
-
-                getProfileFilterSummary: function(profile) {
-                    if (!profile) return 'Invalid Profile';
-                    var filters = [];
-                    
-                    // Media type filter
-                    var mediaTypes = [];
-                    if (profile.EnableForMovies !== false) mediaTypes.push('Movies');
-                    if (profile.EnableForTvShows) mediaTypes.push('TV');
-                    if (mediaTypes.length > 0) {
-                        filters.push('Media: ' + mediaTypes.join(' + '));
-                    }
-                    
-                    // Client filters
-                    if (profile.TargetClientName) filters.push('Client: ' + profile.TargetClientName);
-                    if (profile.TargetDeviceIds && profile.TargetDeviceIds.length > 0) {
-                        filters.push('Devices: ' + profile.TargetDeviceIds.length);
-                    }
-                    if (profile.TargetIpAddress) filters.push('IP: ' + profile.TargetIpAddress);
-                    
-                    return filters.length > 0 ? filters.join(', ') : 'All Clients';
-                },
-
-                getProfileLightSummary: function(profile) {
-                    if (!profile) return 'Invalid Profile';
-                    var parts = [];
-                    parts.push('Group ' + (profile.TargetGroupId || '0'));
-                    
-                    if (profile.PlaySceneId || profile.PauseSceneId || profile.StopSceneId) {
-                        parts.push('Using Scenes');
-                    } else if (profile.TurnOffLightsOnPlay) {
-                        parts.push('Turn OFF on play');
-                    } else {
-                        parts.push('Dim to ' + (profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20));
-                    }
-                    
-                    return parts.join(', ');
                 },
 
                 moveProfile: function(index, direction) {
@@ -1147,6 +1128,12 @@
                     document.querySelector('#profileStopTransitionSlider').value = 4;
                     document.querySelector('#profileStopTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(4);
                     document.querySelector('#stopTransitionContainer').style.display = 'none';
+
+                    // Reset brightness visibility (no scenes, turn-off unchecked)
+                    document.querySelector('#playBrightnessContainer').style.display = '';
+                    document.querySelector('#playTurnOffContainer').style.display = '';
+                    document.querySelector('#pauseBrightnessContainer').style.display = '';
+                    document.querySelector('#stopBrightnessContainer').style.display = '';
 
                     // Sync sliders with input values
                     document.querySelector('#profilePlayBrightnessSlider').value = 20;
@@ -1312,6 +1299,13 @@
                         if (savedStopId) {
                             stopSelect.value = savedStopId;
                         }
+
+                        // Update brightness visibility based on scene selections
+                        var turnOff = document.querySelector('#profileTurnOffLightsOnPlay').checked;
+                        document.querySelector('#playBrightnessContainer').style.display = (savedPlayId || turnOff) ? 'none' : '';
+                        document.querySelector('#playTurnOffContainer').style.display = savedPlayId ? 'none' : '';
+                        document.querySelector('#pauseBrightnessContainer').style.display = savedPauseId ? 'none' : '';
+                        document.querySelector('#stopBrightnessContainer').style.display = savedStopId ? 'none' : '';
                     }).catch(function(err) {
                         console.error('Error loading scenes for profile:', err);
                     });
@@ -1592,6 +1586,23 @@
                 });
                 document.querySelector('#profileEnableStopTransition').addEventListener('change', function() {
                     document.querySelector('#stopTransitionContainer').style.display = this.checked ? '' : 'none';
+                });
+
+                // Hide brightness when a scene is selected
+                function updatePlayBrightnessVisibility() {
+                    var sceneSelected = document.querySelector('#profilePlaySceneId').value !== '';
+                    var turnOff = document.querySelector('#profileTurnOffLightsOnPlay').checked;
+                    document.querySelector('#playBrightnessContainer').style.display = (sceneSelected || turnOff) ? 'none' : '';
+                    document.querySelector('#playTurnOffContainer').style.display = sceneSelected ? 'none' : '';
+                }
+                document.querySelector('#profilePlaySceneId').addEventListener('change', updatePlayBrightnessVisibility);
+                document.querySelector('#profileTurnOffLightsOnPlay').addEventListener('change', updatePlayBrightnessVisibility);
+
+                document.querySelector('#profilePauseSceneId').addEventListener('change', function() {
+                    document.querySelector('#pauseBrightnessContainer').style.display = this.value !== '' ? 'none' : '';
+                });
+                document.querySelector('#profileStopSceneId').addEventListener('change', function() {
+                    document.querySelector('#stopBrightnessContainer').style.display = this.value !== '' ? 'none' : '';
                 });
 
                 console.log('Event listeners initialized');
