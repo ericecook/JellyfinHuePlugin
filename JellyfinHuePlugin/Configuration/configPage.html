@@ -20,7 +20,7 @@
             .hue-modal {
                 max-width: 900px;
                 margin: 50px auto;
-                background: rgba(0,0,0,0.85);
+                background: #1c1c1e;
                 padding: 0;
                 border-radius: 8px;
                 overflow: hidden;
@@ -67,15 +67,15 @@
 
             /* Profile cards */
             .hue-card {
-                background: rgba(255,255,255,0.12);
+                background: rgba(255,255,255,0.06);
                 padding: 12px;
                 border-radius: 4px;
-                border: 1px solid rgba(255,255,255,0.15);
+                border: 1px solid rgba(255,255,255,0.1);
                 cursor: pointer;
                 transition: background 0.15s;
             }
             .hue-card:hover {
-                background: rgba(255,255,255,0.16);
+                background: rgba(255,255,255,0.10);
             }
 
             /* Badges */
@@ -100,13 +100,25 @@
                 position: absolute;
                 right: 0;
                 top: 100%;
-                background: rgba(0,0,0,0.9);
-                border: 1px solid rgba(255,255,255,0.15);
+                background: #2a2a2a;
+                border: 1px solid rgba(255,255,255,0.1);
                 border-radius: 4px;
                 margin-top: 5px;
                 min-width: 150px;
                 z-index: 1000;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+                overflow: hidden;
+                padding: 4px 0;
+            }
+            .hue-dropdown-item {
+                padding: 8px 16px;
+                cursor: pointer;
+                color: rgba(255,255,255,0.8);
+                font-size: 0.92em;
+            }
+            .hue-dropdown-item:hover {
+                background: rgba(255,255,255,0.1);
+                color: #fff;
             }
 
             /* Template menu */
@@ -935,16 +947,16 @@
                             html += '<div class="profile-menu" style="position: relative;">';
                             html += '<button is="emby-button" type="button" class="raised" onclick="event.stopPropagation(); HuePluginConfig.toggleProfileMenu(' + index + ')" style="padding: 4px 12px;">&#x22EE;</button>';
                             html += '<div id="profileMenu' + index + '" class="hue-dropdown" style="display:none;">';
-                            html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.editProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">Edit</button>';
-                            html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.testProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">Test</button>';
-                            html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.duplicateProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">Duplicate</button>';
+                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.editProfile(' + index + ')">Edit</div>';
+                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.testProfile(' + index + ')">Test</div>';
+                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.duplicateProfile(' + index + ')">Duplicate</div>';
                             if (index > 0) {
-                                html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.moveProfile(' + index + ', -1)" style="width: 100%; text-align: left; border-radius: 0;">Move Up</button>';
+                                html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.moveProfile(' + index + ', -1)">Move Up</div>';
                             }
                             if (index < HuePluginConfig.profiles.length - 1) {
-                                html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.moveProfile(' + index + ', 1)" style="width: 100%; text-align: left; border-radius: 0;">Move Down</button>';
+                                html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.moveProfile(' + index + ', 1)">Move Down</div>';
                             }
-                            html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.deleteProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">Delete</button>';
+                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.deleteProfile(' + index + ')">Delete</div>';
                             html += '</div>';
                             html += '</div>';
                             html += '</div>';
