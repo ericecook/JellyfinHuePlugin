@@ -8,6 +8,14 @@
     "owner": "ericecook",
     "versions": [
       {
+        "changelog": "**Full Changelog**: https://github.com/ericecook/JellyfinHuePlugin/compare/v1.1.0.0...v1.1.2.0",
+        "checksum": "09cdbdf5a85f900861a9e2f10c843b9d",
+        "sourceUrl": "https://github.com/ericecook/JellyfinHuePlugin/releases/download/v1.1.2.0/JellyfinHuePlugin_1.1.2.0.zip",
+        "targetAbi": "10.9.0.0",
+        "timestamp": "2026-03-04T00:09:55Z",
+        "version": "1.1.2.0"
+      },
+      {
         "changelog": "**Full Changelog**: https://github.com/ericecook/JellyfinHuePlugin/compare/v1.0.2.0...v1.1.0.0",
         "checksum": "a4a109b1e989ed19de755ecf5e81ff67",
         "sourceUrl": "https://github.com/ericecook/JellyfinHuePlugin/releases/download/v1.1.0.0/JellyfinHuePlugin_1.1.0.0.zip",
