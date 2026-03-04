@@ -120,6 +120,12 @@
                 background: rgba(255,255,255,0.1);
                 color: #fff;
             }
+            .hue-dropdown-item .material-icons {
+                font-size: 18px;
+                vertical-align: middle;
+                margin-right: 8px;
+                opacity: 0.7;
+            }
 
             /* Template menu */
             .hue-template-menu {
@@ -947,16 +953,16 @@
                             html += '<div class="profile-menu" style="position: relative;">';
                             html += '<button is="emby-button" type="button" class="raised" onclick="event.stopPropagation(); HuePluginConfig.toggleProfileMenu(' + index + ')" style="padding: 4px 12px;">&#x22EE;</button>';
                             html += '<div id="profileMenu' + index + '" class="hue-dropdown" style="display:none;">';
-                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.editProfile(' + index + ')">Edit</div>';
-                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.testProfile(' + index + ')">Test</div>';
-                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.duplicateProfile(' + index + ')">Duplicate</div>';
+                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.editProfile(' + index + ')"><span class="material-icons">edit</span>Edit</div>';
+                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.testProfile(' + index + ')"><span class="material-icons">lightbulb</span>Test</div>';
+                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.duplicateProfile(' + index + ')"><span class="material-icons">content_copy</span>Duplicate</div>';
                             if (index > 0) {
-                                html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.moveProfile(' + index + ', -1)">Move Up</div>';
+                                html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.moveProfile(' + index + ', -1)"><span class="material-icons">arrow_upward</span>Move Up</div>';
                             }
                             if (index < HuePluginConfig.profiles.length - 1) {
-                                html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.moveProfile(' + index + ', 1)">Move Down</div>';
+                                html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.moveProfile(' + index + ', 1)"><span class="material-icons">arrow_downward</span>Move Down</div>';
                             }
-                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.deleteProfile(' + index + ')">Delete</div>';
+                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.deleteProfile(' + index + ')"><span class="material-icons">delete</span>Delete</div>';
                             html += '</div>';
                             html += '</div>';
                             html += '</div>';
