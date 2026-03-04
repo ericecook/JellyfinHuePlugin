@@ -19,14 +19,14 @@ jobs:
         with:
           dotnet-version: "8.0.x"
 
-      - name: Build plugin
-        run: dotnet publish JellyfinHuePlugin/JellyfinHuePlugin.csproj -c Release -o ./output
-
       - name: Get version from build.yaml
         id: version
         run: |
           VERSION=$(grep '^version:' build.yaml | sed 's/version: *"\(.*\)"/\1/')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build plugin
+        run: dotnet publish JellyfinHuePlugin/JellyfinHuePlugin.csproj -c Release -o ./output -p:AssemblyVersion=${{ steps.version.outputs.version }} -p:FileVersion=${{ steps.version.outputs.version }}
 
       - name: Package plugin
         run: |
