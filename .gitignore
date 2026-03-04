@@ -421,8 +421,9 @@ FodyWeavers.xsd
 # Project internal docs
 PRD.md
 
-# Test build output
+# Build output
 test-output/
+dev-output/
 
 # Claude Code local directory
 .claude/
