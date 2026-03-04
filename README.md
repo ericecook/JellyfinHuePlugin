@@ -12,14 +12,15 @@ A Jellyfin plugin that automatically controls Philips Hue lights based on media 
 - **Brightness Control** — dim lights on play, brighten on pause, restore on stop (0-254)
 - **Turn Off Lights** — optionally turn lights off completely during playback
 - **Smooth Transitions** — configurable transition duration (0-15 seconds)
-- **Outro Detection** — raise lights when credits start (requires IntroSkipper plugin)
+- **Outro Detection** — raise lights when credits start (uses Jellyfin Media Segments API)
 - **Profile Templates** — 5 presets: Movie Theater, TV Viewing, Bedroom Casual, Gaming, Blank
 
 ## Requirements
 
-- Jellyfin 10.9.0+
-- .NET 8.0
+- Jellyfin 10.11+
+- .NET 9.0
 - Philips Hue Bridge (v2)
+- For outro detection: a media segment provider such as [IntroSkipper](https://github.com/intro-skipper/intro-skipper)
 
 ## Installation
 

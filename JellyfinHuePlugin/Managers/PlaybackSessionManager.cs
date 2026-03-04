@@ -6,8 +6,9 @@ using System.Threading.Tasks;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Configuration;
+using MediaBrowser.Controller.MediaSegments;
 using MediaBrowser.Model.Session;
-using Microsoft.Data.Sqlite;
+using Jellyfin.Database.Implementations.Enums;
 using Microsoft.Extensions.Logging;
 using JellyfinHuePlugin.Configuration;
 using JellyfinHuePlugin.Services;
@@ -20,7 +21,9 @@ namespace JellyfinHuePlugin.Managers
         private readonly ILogger<PlaybackSessionManager> _logger;
         private readonly HueService _hueService;
         private readonly Func<PluginConfiguration> _getConfig;
-        
+        private readonly IMediaSegmentManager _segmentManager;
+        private readonly ILibraryManager _libraryManager;
+
         private readonly Dictionary<string, SessionState> _sessions = new Dictionary<string, SessionState>();
 
         private class SessionState
@@ -29,26 +32,21 @@ namespace JellyfinHuePlugin.Managers
             public LightControlProfile? Profile { get; set; }
             public bool OutroLightsTriggered { get; set; }
         }
-        
-        // Cache for segment data to avoid repeated database queries
-        private readonly Dictionary<Guid, List<MediaSegmentCache>> _segmentCache = new Dictionary<Guid, List<MediaSegmentCache>>();
-
-        // Cache for IntroSkipper reflection to avoid scanning assemblies on every progress tick
-        private bool _introSkipperResolved;
-        private System.Reflection.MethodInfo? _introSkipperDbPathGetter;
-        private System.Reflection.PropertyInfo? _introSkipperInstanceProp;
-        private Type? _introSkipperPluginType;
 
         public PlaybackSessionManager(
             ISessionManager sessionManager,
             ILogger<PlaybackSessionManager> logger,
             HueService hueService,
-            Func<PluginConfiguration> getConfig)
+            Func<PluginConfiguration> getConfig,
+            IMediaSegmentManager segmentManager,
+            ILibraryManager libraryManager)
         {
             _sessionManager = sessionManager;
             _logger = logger;
             _hueService = hueService;
             _getConfig = getConfig;
+            _segmentManager = segmentManager;
+            _libraryManager = libraryManager;
 
             // Subscribe to session events
             _sessionManager.PlaybackStart += OnPlaybackStart;
@@ -112,12 +110,6 @@ namespace JellyfinHuePlugin.Managers
 
                 _sessions.Remove(e.Session.Id);
 
-                // Clear segment cache for this item to free memory
-                if (e.Item != null)
-                {
-                    _segmentCache.Remove(e.Item.Id);
-                }
-
                 await HandlePlaybackStateAsync(PlaybackState.Stopped, config, profile);
             }
             catch (Exception ex)
@@ -150,7 +142,7 @@ namespace JellyfinHuePlugin.Managers
                 // Check for outro segment if enabled and not already triggered
                 if (profile.EnableOutroLights && !session.OutroLightsTriggered)
                 {
-                    if (IsInOutroSegment(e))
+                    if (await IsInOutroSegmentAsync(e))
                     {
                         _logger.LogInformation("[{ProfileName}] Outro segment detected - triggering stop lights on {ClientName}",
                             profile.Name, e.ClientName);
@@ -180,7 +172,7 @@ namespace JellyfinHuePlugin.Managers
             }
         }
 
-        private bool IsInOutroSegment(PlaybackProgressEventArgs e)
+        private async Task<bool> IsInOutroSegmentAsync(PlaybackProgressEventArgs e)
         {
             var item = e.Item;
             if (item == null)
@@ -192,150 +184,11 @@ namespace JellyfinHuePlugin.Managers
 
             try
             {
-                var dbPath = GetIntroSkipperDbPath();
-                if (dbPath == null)
-                {
-                    return false;
-                }
+                var libraryOptions = _libraryManager.GetLibraryOptions(item);
+                var segments = await _segmentManager.GetSegmentsAsync(item,
+                    new[] { MediaSegmentType.Outro }, libraryOptions, filterByProvider: false);
 
-                return QueryDatabaseForSegments(dbPath, item.Id, positionTicks);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Outro detection: Error accessing IntroSkipper data");
-            }
-
-            return false;
-        }
-
-        private string? GetIntroSkipperDbPath()
-        {
-            if (!_introSkipperResolved)
-            {
-                _introSkipperResolved = true;
-                try
-                {
-                    var assembly = AppDomain.CurrentDomain.GetAssemblies()
-                        .FirstOrDefault(a => a.FullName?.Contains("IntroSkipper", StringComparison.OrdinalIgnoreCase) == true);
-
-                    if (assembly == null)
-                    {
-                        _logger.LogDebug("Outro detection: IntroSkipper plugin not found");
-                        return null;
-                    }
-
-                    _introSkipperPluginType = assembly.GetTypes().FirstOrDefault(t => t.Name == "Plugin");
-                    if (_introSkipperPluginType == null) return null;
-
-                    _introSkipperInstanceProp = _introSkipperPluginType.GetProperty("Instance",
-                        System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-
-                    _introSkipperDbPathGetter = _introSkipperPluginType
-                        .GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
-                        .FirstOrDefault(m => m.Name == "get_DbPath");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Outro detection: Error resolving IntroSkipper reflection");
-                }
-            }
-
-            if (_introSkipperInstanceProp == null || _introSkipperDbPathGetter == null)
-            {
-                return null;
-            }
-
-            var instance = _introSkipperInstanceProp.GetValue(null);
-            return instance != null ? _introSkipperDbPathGetter.Invoke(instance, null)?.ToString() : null;
-        }
-        
-        // Simple cache class for segment data
-        private class MediaSegmentCache
-        {
-            public string Type { get; set; } = string.Empty;
-            public long StartTicks { get; set; }
-            public long EndTicks { get; set; }
-        }
-        
-        private bool QueryDatabaseForSegments(string dbPath, Guid itemId, long positionTicks)
-        {
-            try
-            {
-                // Check cache first
-                if (_segmentCache.TryGetValue(itemId, out var cachedSegments))
-                {
-                    return CheckCachedSegments(cachedSegments, positionTicks);
-                }
-                
-                // Not in cache, query database
-                if (!System.IO.File.Exists(dbPath))
-                {
-                    _logger.LogWarning("Outro detection: IntroSkipper database not found at {DbPath}", dbPath);
-                    return false;
-                }
-                
-                var connectionString = $"Data Source={dbPath};Mode=ReadOnly";
-                var segments = new List<MediaSegmentCache>();
-                
-                using (var connection = new Microsoft.Data.Sqlite.SqliteConnection(connectionString))
-                {
-                    connection.Open();
-                    
-                    var command = connection.CreateCommand();
-                    command.CommandText = @"
-                        SELECT ItemId, Type, Start, End 
-                        FROM DbSegment 
-                        WHERE ItemId = $itemId";
-                    
-                    // IntroSkipper stores ItemIds in UPPERCASE format
-                    var itemIdString = itemId.ToString().ToUpperInvariant();
-                    command.Parameters.AddWithValue("$itemId", itemIdString);
-                    
-                    using (var reader = command.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            var type = reader.GetString(1);
-                            var start = reader.GetDouble(2);
-                            var end = reader.GetDouble(3);
-                            
-                            // Convert seconds to ticks and store in cache
-                            segments.Add(new MediaSegmentCache
-                            {
-                                Type = type,
-                                StartTicks = (long)(start * 10000000),
-                                EndTicks = (long)(end * 10000000)
-                            });
-                        }
-                    }
-                }
-                
-                // Store in cache
-                _segmentCache[itemId] = segments;
-                
-                _logger.LogDebug("Outro detection: Cached {Count} segments for item", segments.Count);
-                
-                // Check the newly cached segments
-                return CheckCachedSegments(segments, positionTicks);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Outro detection: Error querying IntroSkipper database");
-            }
-            
-            return false;
-        }
-        
-        private bool CheckCachedSegments(List<MediaSegmentCache> segments, long positionTicks)
-        {
-            foreach (var segment in segments)
-            {
-                // IntroSkipper uses numeric types: 0 = Intro, 1 = Credits (Outro)
-                var isOutro = segment.Type == "1" || 
-                             segment.Type.Equals("Outro", StringComparison.OrdinalIgnoreCase) ||
-                             segment.Type.Equals("Credits", StringComparison.OrdinalIgnoreCase);
-                
-                if (isOutro)
+                foreach (var segment in segments)
                 {
                     if (positionTicks >= segment.StartTicks && positionTicks <= segment.EndTicks)
                     {
@@ -345,7 +198,11 @@ namespace JellyfinHuePlugin.Managers
                     }
                 }
             }
-            
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Outro detection: Error querying media segments");
+            }
+
             return false;
         }
         

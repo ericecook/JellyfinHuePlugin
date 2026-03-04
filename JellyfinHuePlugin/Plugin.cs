@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
+using MediaBrowser.Controller.Library;
+using MediaBrowser.Controller.MediaSegments;
 using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
@@ -17,6 +19,8 @@ namespace JellyfinHuePlugin
         private readonly ISessionManager _sessionManager;
         private readonly ILogger<Plugin> _logger;
         private readonly HueService _hueService;
+        private readonly IMediaSegmentManager _segmentManager;
+        private readonly ILibraryManager _libraryManager;
         private PlaybackSessionManager? _playbackManager;
         private bool _disposed = false;
 
@@ -24,15 +28,19 @@ namespace JellyfinHuePlugin
             IApplicationPaths applicationPaths,
             IXmlSerializer xmlSerializer,
             ISessionManager sessionManager,
+            IMediaSegmentManager segmentManager,
+            ILibraryManager libraryManager,
             ILoggerFactory loggerFactory)
             : base(applicationPaths, xmlSerializer)
         {
             _sessionManager = sessionManager;
+            _segmentManager = segmentManager;
+            _libraryManager = libraryManager;
             _logger = loggerFactory.CreateLogger<Plugin>();
             _hueService = new HueService(loggerFactory.CreateLogger<HueService>());
-            
+
             Instance = this;
-            
+
             // Initialize playback manager
             InitializePlaybackManager(loggerFactory);
         }
@@ -45,7 +53,9 @@ namespace JellyfinHuePlugin
                     _sessionManager,
                     loggerFactory.CreateLogger<PlaybackSessionManager>(),
                     _hueService,
-                    () => Configuration);
+                    () => Configuration,
+                    _segmentManager,
+                    _libraryManager);
                     
                 _logger.LogInformation("Jellyfin Hue Plugin initialized successfully");
             }

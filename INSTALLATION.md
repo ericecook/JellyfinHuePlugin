@@ -57,7 +57,7 @@ Delete the old plugin folder completely:
 
 ### Step 4: Copy Plugin Files
 
-Copy **everything** from `bin/Release/net8.0/` to the plugin directory above.
+Copy **everything** from `bin/Release/net9.0/` to the plugin directory above.
 
 **Important:** Copy the entire folder contents, not just the `.dll` file. The folder should contain:
 - `JellyfinHuePlugin.dll`
@@ -67,19 +67,19 @@ Copy **everything** from `bin/Release/net8.0/` to the plugin directory above.
 
 **Windows:**
 ```powershell
-Copy-Item -Path "bin\Release\net8.0\*" -Destination "C:\ProgramData\Jellyfin\Server\plugins\JellyfinHuePlugin\" -Recurse
+Copy-Item -Path "bin\Release\net9.0\*" -Destination "C:\ProgramData\Jellyfin\Server\plugins\JellyfinHuePlugin\" -Recurse
 ```
 
 **Linux:**
 ```bash
-sudo cp -r bin/Release/net8.0 /var/lib/jellyfin/plugins/JellyfinHuePlugin
+sudo cp -r bin/Release/net9.0 /var/lib/jellyfin/plugins/JellyfinHuePlugin
 sudo chown -R jellyfin:jellyfin /var/lib/jellyfin/plugins/JellyfinHuePlugin
 sudo chmod -R 755 /var/lib/jellyfin/plugins/JellyfinHuePlugin
 ```
 
 **Docker:**
 ```bash
-docker cp bin/Release/net8.0 jellyfin:/config/plugins/JellyfinHuePlugin
+docker cp bin/Release/net9.0 jellyfin:/config/plugins/JellyfinHuePlugin
 ```
 
 ### Step 5: Start Jellyfin
