@@ -36,6 +36,7 @@ git tag "$TAG"
 echo ""
 echo "Pushing to origin (touch YubiKey when prompted)..."
 git push origin main
+echo "Pushing tag to origin (touch YubiKey when prompted)..."
 git push origin "$TAG"
 
 # Create GitHub release (triggers the release workflow)

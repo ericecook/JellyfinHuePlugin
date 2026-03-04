@@ -64,15 +64,15 @@
 
         /* Profile cards */
         .hue-card {
-            background: rgba(255,255,255,0.05);
+            background: rgba(255,255,255,0.12);
             padding: 12px;
             border-radius: 4px;
-            border: 1px solid rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.15);
             cursor: pointer;
             transition: background 0.15s;
         }
         .hue-card:hover {
-            background: rgba(255,255,255,0.08);
+            background: rgba(255,255,255,0.16);
         }
 
         /* Badges */
@@ -216,229 +216,6 @@
                             </button>
                         </div>
 
-                        <!-- Profile Editor Modal -->
-                        <div id="profileEditorModal" class="hue-modal-overlay">
-                            <div class="hue-modal">
-                                <div class="hue-modal-header">
-                                    <h2 id="profileEditorTitle" style="margin: 0;">Add Profile</h2>
-                                </div>
-                                
-                                <!-- Tabs -->
-                                <div class="hue-tab-bar">
-                                    <button type="button" class="hue-tab profile-tab active" data-tab="general">General</button>
-                                    <button type="button" class="hue-tab profile-tab" data-tab="filters">Filters</button>
-                                    <button type="button" class="hue-tab profile-tab" data-tab="lights">Lights</button>
-                                    <button type="button" class="hue-tab profile-tab" data-tab="advanced">Advanced</button>
-                                </div>
-                                
-                                <div class="hue-modal-body">
-                                    <!-- General Tab -->
-                                    <div id="tab-general" class="profile-tab-content">
-                                        <div class="inputContainer">
-                                            <label class="inputLabel" for="profileName">Profile Name</label>
-                                            <input type="text" id="profileName" is="emby-input" placeholder="e.g., Living Room Roku" />
-                                        </div>
-
-                                        <h3>Media Type Filters</h3>
-                                        <div class="fieldDescription" style="margin-bottom: 15px;">
-                                            Choose which media types will trigger this profile. At least one must be enabled.
-                                        </div>
-
-                                        <div class="checkboxContainer checkboxContainer-withDescription">
-                                            <label>
-                                                <input type="checkbox" is="emby-checkbox" id="profileEnableForMovies" checked />
-                                                <span>Enable for Movies</span>
-                                            </label>
-                                            <div class="fieldDescription">Control lights when playing movies</div>
-                                        </div>
-
-                                        <div class="checkboxContainer checkboxContainer-withDescription">
-                                            <label>
-                                                <input type="checkbox" is="emby-checkbox" id="profileEnableForTvShows" />
-                                                <span>Enable for TV Shows</span>
-                                            </label>
-                                            <div class="fieldDescription">Control lights when playing TV episodes</div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Filters Tab -->
-                                    <div id="tab-filters" class="profile-tab-content" style="display:none;">
-                                        <h3>Client Filters (AND logic)</h3>
-                                        <div class="fieldDescription" style="margin-bottom: 15px;">
-                                            Leave all filters empty to match ALL clients. Otherwise, the device must match ALL specified filters.
-                                        </div>
-
-                                        <div class="inputContainer">
-                                            <label class="inputLabel" for="profileClientName">Target Client Name (Optional)</label>
-                                            <input type="text" id="profileClientName" is="emby-input" placeholder="e.g., Roku, Web, Android" />
-                                            <div class="fieldDescription">Substring match - filters by client type</div>
-                                        </div>
-
-                                        <div class="inputContainer">
-                                            <label class="inputLabel">Target Device IDs (Optional)</label>
-                                            <div id="profileDeviceIdList" style="margin-bottom: 10px;"></div>
-                                            <div style="display: flex; gap: 10px;">
-                                                <input type="text" id="profileNewDeviceId" is="emby-input" placeholder="Enter Device ID" style="flex: 1;" />
-                                                <button is="emby-button" type="button" class="raised" id="profileAddDeviceIdButton">
-                                                    <span>Add</span>
-                                                </button>
-                                            </div>
-                                            <div class="fieldDescription">Find Device ID in logs: "Playback started on [Client] (Device: [DeviceID], IP: [IP])"</div>
-                                        </div>
-
-                                        <div class="inputContainer">
-                                            <label class="inputLabel" for="profileIpAddress">Target IP Address (Optional)</label>
-                                            <input type="text" id="profileIpAddress" is="emby-input" placeholder="192.168.1.100" />
-                                            <div class="fieldDescription">Most specific filter - matches exact IP address</div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Lights Tab -->
-                                    <div id="tab-lights" class="profile-tab-content" style="display:none;">
-                                        <h3>Light Control</h3>
-
-                                <div class="inputContainer">
-                                    <label class="inputLabel" for="profileTargetGroupId">Target Light Group</label>
-                                    <select id="profileTargetGroupId" is="emby-select">
-                                        <option value="0">All Lights</option>
-                                    </select>
-                                </div>
-
-                                <h3>Scenes (Optional)</h3>
-                                <div class="fieldDescription" style="margin-bottom: 15px;">
-                                    Scenes override brightness settings. Leave empty to use brightness control instead.
-                                </div>
-
-                                        <div class="inputContainer">
-                                            <label class="inputLabel" for="profilePlaySceneId">Play Scene</label>
-                                            <select id="profilePlaySceneId" is="emby-select">
-                                                <option value="">None (Use Brightness)</option>
-                                            </select>
-                                        </div>
-
-                                        <div class="inputContainer">
-                                            <label class="inputLabel" for="profilePauseSceneId">Pause Scene</label>
-                                            <select id="profilePauseSceneId" is="emby-select">
-                                                <option value="">None (Use Brightness)</option>
-                                            </select>
-                                        </div>
-
-                                        <div class="inputContainer">
-                                            <label class="inputLabel" for="profileStopSceneId">Stop Scene</label>
-                                            <select id="profileStopSceneId" is="emby-select">
-                                                <option value="">None (Use Brightness)</option>
-                                            </select>
-                                        </div>
-
-                                        <h3>Brightness Settings</h3>
-
-                                        <div class="checkboxContainer checkboxContainer-withDescription">
-                                            <label>
-                                                <input type="checkbox" is="emby-checkbox" id="profileTurnOffLightsOnPlay" />
-                                                <span>Turn Off Lights When Playing</span>
-                                            </label>
-                                            <div class="fieldDescription">Completely turn off lights during playback (overrides Play Brightness)</div>
-                                        </div>
-
-                                        <div class="inputContainer">
-                                            <label class="inputLabel" for="profilePlayBrightness">Play Brightness</label>
-                                            <div style="display: flex; align-items: center; gap: 15px;">
-                                                <input type="range" id="profilePlayBrightnessSlider" min="0" max="254" value="20" style="flex: 1;" />
-                                                <input type="number" id="profilePlayBrightness" is="emby-input" min="0" max="254" value="20" style="width: 80px;" />
-                                            </div>
-                                            <div id="profilePlayBrightnessDesc" class="fieldDescription">Dim (20 / 254)</div>
-                                        </div>
-
-                                        <!-- Play Transition -->
-                                        <div class="checkboxContainer" style="margin-top: 5px;">
-                                            <label>
-                                                <input type="checkbox" is="emby-checkbox" id="profileEnablePlayTransition" />
-                                                <span>Custom Play Transition</span>
-                                            </label>
-                                        </div>
-                                        <div id="playTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
-                                            <div style="display: flex; align-items: center; gap: 10px;">
-                                                <input type="range" id="profilePlayTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
-                                                <input type="number" id="profilePlayTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
-                                            </div>
-                                            <div id="profilePlayTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
-                                        </div>
-
-                                        <div class="inputContainer">
-                                            <label class="inputLabel" for="profilePauseBrightness">Pause Brightness</label>
-                                            <div style="display: flex; align-items: center; gap: 15px;">
-                                                <input type="range" id="profilePauseBrightnessSlider" min="0" max="254" value="100" style="flex: 1;" />
-                                                <input type="number" id="profilePauseBrightness" is="emby-input" min="0" max="254" value="100" style="width: 80px;" />
-                                            </div>
-                                            <div id="profilePauseBrightnessDesc" class="fieldDescription">Medium (100 / 254)</div>
-                                        </div>
-
-                                        <!-- Pause Transition -->
-                                        <div class="checkboxContainer" style="margin-top: 5px;">
-                                            <label>
-                                                <input type="checkbox" is="emby-checkbox" id="profileEnablePauseTransition" />
-                                                <span>Custom Pause Transition</span>
-                                            </label>
-                                        </div>
-                                        <div id="pauseTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
-                                            <div style="display: flex; align-items: center; gap: 10px;">
-                                                <input type="range" id="profilePauseTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
-                                                <input type="number" id="profilePauseTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
-                                            </div>
-                                            <div id="profilePauseTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
-                                        </div>
-
-                                        <div class="inputContainer">
-                                            <label class="inputLabel" for="profileStopBrightness">Stop Brightness</label>
-                                            <div style="display: flex; align-items: center; gap: 15px;">
-                                                <input type="range" id="profileStopBrightnessSlider" min="0" max="254" value="254" style="flex: 1;" />
-                                                <input type="number" id="profileStopBrightness" is="emby-input" min="0" max="254" value="254" style="width: 80px;" />
-                                            </div>
-                                            <div id="profileStopBrightnessDesc" class="fieldDescription">Very Bright (254 / 254)</div>
-                                        </div>
-
-                                        <!-- Stop Transition -->
-                                        <div class="checkboxContainer" style="margin-top: 5px;">
-                                            <label>
-                                                <input type="checkbox" is="emby-checkbox" id="profileEnableStopTransition" />
-                                                <span>Custom Stop Transition</span>
-                                            </label>
-                                        </div>
-                                        <div id="stopTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
-                                            <div style="display: flex; align-items: center; gap: 10px;">
-                                                <input type="range" id="profileStopTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
-                                                <input type="number" id="profileStopTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
-                                            </div>
-                                            <div id="profileStopTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Advanced Tab -->
-                                    <div id="tab-advanced" class="profile-tab-content" style="display:none;">
-                                        <h3>Advanced Options</h3>
-
-                                        <div class="checkboxContainer checkboxContainer-withDescription">
-                                            <label>
-                                                <input type="checkbox" is="emby-checkbox" id="profileEnableOutroLights" />
-                                                <span>Enable Outro Detection</span>
-                                            </label>
-                                            <div class="fieldDescription">Automatically trigger Stop Scene/Brightness when end credits (outro segment) begin. Requires media to have outro segments detected by Jellyfin.</div>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <!-- Modal Footer -->
-                                <div class="hue-modal-footer">
-                                    <button is="emby-button" type="button" class="raised" id="cancelProfileButton">
-                                        <span>Cancel</span>
-                                    </button>
-                                    <button is="emby-button" type="button" class="raised button-submit" id="saveProfileButton">
-                                        <span>Save Profile</span>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
                     </div> <!-- End of configSection -->
 
                     <div>
@@ -521,7 +298,8 @@
                         document.querySelectorAll('[id^="profileMenu"]').forEach(function(m) {
                             if (m !== menu) m.style.display = 'none';
                         });
-                        menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+                        var isHidden = window.getComputedStyle(menu).display === 'none';
+                        menu.style.display = isHidden ? 'block' : 'none';
                     }
                 },
 
@@ -933,7 +711,7 @@
                             html += '</div>';
                             html += '<div class="profile-menu" style="position: relative;">';
                             html += '<button is="emby-button" type="button" class="raised" onclick="event.stopPropagation(); HuePluginConfig.toggleProfileMenu(' + index + ')" style="padding: 4px 12px;">&#x22EE;</button>';
-                            html += '<div id="profileMenu' + index + '" class="hue-dropdown">';
+                            html += '<div id="profileMenu' + index + '" class="hue-dropdown" style="display:none;">';
                             html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.editProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">Edit</button>';
                             html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.testProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">Test</button>';
                             html += '<button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.duplicateProfile(' + index + ')" style="width: 100%; text-align: left; border-radius: 0;">Duplicate</button>';
@@ -1587,6 +1365,229 @@
                 initializeEventListeners();
             }
         </script>
+    </div>
+
+    <!-- Profile Editor Modal — outside Jellyfin page containers so position:fixed works -->
+    <div id="profileEditorModal" class="hue-modal-overlay">
+        <div class="hue-modal">
+            <div class="hue-modal-header">
+                <h2 id="profileEditorTitle" style="margin: 0;">Add Profile</h2>
+            </div>
+
+            <!-- Tabs -->
+            <div class="hue-tab-bar">
+                <button type="button" class="hue-tab profile-tab active" data-tab="general">General</button>
+                <button type="button" class="hue-tab profile-tab" data-tab="filters">Filters</button>
+                <button type="button" class="hue-tab profile-tab" data-tab="lights">Lights</button>
+                <button type="button" class="hue-tab profile-tab" data-tab="advanced">Advanced</button>
+            </div>
+
+            <div class="hue-modal-body">
+                <!-- General Tab -->
+                <div id="tab-general" class="profile-tab-content">
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="profileName">Profile Name</label>
+                        <input type="text" id="profileName" is="emby-input" placeholder="e.g., Living Room Roku" />
+                    </div>
+
+                    <h3>Media Type Filters</h3>
+                    <div class="fieldDescription" style="margin-bottom: 15px;">
+                        Choose which media types will trigger this profile. At least one must be enabled.
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input type="checkbox" is="emby-checkbox" id="profileEnableForMovies" checked />
+                            <span>Enable for Movies</span>
+                        </label>
+                        <div class="fieldDescription">Control lights when playing movies</div>
+                    </div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input type="checkbox" is="emby-checkbox" id="profileEnableForTvShows" />
+                            <span>Enable for TV Shows</span>
+                        </label>
+                        <div class="fieldDescription">Control lights when playing TV episodes</div>
+                    </div>
+                </div>
+
+                <!-- Filters Tab -->
+                <div id="tab-filters" class="profile-tab-content" style="display:none;">
+                    <h3>Client Filters (AND logic)</h3>
+                    <div class="fieldDescription" style="margin-bottom: 15px;">
+                        Leave all filters empty to match ALL clients. Otherwise, the device must match ALL specified filters.
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="profileClientName">Target Client Name (Optional)</label>
+                        <input type="text" id="profileClientName" is="emby-input" placeholder="e.g., Roku, Web, Android" />
+                        <div class="fieldDescription">Substring match - filters by client type</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel">Target Device IDs (Optional)</label>
+                        <div id="profileDeviceIdList" style="margin-bottom: 10px;"></div>
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" id="profileNewDeviceId" is="emby-input" placeholder="Enter Device ID" style="flex: 1;" />
+                            <button is="emby-button" type="button" class="raised" id="profileAddDeviceIdButton">
+                                <span>Add</span>
+                            </button>
+                        </div>
+                        <div class="fieldDescription">Find Device ID in logs: "Playback started on [Client] (Device: [DeviceID], IP: [IP])"</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="profileIpAddress">Target IP Address (Optional)</label>
+                        <input type="text" id="profileIpAddress" is="emby-input" placeholder="192.168.1.100" />
+                        <div class="fieldDescription">Most specific filter - matches exact IP address</div>
+                    </div>
+                </div>
+
+                <!-- Lights Tab -->
+                <div id="tab-lights" class="profile-tab-content" style="display:none;">
+                    <h3>Light Control</h3>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="profileTargetGroupId">Target Light Group</label>
+                        <select id="profileTargetGroupId" is="emby-select">
+                            <option value="0">All Lights</option>
+                        </select>
+                    </div>
+
+                    <h3>Scenes (Optional)</h3>
+                    <div class="fieldDescription" style="margin-bottom: 15px;">
+                        Scenes override brightness settings. Leave empty to use brightness control instead.
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="profilePlaySceneId">Play Scene</label>
+                        <select id="profilePlaySceneId" is="emby-select">
+                            <option value="">None (Use Brightness)</option>
+                        </select>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="profilePauseSceneId">Pause Scene</label>
+                        <select id="profilePauseSceneId" is="emby-select">
+                            <option value="">None (Use Brightness)</option>
+                        </select>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="profileStopSceneId">Stop Scene</label>
+                        <select id="profileStopSceneId" is="emby-select">
+                            <option value="">None (Use Brightness)</option>
+                        </select>
+                    </div>
+
+                    <h3>Brightness Settings</h3>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input type="checkbox" is="emby-checkbox" id="profileTurnOffLightsOnPlay" />
+                            <span>Turn Off Lights When Playing</span>
+                        </label>
+                        <div class="fieldDescription">Completely turn off lights during playback (overrides Play Brightness)</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="profilePlayBrightness">Play Brightness</label>
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <input type="range" id="profilePlayBrightnessSlider" min="0" max="254" value="20" style="flex: 1;" />
+                            <input type="number" id="profilePlayBrightness" is="emby-input" min="0" max="254" value="20" style="width: 80px;" />
+                        </div>
+                        <div id="profilePlayBrightnessDesc" class="fieldDescription">Dim (20 / 254)</div>
+                    </div>
+
+                    <!-- Play Transition -->
+                    <div class="checkboxContainer" style="margin-top: 5px;">
+                        <label>
+                            <input type="checkbox" is="emby-checkbox" id="profileEnablePlayTransition" />
+                            <span>Custom Play Transition</span>
+                        </label>
+                    </div>
+                    <div id="playTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="range" id="profilePlayTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
+                            <input type="number" id="profilePlayTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
+                        </div>
+                        <div id="profilePlayTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="profilePauseBrightness">Pause Brightness</label>
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <input type="range" id="profilePauseBrightnessSlider" min="0" max="254" value="100" style="flex: 1;" />
+                            <input type="number" id="profilePauseBrightness" is="emby-input" min="0" max="254" value="100" style="width: 80px;" />
+                        </div>
+                        <div id="profilePauseBrightnessDesc" class="fieldDescription">Medium (100 / 254)</div>
+                    </div>
+
+                    <!-- Pause Transition -->
+                    <div class="checkboxContainer" style="margin-top: 5px;">
+                        <label>
+                            <input type="checkbox" is="emby-checkbox" id="profileEnablePauseTransition" />
+                            <span>Custom Pause Transition</span>
+                        </label>
+                    </div>
+                    <div id="pauseTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="range" id="profilePauseTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
+                            <input type="number" id="profilePauseTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
+                        </div>
+                        <div id="profilePauseTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
+                    </div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel" for="profileStopBrightness">Stop Brightness</label>
+                        <div style="display: flex; align-items: center; gap: 15px;">
+                            <input type="range" id="profileStopBrightnessSlider" min="0" max="254" value="254" style="flex: 1;" />
+                            <input type="number" id="profileStopBrightness" is="emby-input" min="0" max="254" value="254" style="width: 80px;" />
+                        </div>
+                        <div id="profileStopBrightnessDesc" class="fieldDescription">Very Bright (254 / 254)</div>
+                    </div>
+
+                    <!-- Stop Transition -->
+                    <div class="checkboxContainer" style="margin-top: 5px;">
+                        <label>
+                            <input type="checkbox" is="emby-checkbox" id="profileEnableStopTransition" />
+                            <span>Custom Stop Transition</span>
+                        </label>
+                    </div>
+                    <div id="stopTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <input type="range" id="profileStopTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
+                            <input type="number" id="profileStopTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
+                        </div>
+                        <div id="profileStopTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
+                    </div>
+                </div>
+
+                <!-- Advanced Tab -->
+                <div id="tab-advanced" class="profile-tab-content" style="display:none;">
+                    <h3>Advanced Options</h3>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label>
+                            <input type="checkbox" is="emby-checkbox" id="profileEnableOutroLights" />
+                            <span>Enable Outro Detection</span>
+                        </label>
+                        <div class="fieldDescription">Automatically trigger Stop Scene/Brightness when end credits (outro segment) begin. Requires media to have outro segments detected by Jellyfin.</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="hue-modal-footer">
+                <button is="emby-button" type="button" class="raised" id="cancelProfileButton">
+                    <span>Cancel</span>
+                </button>
+                <button is="emby-button" type="button" class="raised button-submit" id="saveProfileButton">
+                    <span>Save Profile</span>
+                </button>
+            </div>
+        </div>
     </div>
 </body>
 </html>
