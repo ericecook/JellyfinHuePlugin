@@ -457,18 +457,6 @@
                 currentEditingProfile: null,
                 profileDeviceIds: [],
 
-                // Normalize camelCase keys from Jellyfin API to PascalCase
-                toPascalCase: function(obj) {
-                    if (Array.isArray(obj)) return obj.map(function(item) { return HuePluginConfig.toPascalCase(item); });
-                    if (obj === null || typeof obj !== 'object') return obj;
-                    var result = {};
-                    Object.keys(obj).forEach(function(key) {
-                        var pascalKey = key.charAt(0).toUpperCase() + key.slice(1);
-                        result[pascalKey] = HuePluginConfig.toPascalCase(obj[key]);
-                    });
-                    return result;
-                },
-
                 // Helper: Get brightness description
                 getBrightnessDescription: function(value) {
                     if (value === 0) return 'OFF (responsive)';
@@ -859,8 +847,7 @@
                 loadConfiguration: function () {
                     Dashboard.showLoadingMsg();
 
-                    ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function (rawConfig) {
-                        var config = HuePluginConfig.toPascalCase(rawConfig);
+                    ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function (config) {
                         console.log('Loading configuration:', config);
                         console.log('Profiles in config:', config.Profiles);
 
@@ -1419,8 +1406,7 @@
                 saveConfiguration: function () {
                     Dashboard.showLoadingMsg();
 
-                    ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function (rawConfig) {
-                        var config = HuePluginConfig.toPascalCase(rawConfig);
+                    ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function (config) {
                         try {
                             console.log('Saving configuration...');
                             console.log('Current profiles:', HuePluginConfig.profiles);
@@ -1557,9 +1543,11 @@
                     }
                 });
 
-                // Close modal when clicking outside
+                // Move modal to document.body so position:fixed works
+                // (Jellyfin's page container creates a stacking context that traps fixed elements)
                 var profileEditorModal = document.querySelector('#profileEditorModal');
                 if (profileEditorModal) {
+                    document.body.appendChild(profileEditorModal);
                     profileEditorModal.addEventListener('click', function (e) {
                         if (e.target === this) {
                             HuePluginConfig.closeProfileEditor();
