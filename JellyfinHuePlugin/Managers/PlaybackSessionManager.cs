@@ -382,11 +382,29 @@ namespace JellyfinHuePlugin.Managers
             else if (profile.TurnOffLightsOnPlay)
             {
                 _logger.LogInformation("[{ProfileName}] Turning off lights in group {GroupId}", profile.Name, profile.TargetGroupId);
-                await _hueService.SetGroupStateAsync(
-                    config.BridgeIpAddress,
-                    config.Username,
-                    profile.TargetGroupId,
-                    new HueLightState { On = false, TransitionTime = transitionTime });
+                if (transitionTime.HasValue && transitionTime.Value > 0)
+                {
+                    // Dim to minimum first so the transition is visible, then turn off
+                    await _hueService.SetGroupStateAsync(
+                        config.BridgeIpAddress,
+                        config.Username,
+                        profile.TargetGroupId,
+                        new HueLightState { On = true, Bri = 1, TransitionTime = transitionTime });
+                    await Task.Delay(transitionTime.Value * 100);
+                    await _hueService.SetGroupStateAsync(
+                        config.BridgeIpAddress,
+                        config.Username,
+                        profile.TargetGroupId,
+                        new HueLightState { On = false });
+                }
+                else
+                {
+                    await _hueService.SetGroupStateAsync(
+                        config.BridgeIpAddress,
+                        config.Username,
+                        profile.TargetGroupId,
+                        new HueLightState { On = false });
+                }
             }
             else
             {
