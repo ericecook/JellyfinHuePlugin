@@ -88,7 +88,14 @@ namespace JellyfinHuePlugin.Managers
                 OutroLightsTriggered = false
             };
 
-            await HandlePlaybackStateAsync(PlaybackState.Playing, config, profile);
+            var bridge = ResolveBridge(config, profile);
+            if (bridge == null)
+            {
+                _logger.LogWarning("No bridge found for profile {ProfileName} (BridgeId: {BridgeId})", profile.Name, profile.BridgeId);
+                return;
+            }
+
+            await HandlePlaybackStateAsync(PlaybackState.Playing, bridge, profile);
         }
 
         private async void OnPlaybackStopped(object? sender, PlaybackStopEventArgs e)
@@ -118,7 +125,14 @@ namespace JellyfinHuePlugin.Managers
 
             _sessions.TryRemove(e.Session.Id, out _);
 
-            await HandlePlaybackStateAsync(PlaybackState.Stopped, config, profile);
+            var bridge = ResolveBridge(config, profile);
+            if (bridge == null)
+            {
+                _logger.LogWarning("No bridge found for profile {ProfileName} (BridgeId: {BridgeId})", profile.Name, profile.BridgeId);
+                return;
+            }
+
+            await HandlePlaybackStateAsync(PlaybackState.Stopped, bridge, profile);
         }
 
         private async void OnPlaybackProgress(object? sender, PlaybackProgressEventArgs e)
@@ -156,7 +170,11 @@ namespace JellyfinHuePlugin.Managers
                     _logger.LogInformation("[{ProfileName}] Outro segment detected - triggering stop lights on {ClientName}",
                         profile.Name, e.ClientName);
                     session.OutroLightsTriggered = true;
-                    await HandlePlaybackStateAsync(PlaybackState.Stopped, config, profile);
+                    var outroBridge = ResolveBridge(config, profile);
+                    if (outroBridge != null)
+                    {
+                        await HandlePlaybackStateAsync(PlaybackState.Stopped, outroBridge, profile);
+                    }
                     return;
                 }
             }
@@ -172,7 +190,13 @@ namespace JellyfinHuePlugin.Managers
                 session.Profile = profile;
 
                 var state = e.IsPaused ? PlaybackState.Paused : PlaybackState.Playing;
-                await HandlePlaybackStateAsync(state, config, profile);
+                var bridge = ResolveBridge(config, profile);
+                if (bridge == null)
+                {
+                    _logger.LogWarning("No bridge found for profile {ProfileName} (BridgeId: {BridgeId})", profile.Name, profile.BridgeId);
+                    return;
+                }
+                await HandlePlaybackStateAsync(state, bridge, profile);
             }
         }
 
@@ -340,11 +364,21 @@ namespace JellyfinHuePlugin.Managers
             return remoteEndpoint;
         }
 
-        private async Task HandlePlaybackStateAsync(PlaybackState state, PluginConfiguration config, LightControlProfile profile)
+        private HueBridge? ResolveBridge(PluginConfiguration config, LightControlProfile profile)
         {
-            if (string.IsNullOrWhiteSpace(config.BridgeIpAddress) || string.IsNullOrWhiteSpace(config.Username))
+            if (string.IsNullOrWhiteSpace(profile.BridgeId))
             {
-                _logger.LogWarning("Hue bridge not configured");
+                return config.Bridges.Count == 1 ? config.Bridges[0] : null;
+            }
+
+            return config.Bridges.FirstOrDefault(b => b.Id == profile.BridgeId);
+        }
+
+        private async Task HandlePlaybackStateAsync(PlaybackState state, HueBridge bridge, LightControlProfile profile)
+        {
+            if (string.IsNullOrWhiteSpace(bridge.IpAddress) || string.IsNullOrWhiteSpace(bridge.Username))
+            {
+                _logger.LogWarning("Bridge {BridgeName} not fully configured", bridge.Name);
                 return;
             }
 
@@ -353,13 +387,13 @@ namespace JellyfinHuePlugin.Managers
                 switch (state)
                 {
                     case PlaybackState.Playing:
-                        await HandlePlayingStateAsync(config, profile);
+                        await HandlePlayingStateAsync(bridge, profile);
                         break;
                     case PlaybackState.Paused:
-                        await HandlePausedStateAsync(config, profile);
+                        await HandlePausedStateAsync(bridge, profile);
                         break;
                     case PlaybackState.Stopped:
-                        await HandleStoppedStateAsync(config, profile);
+                        await HandleStoppedStateAsync(bridge, profile);
                         break;
                 }
             }
@@ -369,7 +403,7 @@ namespace JellyfinHuePlugin.Managers
             }
         }
 
-        private async Task HandlePlayingStateAsync(PluginConfiguration config, LightControlProfile profile)
+        private async Task HandlePlayingStateAsync(HueBridge bridge, LightControlProfile profile)
         {
             int? transitionTime = profile.EnablePlayTransition ? profile.PlayTransitionDuration : null;
 
@@ -377,8 +411,8 @@ namespace JellyfinHuePlugin.Managers
             {
                 _logger.LogInformation("[{ProfileName}] Activating play scene {SceneId}", profile.Name, profile.PlaySceneId);
                 await _hueService.ActivateSceneAsync(
-                    config.BridgeIpAddress,
-                    config.Username,
+                    bridge.IpAddress,
+                    bridge.Username,
                     profile.TargetGroupId,
                     profile.PlaySceneId,
                     transitionTime);
@@ -390,23 +424,23 @@ namespace JellyfinHuePlugin.Managers
                 {
                     // Dim to minimum first so the transition is visible, then turn off
                     await _hueService.SetGroupStateAsync(
-                        config.BridgeIpAddress,
-                        config.Username,
+                        bridge.IpAddress,
+                        bridge.Username,
                         profile.TargetGroupId,
                         new HueLightState { On = true, Bri = 1, TransitionTime = transitionTime });
                     // Wait for the transition to complete (transitionTime is in deciseconds; ×100 = milliseconds)
                     await Task.Delay(transitionTime.Value * 100);
                     await _hueService.SetGroupStateAsync(
-                        config.BridgeIpAddress,
-                        config.Username,
+                        bridge.IpAddress,
+                        bridge.Username,
                         profile.TargetGroupId,
                         new HueLightState { On = false });
                 }
                 else
                 {
                     await _hueService.SetGroupStateAsync(
-                        config.BridgeIpAddress,
-                        config.Username,
+                        bridge.IpAddress,
+                        bridge.Username,
                         profile.TargetGroupId,
                         new HueLightState { On = false });
                 }
@@ -415,14 +449,14 @@ namespace JellyfinHuePlugin.Managers
             {
                 _logger.LogInformation("[{ProfileName}] Dimming lights to {Brightness}", profile.Name, profile.PlayBrightness);
                 await _hueService.SetGroupStateAsync(
-                    config.BridgeIpAddress,
-                    config.Username,
+                    bridge.IpAddress,
+                    bridge.Username,
                     profile.TargetGroupId,
                     new HueLightState { On = true, Bri = profile.PlayBrightness, TransitionTime = transitionTime });
             }
         }
 
-        private async Task HandlePausedStateAsync(PluginConfiguration config, LightControlProfile profile)
+        private async Task HandlePausedStateAsync(HueBridge bridge, LightControlProfile profile)
         {
             int? transitionTime = profile.EnablePauseTransition ? profile.PauseTransitionDuration : null;
 
@@ -430,8 +464,8 @@ namespace JellyfinHuePlugin.Managers
             {
                 _logger.LogInformation("[{ProfileName}] Activating pause scene {SceneId}", profile.Name, profile.PauseSceneId);
                 await _hueService.ActivateSceneAsync(
-                    config.BridgeIpAddress,
-                    config.Username,
+                    bridge.IpAddress,
+                    bridge.Username,
                     profile.TargetGroupId,
                     profile.PauseSceneId,
                     transitionTime);
@@ -440,14 +474,14 @@ namespace JellyfinHuePlugin.Managers
             {
                 _logger.LogInformation("[{ProfileName}] Brightening lights to {Brightness}", profile.Name, profile.PauseBrightness);
                 await _hueService.SetGroupStateAsync(
-                    config.BridgeIpAddress,
-                    config.Username,
+                    bridge.IpAddress,
+                    bridge.Username,
                     profile.TargetGroupId,
                     new HueLightState { On = true, Bri = profile.PauseBrightness, TransitionTime = transitionTime });
             }
         }
 
-        private async Task HandleStoppedStateAsync(PluginConfiguration config, LightControlProfile profile)
+        private async Task HandleStoppedStateAsync(HueBridge bridge, LightControlProfile profile)
         {
             int? transitionTime = profile.EnableStopTransition ? profile.StopTransitionDuration : null;
 
@@ -455,8 +489,8 @@ namespace JellyfinHuePlugin.Managers
             {
                 _logger.LogInformation("[{ProfileName}] Activating stop scene {SceneId}", profile.Name, profile.StopSceneId);
                 await _hueService.ActivateSceneAsync(
-                    config.BridgeIpAddress,
-                    config.Username,
+                    bridge.IpAddress,
+                    bridge.Username,
                     profile.TargetGroupId,
                     profile.StopSceneId,
                     transitionTime);
@@ -465,8 +499,8 @@ namespace JellyfinHuePlugin.Managers
             {
                 _logger.LogInformation("[{ProfileName}] Turning lights on to {Brightness}", profile.Name, profile.StopBrightness);
                 await _hueService.SetGroupStateAsync(
-                    config.BridgeIpAddress,
-                    config.Username,
+                    bridge.IpAddress,
+                    bridge.Username,
                     profile.TargetGroupId,
                     new HueLightState { On = true, Bri = profile.StopBrightness, TransitionTime = transitionTime });
             }
