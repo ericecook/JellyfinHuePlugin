@@ -91,19 +91,23 @@ namespace JellyfinHuePlugin.Services
                 await udpClient.SendAsync(searchBytes, searchBytes.Length, multicastEndpoint);
                 
                 udpClient.Client.ReceiveTimeout = 3000;
-                
-                while (!cancellationToken.IsCancellationRequested)
+
+                // Enforce a 5-second timeout so the loop doesn't hang indefinitely
+                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
+
+                while (!timeoutCts.Token.IsCancellationRequested)
                 {
                     try
                     {
-                        var result = await udpClient.ReceiveAsync(cancellationToken);
+                        var result = await udpClient.ReceiveAsync(timeoutCts.Token);
                         var response = Encoding.ASCII.GetString(result.Buffer);
-                        
+
                         if (response.Contains("IpBridge", StringComparison.OrdinalIgnoreCase))
                         {
                             var ip = result.RemoteEndPoint.Address.ToString();
                             var bridgeId = ExtractBridgeIdFromSsdp(response);
-                            
+
                             if (!bridges.Any(b => b.InternalIpAddress == ip))
                             {
                                 bridges.Add(new HueBridgeDiscovery
@@ -117,7 +121,11 @@ namespace JellyfinHuePlugin.Services
                     }
                     catch (SocketException)
                     {
-                        break; // Timeout
+                        break; // Socket timeout
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break; // Discovery timeout elapsed
                     }
                 }
             }
@@ -307,7 +315,7 @@ namespace JellyfinHuePlugin.Services
         }
 
         // Activate a scene
-        public async Task<bool> ActivateSceneAsync(string bridgeIp, string username, string groupId, string sceneId, int? transitionTime = null, CancellationToken cancellationToken = default)
+        public virtual async Task<bool> ActivateSceneAsync(string bridgeIp, string username, string groupId, string sceneId, int? transitionTime = null, CancellationToken cancellationToken = default)
         {
             try
             {
@@ -330,7 +338,7 @@ namespace JellyfinHuePlugin.Services
         }
 
         // Set group state (brightness, on/off, etc.)
-        public async Task<bool> SetGroupStateAsync(string bridgeIp, string username, string groupId, HueLightState state, CancellationToken cancellationToken = default)
+        public virtual async Task<bool> SetGroupStateAsync(string bridgeIp, string username, string groupId, HueLightState state, CancellationToken cancellationToken = default)
         {
             try
             {

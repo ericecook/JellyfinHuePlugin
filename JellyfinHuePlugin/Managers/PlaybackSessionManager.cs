@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -24,7 +25,7 @@ namespace JellyfinHuePlugin.Managers
         private readonly IMediaSegmentManager _segmentManager;
         private readonly ILibraryManager _libraryManager;
 
-        private readonly Dictionary<string, SessionState> _sessions = new Dictionary<string, SessionState>();
+        private readonly ConcurrentDictionary<string, SessionState> _sessions = new();
 
         private class SessionState
         {
@@ -56,119 +57,122 @@ namespace JellyfinHuePlugin.Managers
 
         private async void OnPlaybackStart(object? sender, PlaybackProgressEventArgs e)
         {
-            try
+            try { await OnPlaybackStartAsync(e); }
+            catch (Exception ex) { _logger.LogError(ex, "Error handling playback start"); }
+        }
+
+        private async Task OnPlaybackStartAsync(PlaybackProgressEventArgs e)
+        {
+            if (e.Session == null) return;
+
+            var config = _getConfig();
+
+            var mediaType = e.Item?.GetType().Name ?? e.MediaSourceId ?? "Unknown";
+            var isMovie = e.Item?.GetType().Name == "Movie" || e.MediaInfo?.Container == "Movie";
+            var isEpisode = e.Item?.GetType().Name == "Episode" || e.MediaInfo?.Container == "Episode";
+
+            var profile = FindMatchingProfile(e.ClientName, e.DeviceId, e.Session.RemoteEndPoint ?? "", isMovie, isEpisode, config);
+
+            if (profile == null)
             {
-                var config = _getConfig();
-
-                var mediaType = e.Item?.GetType().Name ?? e.MediaSourceId ?? "Unknown";
-                var isMovie = e.Item?.GetType().Name == "Movie" || e.MediaInfo?.Container == "Movie";
-                var isEpisode = e.Item?.GetType().Name == "Episode" || e.MediaInfo?.Container == "Episode";
-
-                var profile = FindMatchingProfile(e.ClientName, e.DeviceId, e.Session.RemoteEndPoint ?? "", isMovie, isEpisode, config);
-
-                if (profile == null)
-                {
-                    return;
-                }
-
-                _logger.LogInformation("Playback started on {ClientName} (Device: {DeviceId}, IP: {RemoteEndpoint}, Type: {MediaType}) - Using profile: {ProfileName}",
-                    e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, mediaType, profile.Name);
-
-                _sessions[e.Session.Id] = new SessionState
-                {
-                    PlaybackState = "Playing",
-                    Profile = profile,
-                    OutroLightsTriggered = false
-                };
-
-                await HandlePlaybackStateAsync(PlaybackState.Playing, config, profile);
+                return;
             }
-            catch (Exception ex)
+
+            _logger.LogInformation("Playback started on {ClientName} (Device: {DeviceId}, IP: {RemoteEndpoint}, Type: {MediaType}) - Using profile: {ProfileName}",
+                e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, mediaType, profile.Name);
+
+            _sessions[e.Session.Id] = new SessionState
             {
-                _logger.LogError(ex, "Error handling playback start");
-            }
+                PlaybackState = "Playing",
+                Profile = profile,
+                OutroLightsTriggered = false
+            };
+
+            await HandlePlaybackStateAsync(PlaybackState.Playing, config, profile);
         }
 
         private async void OnPlaybackStopped(object? sender, PlaybackStopEventArgs e)
         {
-            try
+            try { await OnPlaybackStoppedAsync(e); }
+            catch (Exception ex) { _logger.LogError(ex, "Error handling playback stop"); }
+        }
+
+        private async Task OnPlaybackStoppedAsync(PlaybackStopEventArgs e)
+        {
+            if (e.Session == null) return;
+
+            var config = _getConfig();
+
+            var isMovie = e.Item?.GetType().Name == "Movie";
+            var isEpisode = e.Item?.GetType().Name == "Episode";
+
+            var profile = FindMatchingProfile(e.ClientName, e.DeviceId, e.Session.RemoteEndPoint ?? "", isMovie, isEpisode, config);
+
+            if (profile == null)
             {
-                var config = _getConfig();
-
-                var isMovie = e.Item?.GetType().Name == "Movie";
-                var isEpisode = e.Item?.GetType().Name == "Episode";
-
-                var profile = FindMatchingProfile(e.ClientName, e.DeviceId, e.Session.RemoteEndPoint ?? "", isMovie, isEpisode, config);
-
-                if (profile == null)
-                {
-                    return;
-                }
-
-                _logger.LogInformation("Playback stopped on {ClientName} (Device: {DeviceId}, IP: {RemoteEndpoint}) - Using profile: {ProfileName}",
-                    e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, profile.Name);
-
-                _sessions.Remove(e.Session.Id);
-
-                await HandlePlaybackStateAsync(PlaybackState.Stopped, config, profile);
+                return;
             }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error handling playback stop");
-            }
+
+            _logger.LogInformation("Playback stopped on {ClientName} (Device: {DeviceId}, IP: {RemoteEndpoint}) - Using profile: {ProfileName}",
+                e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, profile.Name);
+
+            _sessions.TryRemove(e.Session.Id, out _);
+
+            await HandlePlaybackStateAsync(PlaybackState.Stopped, config, profile);
         }
 
         private async void OnPlaybackProgress(object? sender, PlaybackProgressEventArgs e)
         {
-            try
+            try { await OnPlaybackProgressAsync(e); }
+            catch (Exception ex) { _logger.LogError(ex, "Error handling playback progress"); }
+        }
+
+        private async Task OnPlaybackProgressAsync(PlaybackProgressEventArgs e)
+        {
+            if (e.Session == null) return;
+
+            var config = _getConfig();
+
+            var isMovie = e.Item?.GetType().Name == "Movie";
+            var isEpisode = e.Item?.GetType().Name == "Episode";
+
+            var profile = FindMatchingProfile(e.ClientName, e.DeviceId, e.Session.RemoteEndPoint ?? "", isMovie, isEpisode, config);
+
+            if (profile == null)
             {
-                var config = _getConfig();
+                return;
+            }
 
-                var isMovie = e.Item?.GetType().Name == "Movie";
-                var isEpisode = e.Item?.GetType().Name == "Episode";
+            if (!_sessions.TryGetValue(e.Session.Id, out var session))
+            {
+                return;
+            }
 
-                var profile = FindMatchingProfile(e.ClientName, e.DeviceId, e.Session.RemoteEndPoint ?? "", isMovie, isEpisode, config);
-
-                if (profile == null)
+            // Check for outro segment if enabled and not already triggered
+            if (profile.EnableOutroLights && !session.OutroLightsTriggered)
+            {
+                if (await IsInOutroSegmentAsync(e))
                 {
+                    _logger.LogInformation("[{ProfileName}] Outro segment detected - triggering stop lights on {ClientName}",
+                        profile.Name, e.ClientName);
+                    session.OutroLightsTriggered = true;
+                    await HandlePlaybackStateAsync(PlaybackState.Stopped, config, profile);
                     return;
-                }
-
-                if (!_sessions.TryGetValue(e.Session.Id, out var session))
-                {
-                    return;
-                }
-
-                // Check for outro segment if enabled and not already triggered
-                if (profile.EnableOutroLights && !session.OutroLightsTriggered)
-                {
-                    if (await IsInOutroSegmentAsync(e))
-                    {
-                        _logger.LogInformation("[{ProfileName}] Outro segment detected - triggering stop lights on {ClientName}",
-                            profile.Name, e.ClientName);
-                        session.OutroLightsTriggered = true;
-                        await HandlePlaybackStateAsync(PlaybackState.Stopped, config, profile);
-                        return;
-                    }
-                }
-
-                // Detect pause/unpause
-                var currentState = e.IsPaused ? "Paused" : "Playing";
-
-                if (session.PlaybackState != currentState)
-                {
-                    _logger.LogInformation("Playback state changed to {State} on {ClientName} (Device: {DeviceId}, IP: {RemoteEndpoint}) - Using profile: {ProfileName}",
-                        currentState, e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, profile.Name);
-                    session.PlaybackState = currentState;
-                    session.Profile = profile;
-
-                    var state = e.IsPaused ? PlaybackState.Paused : PlaybackState.Playing;
-                    await HandlePlaybackStateAsync(state, config, profile);
                 }
             }
-            catch (Exception ex)
+
+            // Detect pause/unpause
+            var currentState = e.IsPaused ? "Paused" : "Playing";
+
+            if (session.PlaybackState != currentState)
             {
-                _logger.LogError(ex, "Error handling playback progress");
+                _logger.LogInformation("Playback state changed to {State} on {ClientName} (Device: {DeviceId}, IP: {RemoteEndpoint}) - Using profile: {ProfileName}",
+                    currentState, e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, profile.Name);
+                session.PlaybackState = currentState;
+                session.Profile = profile;
+
+                var state = e.IsPaused ? PlaybackState.Paused : PlaybackState.Playing;
+                await HandlePlaybackStateAsync(state, config, profile);
             }
         }
 
@@ -390,6 +394,7 @@ namespace JellyfinHuePlugin.Managers
                         config.Username,
                         profile.TargetGroupId,
                         new HueLightState { On = true, Bri = 1, TransitionTime = transitionTime });
+                    // Wait for the transition to complete (transitionTime is in deciseconds; ×100 = milliseconds)
                     await Task.Delay(transitionTime.Value * 100);
                     await _hueService.SetGroupStateAsync(
                         config.BridgeIpAddress,

@@ -632,7 +632,8 @@
                         Dashboard.alert('Profile "' + profile.Name + '" tested successfully. Lights should have changed.');
                     }).catch(function(error) {
                         Dashboard.hideLoadingMsg();
-                        Dashboard.alert('Test failed: ' + error);
+                        console.error('Test failed:', error);
+                        Dashboard.alert('Test failed. Check the server logs for details.');
                     });
                 },
 
@@ -942,7 +943,7 @@
                     }).catch(function(error) {
                         console.error('Error fetching configuration:', error);
                         Dashboard.hideLoadingMsg();
-                        Dashboard.alert('Error fetching configuration from server: ' + error);
+                        Dashboard.alert('Failed to load plugin configuration. Check the server logs for details.');
                     });
                 },
 
@@ -1060,7 +1061,8 @@
                         Dashboard.hideLoadingMsg();
                     }).catch(function (error) {
                         Dashboard.hideLoadingMsg();
-                        Dashboard.alert('Error discovering bridge: ' + error);
+                        console.error('Bridge discovery failed:', error);
+                        Dashboard.alert('Failed to discover bridges. Check your network connection and server logs.');
                     });
                 },
 
@@ -1293,9 +1295,9 @@
                         PauseSceneId: document.querySelector('#profilePauseSceneId').value,
                         StopSceneId: document.querySelector('#profileStopSceneId').value,
                         TurnOffLightsOnPlay: document.querySelector('#profileTurnOffLightsOnPlay').checked,
-                        PlayBrightness: parseInt(document.querySelector('#profilePlayBrightness').value),
-                        PauseBrightness: parseInt(document.querySelector('#profilePauseBrightness').value),
-                        StopBrightness: parseInt(document.querySelector('#profileStopBrightness').value),
+                        PlayBrightness: Math.max(0, Math.min(254, parseInt(document.querySelector('#profilePlayBrightness').value) || 0)),
+                        PauseBrightness: Math.max(0, Math.min(254, parseInt(document.querySelector('#profilePauseBrightness').value) || 0)),
+                        StopBrightness: Math.max(0, Math.min(254, parseInt(document.querySelector('#profileStopBrightness').value) || 0)),
                         EnablePlayTransition: document.querySelector('#profileEnablePlayTransition').checked,
                         PlayTransitionDuration: parseInt(document.querySelector('#profilePlayTransitionDuration').value),
                         EnablePauseTransition: document.querySelector('#profileEnablePauseTransition').checked,
@@ -1305,6 +1307,12 @@
                         EnableOutroLights: document.querySelector('#profileEnableOutroLights').checked
                     };
                     
+                    // Validate profile name
+                    if (!profile.Name || !profile.Name.trim()) {
+                        Dashboard.alert('Please enter a profile name.');
+                        return;
+                    }
+
                     // Validate at least one media type is enabled
                     if (!profile.EnableForMovies && !profile.EnableForTvShows) {
                         Dashboard.alert('At least one media type (Movies or TV Shows) must be enabled.');
@@ -1502,7 +1510,8 @@
                             btn.disabled = false;
                             btnText.textContent = 'Authenticate';
                             progressEl.style.display = 'none';
-                            Dashboard.alert('Error during authentication: ' + error);
+                            console.error('Authentication error:', error);
+                            Dashboard.alert('Authentication failed. Check the server logs for details.');
                         });
                     }
 
@@ -1571,7 +1580,8 @@
                     }).then(function () {
                         Dashboard.alert('Test successful! Lights should have changed.');
                     }).catch(function (error) {
-                        Dashboard.alert('Test failed: ' + error);
+                        console.error('Light test failed:', error);
+                        Dashboard.alert('Test failed. Check the server logs for details.');
                     });
                 },
 
@@ -1594,17 +1604,17 @@
                             }).catch(function(error) {
                                 console.error('Error saving configuration:', error);
                                 Dashboard.hideLoadingMsg();
-                                Dashboard.alert('Error saving configuration: ' + error);
+                                Dashboard.alert('Failed to save configuration. Check the server logs for details.');
                             });
                         } catch (error) {
                             console.error('Error preparing configuration:', error);
                             Dashboard.hideLoadingMsg();
-                            Dashboard.alert('Error preparing configuration: ' + error.message);
+                            Dashboard.alert('Failed to prepare configuration for saving. Check the browser console for details.');
                         }
                     }).catch(function(error) {
                         console.error('Error fetching configuration for save:', error);
                         Dashboard.hideLoadingMsg();
-                        Dashboard.alert('Error fetching configuration: ' + error);
+                        Dashboard.alert('Failed to load current configuration. Check the server logs for details.');
                     });
                 },
                 
