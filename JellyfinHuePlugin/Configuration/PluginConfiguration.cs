@@ -1,13 +1,25 @@
 using MediaBrowser.Model.Plugins;
 using System.Collections.Generic;
+using System.Linq;
 using System.Xml.Serialization;
 
 namespace JellyfinHuePlugin.Configuration
 {
+    public class HueBridge
+    {
+        public string Id { get; set; } = System.Guid.NewGuid().ToString();
+        public string Name { get; set; } = string.Empty;
+        public string IpAddress { get; set; } = string.Empty;
+        public string Username { get; set; } = string.Empty;
+    }
+
     public class LightControlProfile
     {
         public string Id { get; set; } = System.Guid.NewGuid().ToString();
         public string Name { get; set; } = "Default Profile";
+
+        // Bridge reference
+        public string BridgeId { get; set; } = string.Empty;
 
         // Media type filters
         public bool EnableForMovies { get; set; } = true;
@@ -64,16 +76,64 @@ namespace JellyfinHuePlugin.Configuration
 
     public class PluginConfiguration : BasePluginConfiguration
     {
-        public string BridgeIpAddress { get; set; } = string.Empty;
-        public string BridgeId { get; set; } = string.Empty;
-        public string Username { get; set; } = string.Empty;
+        public List<HueBridge> Bridges { get; set; } = new List<HueBridge>();
 
         public List<LightControlProfile> Profiles { get; set; } = new List<LightControlProfile>();
 
         public bool EnablePlugin { get; set; } = true;
 
+        // Legacy single-bridge fields — absorbed on deserialization, never written back.
+        // MigrateLegacyConfig() converts them to a Bridges entry.
+        [XmlElement("BridgeIpAddress")]
+        public string LegacyBridgeIpAddress { get; set; } = string.Empty;
+        public bool ShouldSerializeLegacyBridgeIpAddress() => false;
+
+        [XmlElement("Username")]
+        public string LegacyUsername { get; set; } = string.Empty;
+        public bool ShouldSerializeLegacyUsername() => false;
+
+        [XmlElement("BridgeId")]
+        public string LegacyBridgeId { get; set; } = string.Empty;
+        public bool ShouldSerializeLegacyBridgeId() => false;
+
         // Backward compat: absorb removed property from old configs
         public bool UseLightGroups { get; set; } = true;
         public bool ShouldSerializeUseLightGroups() => false;
+
+        /// <summary>
+        /// Migrates legacy single-bridge config (BridgeIpAddress/Username/BridgeId)
+        /// into the new Bridges list. Returns true if migration occurred.
+        /// </summary>
+        public bool MigrateLegacyConfig()
+        {
+            if (Bridges.Count > 0 || string.IsNullOrWhiteSpace(LegacyBridgeIpAddress))
+            {
+                return false;
+            }
+
+            var bridge = new HueBridge
+            {
+                IpAddress = LegacyBridgeIpAddress,
+                Username = LegacyUsername,
+                Name = !string.IsNullOrWhiteSpace(LegacyBridgeId) ? LegacyBridgeId : "Bridge"
+            };
+            Bridges.Add(bridge);
+
+            // Assign this bridge to all existing profiles that lack a BridgeId
+            foreach (var profile in Profiles)
+            {
+                if (string.IsNullOrWhiteSpace(profile.BridgeId))
+                {
+                    profile.BridgeId = bridge.Id;
+                }
+            }
+
+            // Clear legacy fields
+            LegacyBridgeIpAddress = string.Empty;
+            LegacyUsername = string.Empty;
+            LegacyBridgeId = string.Empty;
+
+            return true;
+        }
     }
 }

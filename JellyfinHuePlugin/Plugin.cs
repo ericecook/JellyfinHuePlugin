@@ -41,6 +41,13 @@ namespace JellyfinHuePlugin
 
             Instance = this;
 
+            // Migrate legacy single-bridge config to new Bridges list
+            if (Configuration.MigrateLegacyConfig())
+            {
+                _logger.LogInformation("Migrated legacy single-bridge config to Bridges list");
+                SaveConfiguration();
+            }
+
             // Initialize playback manager
             InitializePlaybackManager(loggerFactory);
         }
