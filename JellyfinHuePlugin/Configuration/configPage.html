@@ -154,11 +154,11 @@
             /* Template menu */
             .hue-template-menu {
                 display: none;
-                background: rgba(0,0,0,0.4);
+                background: rgba(255,255,255,0.04);
                 border-radius: 6px;
                 padding: 10px;
                 margin-top: 10px;
-                border: 1px solid rgba(255,255,255,0.1);
+                border: 1px solid rgba(255,255,255,0.08);
             }
         </style>
         <div data-role="content">
@@ -169,78 +169,84 @@
                     <div id="setupStepper" style="display: flex; align-items: center; gap: 0; margin-bottom: 24px;">
                         <div class="setup-step" id="step1" data-step="1" style="display: flex; align-items: center; gap: 8px;">
                             <div class="step-circle" style="width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.85em; font-weight: bold; background: #00a4dc; color: #fff; transition: background 0.2s;">1</div>
-                            <span class="step-label" style="font-size: 0.9em; font-weight: 600; color: #fff; transition: opacity 0.2s;">Discover</span>
+                            <span class="step-label" style="font-size: 0.9em; font-weight: 600; color: #fff; transition: opacity 0.2s;">Bridges</span>
                         </div>
                         <div style="flex: 1; height: 2px; background: rgba(255,255,255,0.15); margin: 0 8px;"></div>
                         <div class="setup-step" id="step2" data-step="2" style="display: flex; align-items: center; gap: 8px;">
                             <div class="step-circle" style="width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.85em; font-weight: bold; background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.4); transition: background 0.2s;">2</div>
-                            <span class="step-label" style="font-size: 0.9em; font-weight: 600; color: rgba(255,255,255,0.4); transition: opacity 0.2s;">Authenticate</span>
-                        </div>
-                        <div style="flex: 1; height: 2px; background: rgba(255,255,255,0.15); margin: 0 8px;"></div>
-                        <div class="setup-step" id="step3" data-step="3" style="display: flex; align-items: center; gap: 8px;">
-                            <div class="step-circle" style="width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.85em; font-weight: bold; background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.4); transition: background 0.2s;">3</div>
                             <span class="step-label" style="font-size: 0.9em; font-weight: 600; color: rgba(255,255,255,0.4); transition: opacity 0.2s;">Configure</span>
                         </div>
                     </div>
 
                     <div class="hue-section-card">
-                        <h2>Bridge Discovery</h2>
-
-                        <div class="inputContainer">
-                            <label class="inputLabel" for="bridgeIpAddress">Bridge IP Address</label>
-                            <input type="text" id="bridgeIpAddress" name="bridgeIpAddress" is="emby-input" readonly />
-                            <div class="fieldDescription">IP address of your Hue bridge (discovered automatically)</div>
+                        <h2>Hue Bridges</h2>
+                        <div class="fieldDescription" style="margin-bottom: 15px;">
+                            Manage your Hue bridges. Each lighting profile can be assigned to a specific bridge.
                         </div>
 
-                        <!-- Bridge selector for multiple bridges -->
-                        <div id="bridgeSelector" style="display:none; margin-bottom: 15px;">
-                            <label class="inputLabel" for="bridgeSelect">Multiple bridges found — select one:</label>
-                            <select id="bridgeSelect" is="emby-select" style="margin-top: 5px;"></select>
+                        <div id="bridgesList" style="margin-bottom: 15px;">
+                            <!-- Bridge cards rendered here -->
                         </div>
 
-                        <div class="inputContainer">
-                            <button is="emby-button" type="button" class="raised button-submit" id="discoverButton">
-                                <span>Discover Hue Bridge</span>
-                            </button>
-                        </div>
+                        <button is="emby-button" type="button" class="raised button-submit" id="addBridgeButton">
+                            <span>+ Add Bridge</span>
+                        </button>
                     </div>
 
-                    <div id="authenticationSection" class="hue-section-card" style="display:none;">
-                        <h2>Authentication</h2>
-                        <!-- Auth status badge -->
-                        <div class="inputContainer">
-                            <label class="inputLabel">Authentication Status</label>
-                            <div id="authStatusBadge" style="display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 20px; font-size: 0.9em; font-weight: 600; margin-top: 4px;">
-                                <span id="authStatusDot" style="width: 8px; height: 8px; border-radius: 50%; display: inline-block;"></span>
-                                <span id="authStatusText">Not authenticated</span>
+                    <!-- Add Bridge Modal -->
+                    <div id="addBridgeModal" class="hue-modal-overlay">
+                        <div class="hue-modal" style="max-width: 600px;">
+                            <div class="hue-modal-header">
+                                <h2 style="margin: 0;">Add Hue Bridge</h2>
                             </div>
-                            <!-- Hidden input to preserve the username value for save/load -->
-                            <input type="hidden" id="username" name="username" />
-                        </div>
+                            <div class="hue-modal-body">
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="newBridgeName">Bridge Name</label>
+                                    <input type="text" id="newBridgeName" is="emby-input" placeholder="e.g., Living Room Bridge" value="Bridge" />
+                                </div>
 
-                        <div class="inputContainer" id="authenticateContainer">
-                            <button is="emby-button" type="button" class="raised button-submit" id="authenticateButton">
-                                <span id="authenticateButtonText">Authenticate</span>
-                            </button>
-                            <!-- Progress feedback shown during auth attempts -->
-                            <div id="authProgress" style="display:none; margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 6px;">
-                                <div id="authProgressText" style="font-weight: 600;"></div>
-                                <div id="authCountdown" style="font-size: 0.85em; opacity: 0.7; margin-top: 4px;"></div>
-                            </div>
-                            <div class="fieldDescription" id="authInstructions" style="margin-top: 10px; color: #e87c03;">
-                                <strong>How to authenticate:</strong><br>
-                                1. Press and HOLD the large round button on TOP of your Hue bridge for 2-3 seconds<br>
-                                2. The button should light up or flash<br>
-                                3. Click "Authenticate" above WITHIN 30 seconds<br>
-                            </div>
-                        </div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="newBridgeIp">Bridge IP Address</label>
+                                    <input type="text" id="newBridgeIp" is="emby-input" placeholder="Discover or enter manually" />
+                                </div>
 
-                        <!-- Re-authenticate button (shown when already authenticated) -->
-                        <div id="reAuthContainer" style="display:none;" class="inputContainer">
-                            <button is="emby-button" type="button" class="raised" id="reAuthenticateButton" style="opacity: 0.8;">
-                                <span>Re-authenticate</span>
-                            </button>
-                            <div class="fieldDescription">Re-pair with the bridge if your connection has stopped working.</div>
+                                <div id="addBridgeSelector" style="display:none; margin-bottom: 15px;">
+                                    <label class="inputLabel" for="addBridgeSelect">Multiple bridges found — select one:</label>
+                                    <select id="addBridgeSelect" is="emby-select" style="margin-top: 5px;"></select>
+                                </div>
+
+                                <div class="inputContainer">
+                                    <button is="emby-button" type="button" class="raised" id="discoverBridgeInModal">
+                                        <span>Discover</span>
+                                    </button>
+                                </div>
+
+                                <div class="hue-divider"></div>
+
+                                <div id="addBridgeAuthSection" style="display:none;">
+                                    <h3>Authenticate</h3>
+                                    <div class="fieldDescription" style="margin-bottom: 10px; color: #e87c03;">
+                                        <strong>How to authenticate:</strong><br>
+                                        1. Press and HOLD the large round button on TOP of your Hue bridge for 2-3 seconds<br>
+                                        2. The button should light up or flash<br>
+                                        3. Click "Authenticate" below WITHIN 30 seconds
+                                    </div>
+                                    <div class="inputContainer">
+                                        <button is="emby-button" type="button" class="raised button-submit" id="authBridgeInModal">
+                                            <span id="authBridgeInModalText">Authenticate</span>
+                                        </button>
+                                        <div id="addBridgeAuthProgress" style="display:none; margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 6px;">
+                                            <div id="addBridgeAuthProgressText" style="font-weight: 600;"></div>
+                                            <div id="addBridgeAuthCountdown" style="font-size: 0.85em; opacity: 0.7; margin-top: 4px;"></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="hue-modal-footer">
+                                <button is="emby-button" type="button" class="raised" id="cancelAddBridge">
+                                    <span>Cancel</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
@@ -268,9 +274,6 @@
                         <!-- Template Selection Menu (hidden by default) -->
                         <div id="templateMenu" class="hue-template-menu">
                             <div style="font-weight: bold; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1);">Select a Template:</div>
-                            <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('blank')" style="width: 100%; margin-bottom: 8px; text-align: left;">
-                                <span>Blank Profile</span>
-                            </button>
                             <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('movie-theater')" style="width: 100%; margin-bottom: 8px; text-align: left;">
                                 <span>Movie Theater - Complete darkness with outro detection</span>
                             </button>
@@ -367,6 +370,14 @@
                                 <!-- Lights Tab -->
                                 <div id="tab-lights" class="profile-tab-content" style="display:none;">
                                     <h3>Light Control</h3>
+
+                                    <div class="inputContainer">
+                                        <label class="inputLabel" for="profileBridgeId">Hue Bridge</label>
+                                        <select id="profileBridgeId" is="emby-select">
+                                            <!-- Populated from config.Bridges -->
+                                        </select>
+                                        <div class="fieldDescription">Select which bridge this profile controls. Changing the bridge will reload available groups and scenes.</div>
+                                    </div>
 
                                     <div class="inputContainer">
                                         <label class="inputLabel" for="profileTargetGroupId">Target Light Group</label>
@@ -528,6 +539,7 @@
             var HuePluginConfig = {
                 pluginId: "2a5f5b3e-8c9d-4f1a-9b7e-6d3c4e5f6a7b",
                 profiles: [],
+                bridges: [],
                 currentEditingProfile: null,
                 profileDeviceIds: [],
 
@@ -583,6 +595,12 @@
                         items.push('Dims to ' + bri + ' on play');
                     }
 
+                    // Bridge
+                    if (profile.BridgeId && HuePluginConfig.bridges.length > 1) {
+                        var bridge = HuePluginConfig.bridges.find(function(b) { return b.Id === profile.BridgeId; });
+                        items.push('Bridge: ' + (bridge ? bridge.Name : 'Unknown'));
+                    }
+
                     // Special flags
                     if (profile.EnableOutroLights) items.push('Outro detection enabled');
 
@@ -621,11 +639,11 @@
                     
                     var groupId = profile.TargetGroupId || '0';
                     var brightness = profile.TurnOffLightsOnPlay ? 0 : (profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20);
-                    
+
                     ApiClient.ajax({
                         type: 'POST',
                         url: ApiClient.getUrl('api/hueplugin/test'),
-                        data: JSON.stringify({ GroupId: groupId, Brightness: brightness }),
+                        data: JSON.stringify({ BridgeId: profile.BridgeId || '', GroupId: groupId, Brightness: brightness }),
                         contentType: 'application/json'
                     }).then(function() {
                         Dashboard.hideLoadingMsg();
@@ -804,7 +822,8 @@
                             EnableForMovies: true,
                             EnableForTvShows: false,
                             TurnOffLightsOnPlay: true,
-                            StopBrightness: 254,
+                            PauseBrightness: 15,
+                            StopBrightness: 60,
                             EnableOutroLights: true
                         },
                         'tv-viewing': {
@@ -826,8 +845,8 @@
                         },
                         'gaming': {
                             Name: 'Gaming Setup',
-                            EnableForMovies: false,
-                            EnableForTvShows: false,
+                            EnableForMovies: true,
+                            EnableForTvShows: true,
                             PlayBrightness: 50,
                             EnableOutroLights: false
                         }
@@ -837,7 +856,7 @@
                     HuePluginConfig.currentEditingProfile = null;
                     
                     // Populate form with template values
-                    document.querySelector('#profileEditorTitle').textContent = 'Add Profile from Template';
+                    document.querySelector('#profileEditorTitle').textContent = templateName === 'blank' ? 'Add Profile' : 'Add Profile from Template';
                     document.querySelector('#profileName').value = template.Name;
                     document.querySelector('#profileEnableForMovies').checked = template.EnableForMovies !== false;
                     document.querySelector('#profileEnableForTvShows').checked = template.EnableForTvShows || false;
@@ -868,6 +887,12 @@
                     document.querySelector('#profileStopTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(4);
                     document.querySelector('#stopTransitionContainer').style.display = 'none';
 
+                    // Reset brightness visibility (no scenes, turn-off unchecked)
+                    document.querySelector('#playBrightnessContainer').style.display = '';
+                    document.querySelector('#playTurnOffContainer').style.display = '';
+                    document.querySelector('#pauseBrightnessContainer').style.display = '';
+                    document.querySelector('#stopBrightnessContainer').style.display = '';
+
                     // Sync sliders
                     var playBrightness = template.PlayBrightness || 20;
                     var pauseBrightness = template.PauseBrightness || 100;
@@ -884,12 +909,15 @@
                     
                     HuePluginConfig.profileDeviceIds = [];
                     HuePluginConfig.renderProfileDeviceIdList();
-                    HuePluginConfig.loadProfileGroups('0');
-                    HuePluginConfig.loadProfileScenes('', '', '');
-                    
+
+                    var defaultBridgeId = HuePluginConfig.bridges.length > 0 ? HuePluginConfig.bridges[0].Id : '';
+                    HuePluginConfig.populateBridgeDropdown(defaultBridgeId);
+                    HuePluginConfig.loadProfileGroups(defaultBridgeId, '0');
+                    HuePluginConfig.loadProfileScenes(defaultBridgeId, '', '', '');
+
                     // Show modal
                     document.querySelector('#profileEditorModal').style.display = 'block';
-                    
+
                     // Initialize tabs - show General tab first
                     setTimeout(function() {
                         HuePluginConfig.switchTab('general');
@@ -901,37 +929,26 @@
 
                     ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function (config) {
                         console.log('Loading configuration:', config);
-                        console.log('Profiles in config:', config.Profiles);
 
                         try {
-                            document.querySelector('#bridgeIpAddress').value = config.BridgeIpAddress || '';
-                            document.querySelector('#username').value = config.Username || '';
+                            // Load bridges
+                            HuePluginConfig.bridges = config.Bridges || [];
+                            HuePluginConfig.renderBridges();
 
                             // Load profiles
                             HuePluginConfig.profiles = config.Profiles || [];
-                            console.log('Loaded profiles:', HuePluginConfig.profiles);
-                            console.log('Profile count:', HuePluginConfig.profiles.length);
-
                             HuePluginConfig.renderProfiles();
 
-                            if (config.BridgeIpAddress) {
-                                document.querySelector('#authenticationSection').style.display = 'block';
-                            }
+                            // Show config section if any bridge is authenticated
+                            var hasAuthBridge = HuePluginConfig.bridges.some(function(b) {
+                                return b.Username && b.Username.length > 0;
+                            });
 
-                            if (config.Username) {
+                            if (hasAuthBridge) {
                                 document.querySelector('#configSection').style.display = 'block';
-                                HuePluginConfig.setAuthStatus('connected');
-                                HuePluginConfig.updateStepper(3);
-                                // Verify the connection is still valid
-                                HuePluginConfig.verifyConnection();
-                                console.log('Config section displayed');
-                            } else if (config.BridgeIpAddress) {
-                                HuePluginConfig.setAuthStatus('none');
                                 HuePluginConfig.updateStepper(2);
-                                console.log('Bridge found but not authenticated');
                             } else {
                                 HuePluginConfig.updateStepper(1);
-                                console.log('No bridge configured');
                             }
 
                             Dashboard.hideLoadingMsg();
@@ -948,7 +965,7 @@
                 },
 
                 updateStepper: function (activeStep) {
-                    for (var i = 1; i <= 3; i++) {
+                    for (var i = 1; i <= 2; i++) {
                         var stepEl = document.querySelector('#step' + i);
                         if (!stepEl) continue;
                         var circle = stepEl.querySelector('.step-circle');
@@ -975,95 +992,248 @@
                     }
                 },
 
-                setAuthStatus: function (status) {
-                    // status: 'none' | 'connected' | 'disconnected'
-                    var dot = document.querySelector('#authStatusDot');
-                    var text = document.querySelector('#authStatusText');
-                    var badge = document.querySelector('#authStatusBadge');
-                    var authContainer = document.querySelector('#authenticateContainer');
-                    var reAuthContainer = document.querySelector('#reAuthContainer');
+                // Render bridge cards
+                renderBridges: function() {
+                    var container = document.querySelector('#bridgesList');
+                    if (!container) return;
 
-                    if (status === 'connected') {
-                        dot.style.background = '#4caf50';
-                        badge.style.background = 'rgba(76, 175, 80, 0.15)';
-                        badge.style.border = '1px solid rgba(76, 175, 80, 0.4)';
-                        text.textContent = 'Connected';
-                        text.style.color = '#4caf50';
-                        authContainer.style.display = 'none';
-                        reAuthContainer.style.display = 'block';
-                    } else if (status === 'disconnected') {
-                        dot.style.background = '#ff9800';
-                        badge.style.background = 'rgba(255, 152, 0, 0.15)';
-                        badge.style.border = '1px solid rgba(255, 152, 0, 0.4)';
-                        text.textContent = 'Connection lost — re-authenticate';
-                        text.style.color = '#ff9800';
-                        authContainer.style.display = 'block';
-                        reAuthContainer.style.display = 'none';
-                    } else {
-                        dot.style.background = 'rgba(255,255,255,0.3)';
-                        badge.style.background = 'rgba(255,255,255,0.05)';
-                        badge.style.border = '1px solid rgba(255,255,255,0.1)';
-                        text.textContent = 'Not authenticated';
-                        text.style.color = 'rgba(255,255,255,0.6)';
-                        authContainer.style.display = 'block';
-                        reAuthContainer.style.display = 'none';
+                    if (!HuePluginConfig.bridges || HuePluginConfig.bridges.length === 0) {
+                        container.innerHTML = '<div class="fieldDescription">No bridges configured. Click "Add Bridge" to discover and pair a Hue bridge.</div>';
+                        return;
                     }
+
+                    var html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+                    HuePluginConfig.bridges.forEach(function(bridge, index) {
+                        var isAuth = bridge.Username && bridge.Username.length > 0;
+                        var statusColor = isAuth ? '#4caf50' : '#ff9800';
+                        var statusText = isAuth ? 'Connected' : 'Not authenticated';
+
+                        html += '<div class="hue-card">';
+                        html += '<div style="display: flex; align-items: center; justify-content: space-between;">';
+                        html += '<div style="flex: 1;">';
+                        html += '<h3 style="margin: 0;">' + (bridge.Name || 'Bridge') + '</h3>';
+                        html += '<div style="font-size: 0.88em; opacity: 0.6; margin-top: 4px;">' + bridge.IpAddress + '</div>';
+                        html += '<div style="display: inline-flex; align-items: center; gap: 6px; margin-top: 6px;">';
+                        html += '<span style="width: 8px; height: 8px; border-radius: 50%; background: ' + statusColor + '; display: inline-block;"></span>';
+                        html += '<span style="font-size: 0.85em; color: ' + statusColor + ';">' + statusText + '</span>';
+                        html += '</div>';
+                        html += '</div>';
+                        html += '<div style="display: flex; gap: 8px;">';
+                        if (!isAuth) {
+                            html += '<button is="emby-button" type="button" class="raised button-submit" onclick="HuePluginConfig.authenticateBridge(' + index + ')"><span>Authenticate</span></button>';
+                        } else {
+                            html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.authenticateBridge(' + index + ')"><span>Re-auth</span></button>';
+                        }
+                        html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.deleteBridge(' + index + ')" style="opacity: 0.7;"><span>Delete</span></button>';
+                        html += '</div>';
+                        html += '</div>';
+                        html += '</div>';
+                    });
+                    html += '</div>';
+                    container.innerHTML = html;
                 },
 
-                verifyConnection: function () {
-                    var bridgeIp = document.querySelector('#bridgeIpAddress').value;
-                    if (!bridgeIp) return;
+                // Authenticate a bridge by index
+                authenticateBridge: function(index) {
+                    var bridge = HuePluginConfig.bridges[index];
+                    if (!bridge) return;
 
-                    // Use the lights endpoint since it requires a valid API key
-                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/lights')).then(function (lights) {
-                        HuePluginConfig.setAuthStatus('connected');
-                        HuePluginConfig.updateStepper(3);
-                    }).catch(function () {
-                        HuePluginConfig.setAuthStatus('disconnected');
-                        HuePluginConfig.updateStepper(2);
-                        document.querySelector('#configSection').style.display = 'none';
+                    var btn = event.target.closest('button');
+                    var maxAttempts = 3;
+                    var attempt = 0;
+
+                    if (btn) btn.disabled = true;
+
+                    function tryAuth() {
+                        attempt++;
+                        if (btn) btn.querySelector('span').textContent = 'Attempt ' + attempt + '/' + maxAttempts + '...';
+
+                        ApiClient.ajax({
+                            type: 'POST',
+                            url: ApiClient.getUrl('api/hueplugin/authenticate'),
+                            data: JSON.stringify({ BridgeIp: bridge.IpAddress, BridgeId: bridge.Id, BridgeName: bridge.Name }),
+                            contentType: 'application/json'
+                        }).then(function(result) {
+                            if (result.Success) {
+                                bridge.Username = result.Username;
+                                if (btn) { btn.disabled = false; btn.querySelector('span').textContent = 'Re-auth'; }
+                                HuePluginConfig.renderBridges();
+                                document.querySelector('#configSection').style.display = 'block';
+                                HuePluginConfig.updateStepper(2);
+                                Dashboard.alert('Successfully authenticated with ' + bridge.Name + '!');
+                            } else if (attempt < maxAttempts) {
+                                setTimeout(tryAuth, 3000);
+                            } else {
+                                if (btn) { btn.disabled = false; btn.querySelector('span').textContent = 'Authenticate'; }
+                                Dashboard.alert('Authentication failed after ' + maxAttempts + ' attempts. Press the bridge button and try again.');
+                            }
+                        }).catch(function(error) {
+                            if (btn) { btn.disabled = false; btn.querySelector('span').textContent = 'Authenticate'; }
+                            console.error('Authentication error:', error);
+                            Dashboard.alert('Authentication failed. Check the server logs for details.');
+                        });
+                    }
+
+                    tryAuth();
+                },
+
+                // Delete a bridge
+                deleteBridge: function(index) {
+                    var bridge = HuePluginConfig.bridges[index];
+                    if (!bridge) return;
+
+                    if (!confirm('Delete bridge "' + bridge.Name + '"? Profiles using this bridge will need to be reassigned.')) return;
+
+                    ApiClient.ajax({
+                        type: 'DELETE',
+                        url: ApiClient.getUrl('api/hueplugin/bridges/' + bridge.Id)
+                    }).then(function() {
+                        HuePluginConfig.bridges.splice(index, 1);
+                        HuePluginConfig.renderBridges();
+                        HuePluginConfig.renderProfiles();
+
+                        var hasAuthBridge = HuePluginConfig.bridges.some(function(b) {
+                            return b.Username && b.Username.length > 0;
+                        });
+                        if (!hasAuthBridge) {
+                            document.querySelector('#configSection').style.display = 'none';
+                            HuePluginConfig.updateStepper(1);
+                        }
+                    }).catch(function(error) {
+                        console.error('Delete bridge failed:', error);
+                        Dashboard.alert('Failed to delete bridge. Check the server logs for details.');
                     });
                 },
 
-                discoverBridge: function () {
+                // Open add bridge modal
+                openAddBridge: function() {
+                    document.querySelector('#newBridgeName').value = 'Bridge';
+                    document.querySelector('#newBridgeIp').value = '';
+                    document.querySelector('#addBridgeSelector').style.display = 'none';
+                    document.querySelector('#addBridgeAuthSection').style.display = 'none';
+                    document.querySelector('#addBridgeModal').style.display = 'block';
+                },
+
+                // Discover bridges in add modal
+                discoverBridgeInModal: function() {
                     Dashboard.showLoadingMsg();
 
-                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/discover')).then(function (bridges) {
+                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/discover')).then(function(bridges) {
                         if (bridges && bridges.length > 1) {
-                            // Multiple bridges — show selector
-                            var select = document.querySelector('#bridgeSelect');
+                            var select = document.querySelector('#addBridgeSelect');
                             select.innerHTML = '';
-                            bridges.forEach(function (b) {
+                            bridges.forEach(function(b) {
                                 var opt = document.createElement('option');
                                 opt.value = b.InternalIpAddress;
                                 opt.textContent = b.InternalIpAddress + ' (' + (b.Id || 'unknown') + ')';
                                 select.appendChild(opt);
                             });
-                            document.querySelector('#bridgeSelector').style.display = 'block';
-                            document.querySelector('#bridgeIpAddress').value = bridges[0].InternalIpAddress;
-
-                            select.addEventListener('change', function () {
-                                document.querySelector('#bridgeIpAddress').value = this.value;
+                            document.querySelector('#addBridgeSelector').style.display = 'block';
+                            document.querySelector('#newBridgeIp').value = bridges[0].InternalIpAddress;
+                            select.addEventListener('change', function() {
+                                document.querySelector('#newBridgeIp').value = this.value;
                             });
-
-                            document.querySelector('#authenticationSection').style.display = 'block';
-                            HuePluginConfig.updateStepper(2);
-                            Dashboard.alert('Found ' + bridges.length + ' bridges. Please select one.');
+                            Dashboard.alert('Found ' + bridges.length + ' bridges. Select one.');
                         } else if (bridges && bridges.length === 1) {
-                            document.querySelector('#bridgeSelector').style.display = 'none';
-                            document.querySelector('#bridgeIpAddress').value = bridges[0].InternalIpAddress;
-                            document.querySelector('#authenticationSection').style.display = 'block';
-                            HuePluginConfig.updateStepper(2);
+                            document.querySelector('#addBridgeSelector').style.display = 'none';
+                            document.querySelector('#newBridgeIp').value = bridges[0].InternalIpAddress;
                             Dashboard.alert('Bridge found at ' + bridges[0].InternalIpAddress);
                         } else {
-                            Dashboard.alert('No Hue bridges found. Please check your network connection.');
+                            Dashboard.alert('No Hue bridges found. You can enter the IP address manually.');
                         }
+                        document.querySelector('#addBridgeAuthSection').style.display = 'block';
                         Dashboard.hideLoadingMsg();
-                    }).catch(function (error) {
+                    }).catch(function(error) {
                         Dashboard.hideLoadingMsg();
                         console.error('Bridge discovery failed:', error);
-                        Dashboard.alert('Failed to discover bridges. Check your network connection and server logs.');
+                        Dashboard.alert('Failed to discover bridges. Check your network connection.');
                     });
+                },
+
+                // Authenticate bridge in add modal
+                authBridgeInModal: function() {
+                    var bridgeIp = document.querySelector('#newBridgeIp').value;
+                    var bridgeName = document.querySelector('#newBridgeName').value || 'Bridge';
+                    if (!bridgeIp) {
+                        Dashboard.alert('Please enter or discover a bridge IP address.');
+                        return;
+                    }
+
+                    var btn = document.querySelector('#authBridgeInModal');
+                    var btnText = document.querySelector('#authBridgeInModalText');
+                    var progressEl = document.querySelector('#addBridgeAuthProgress');
+                    var progressText = document.querySelector('#addBridgeAuthProgressText');
+                    var countdownEl = document.querySelector('#addBridgeAuthCountdown');
+                    var maxAttempts = 3;
+                    var attempt = 0;
+
+                    btn.disabled = true;
+                    progressEl.style.display = 'block';
+
+                    function tryAuth() {
+                        attempt++;
+                        btnText.textContent = 'Attempt ' + attempt + '/' + maxAttempts + '...';
+                        progressText.textContent = 'Attempting to pair... (' + attempt + '/' + maxAttempts + ')';
+                        countdownEl.textContent = '';
+
+                        ApiClient.ajax({
+                            type: 'POST',
+                            url: ApiClient.getUrl('api/hueplugin/authenticate'),
+                            data: JSON.stringify({ BridgeIp: bridgeIp, BridgeName: bridgeName }),
+                            contentType: 'application/json'
+                        }).then(function(result) {
+                            if (result.Success) {
+                                btn.disabled = false;
+                                btnText.textContent = 'Authenticate';
+                                progressEl.style.display = 'none';
+
+                                // Add bridge to local list
+                                HuePluginConfig.bridges.push({
+                                    Id: result.BridgeId,
+                                    Name: bridgeName,
+                                    IpAddress: bridgeIp,
+                                    Username: result.Username
+                                });
+                                HuePluginConfig.renderBridges();
+                                document.querySelector('#configSection').style.display = 'block';
+                                HuePluginConfig.updateStepper(2);
+
+                                // Close modal
+                                document.querySelector('#addBridgeModal').style.display = 'none';
+                                Dashboard.alert('Bridge "' + bridgeName + '" added and authenticated!');
+                            } else if (attempt < maxAttempts) {
+                                var remaining = 3;
+                                countdownEl.textContent = 'Retrying in ' + remaining + 's...';
+                                var interval = setInterval(function() {
+                                    remaining--;
+                                    if (remaining > 0) {
+                                        countdownEl.textContent = 'Retrying in ' + remaining + 's...';
+                                    } else {
+                                        clearInterval(interval);
+                                        countdownEl.textContent = '';
+                                        tryAuth();
+                                    }
+                                }, 1000);
+                            } else {
+                                btn.disabled = false;
+                                btnText.textContent = 'Authenticate';
+                                progressText.textContent = 'Authentication failed after ' + maxAttempts + ' attempts.';
+                                countdownEl.textContent = 'Press the bridge button and try again.';
+                            }
+                        }).catch(function(error) {
+                            btn.disabled = false;
+                            btnText.textContent = 'Authenticate';
+                            progressEl.style.display = 'none';
+                            console.error('Authentication error:', error);
+                            Dashboard.alert('Authentication failed. Check the server logs for details.');
+                        });
+                    }
+
+                    tryAuth();
+                },
+
+                setAuthStatus: function (status) {
+                    // No longer used for global auth - kept for compatibility
                 },
 
                 renderProfiles: function() {
@@ -1193,14 +1363,16 @@
                     
                     HuePluginConfig.profileDeviceIds = profile.TargetDeviceIds || [];
                     HuePluginConfig.renderProfileDeviceIdList();
-                    
-                    // Load groups and scenes for this profile
-                    HuePluginConfig.loadProfileGroups(profile.TargetGroupId);
-                    HuePluginConfig.loadProfileScenes(profile.PlaySceneId, profile.PauseSceneId, profile.StopSceneId);
-                    
+
+                    // Populate bridge dropdown and load groups/scenes for the profile's bridge
+                    HuePluginConfig.populateBridgeDropdown(profile.BridgeId);
+                    var bridgeId = profile.BridgeId || (HuePluginConfig.bridges.length === 1 ? HuePluginConfig.bridges[0].Id : '');
+                    HuePluginConfig.loadProfileGroups(bridgeId, profile.TargetGroupId);
+                    HuePluginConfig.loadProfileScenes(bridgeId, profile.PlaySceneId, profile.PauseSceneId, profile.StopSceneId);
+
                     // Show modal
                     document.querySelector('#profileEditorModal').style.display = 'block';
-                    
+
                     // Initialize tabs - show General tab first
                     setTimeout(function() {
                         HuePluginConfig.switchTab('general');
@@ -1215,76 +1387,16 @@
                 },
 
                 openNewProfile: function() {
-                    HuePluginConfig.currentEditingProfile = null;
-                    
-                    document.querySelector('#profileEditorTitle').textContent = 'Add Profile';
-                    document.querySelector('#profileName').value = 'New Profile';
-                    document.querySelector('#profileEnableForMovies').checked = true;  // Default: enabled for movies
-                    document.querySelector('#profileEnableForTvShows').checked = false; // Default: disabled for TV
-                    document.querySelector('#profileClientName').value = '';
-                    document.querySelector('#profileIpAddress').value = '';
-                    document.querySelector('#profileTurnOffLightsOnPlay').checked = false;
-                    document.querySelector('#profilePlayBrightness').value = 20;
-                    document.querySelector('#profilePauseBrightness').value = 100;
-                    document.querySelector('#profileStopBrightness').value = 254;
-                    document.querySelector('#profileEnableOutroLights').checked = false;
-
-                    // Per-state transitions (defaults: disabled, 0.4s)
-                    document.querySelector('#profileEnablePlayTransition').checked = false;
-                    document.querySelector('#profilePlayTransitionDuration').value = 4;
-                    document.querySelector('#profilePlayTransitionSlider').value = 4;
-                    document.querySelector('#profilePlayTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(4);
-                    document.querySelector('#playTransitionContainer').style.display = 'none';
-
-                    document.querySelector('#profileEnablePauseTransition').checked = false;
-                    document.querySelector('#profilePauseTransitionDuration').value = 4;
-                    document.querySelector('#profilePauseTransitionSlider').value = 4;
-                    document.querySelector('#profilePauseTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(4);
-                    document.querySelector('#pauseTransitionContainer').style.display = 'none';
-
-                    document.querySelector('#profileEnableStopTransition').checked = false;
-                    document.querySelector('#profileStopTransitionDuration').value = 4;
-                    document.querySelector('#profileStopTransitionSlider').value = 4;
-                    document.querySelector('#profileStopTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(4);
-                    document.querySelector('#stopTransitionContainer').style.display = 'none';
-
-                    // Reset brightness visibility (no scenes, turn-off unchecked)
-                    document.querySelector('#playBrightnessContainer').style.display = '';
-                    document.querySelector('#playTurnOffContainer').style.display = '';
-                    document.querySelector('#pauseBrightnessContainer').style.display = '';
-                    document.querySelector('#stopBrightnessContainer').style.display = '';
-
-                    // Sync sliders with input values
-                    document.querySelector('#profilePlayBrightnessSlider').value = 20;
-                    document.querySelector('#profilePauseBrightnessSlider').value = 100;
-                    document.querySelector('#profileStopBrightnessSlider').value = 254;
-
-                    // Update descriptions
-                    document.querySelector('#profilePlayBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(20) + ' (20 / 254)';
-                    document.querySelector('#profilePauseBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(100) + ' (100 / 254)';
-                    document.querySelector('#profileStopBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(254) + ' (254 / 254)';
-                    
-                    HuePluginConfig.profileDeviceIds = [];
-                    HuePluginConfig.renderProfileDeviceIdList();
-                    
-                    HuePluginConfig.loadProfileGroups('0');
-                    HuePluginConfig.loadProfileScenes('', '', '');
-                    
-                    // Show modal
-                    document.querySelector('#profileEditorModal').style.display = 'block';
-                    
-                    // Initialize tabs - show General tab first
-                    setTimeout(function() {
-                        HuePluginConfig.switchTab('general');
-                    }, 50);
+                    HuePluginConfig.createFromTemplate('blank');
                 },
 
                 saveCurrentProfile: function() {
                     var profile = {
-                        Id: HuePluginConfig.currentEditingProfile !== null ? 
-                            HuePluginConfig.profiles[HuePluginConfig.currentEditingProfile].Id : 
+                        Id: HuePluginConfig.currentEditingProfile !== null ?
+                            HuePluginConfig.profiles[HuePluginConfig.currentEditingProfile].Id :
                             HuePluginConfig.generateGuid(),
                         Name: document.querySelector('#profileName').value,
+                        BridgeId: document.querySelector('#profileBridgeId').value,
                         EnableForMovies: document.querySelector('#profileEnableForMovies').checked,
                         EnableForTvShows: document.querySelector('#profileEnableForTvShows').checked,
                         TargetClientName: document.querySelector('#profileClientName').value,
@@ -1375,8 +1487,44 @@
                     HuePluginConfig.renderProfileDeviceIdList();
                 },
 
-                loadProfileGroups: function(savedValue) {
-                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/groups')).then(function (groups) {
+                // Populate bridge dropdown in profile editor
+                populateBridgeDropdown: function(selectedBridgeId) {
+                    var select = document.querySelector('#profileBridgeId');
+                    if (!select) return;
+                    select.innerHTML = '';
+
+                    if (HuePluginConfig.bridges.length === 0) {
+                        var opt = document.createElement('option');
+                        opt.value = '';
+                        opt.textContent = 'No bridges configured';
+                        select.appendChild(opt);
+                        return;
+                    }
+
+                    HuePluginConfig.bridges.forEach(function(bridge) {
+                        var opt = document.createElement('option');
+                        opt.value = bridge.Id;
+                        var authLabel = (bridge.Username && bridge.Username.length > 0) ? '' : ' (not authenticated)';
+                        opt.textContent = bridge.Name + ' (' + bridge.IpAddress + ')' + authLabel;
+                        select.appendChild(opt);
+                    });
+
+                    if (selectedBridgeId) {
+                        select.value = selectedBridgeId;
+                    }
+
+                    // Reload groups/scenes when bridge changes
+                    select.onchange = function() {
+                        var bridgeId = select.value;
+                        HuePluginConfig.loadProfileGroups(bridgeId, '0');
+                        HuePluginConfig.loadProfileScenes(bridgeId, '', '', '');
+                    };
+                },
+
+                loadProfileGroups: function(bridgeId, savedValue) {
+                    var url = 'api/hueplugin/groups';
+                    if (bridgeId) url += '?bridgeId=' + encodeURIComponent(bridgeId);
+                    ApiClient.getJSON(ApiClient.getUrl(url)).then(function (groups) {
                         var select = document.querySelector('#profileTargetGroupId');
                         select.innerHTML = '<option value="0">All Lights</option>';
                         
@@ -1396,8 +1544,10 @@
                     });
                 },
 
-                loadProfileScenes: function(savedPlayId, savedPauseId, savedStopId) {
-                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/scenes')).then(function (scenes) {
+                loadProfileScenes: function(bridgeId, savedPlayId, savedPauseId, savedStopId) {
+                    var url = 'api/hueplugin/scenes';
+                    if (bridgeId) url += '?bridgeId=' + encodeURIComponent(bridgeId);
+                    ApiClient.getJSON(ApiClient.getUrl(url)).then(function (scenes) {
                         var playSelect = document.querySelector('#profilePlaySceneId');
                         var pauseSelect = document.querySelector('#profilePauseSceneId');
                         var stopSelect = document.querySelector('#profileStopSceneId');
@@ -1443,160 +1593,13 @@
                     });
                 },
 
-                authenticate: function () {
-                    var bridgeIp = document.querySelector('#bridgeIpAddress').value;
-                    if (!bridgeIp) {
-                        Dashboard.alert('Please discover a bridge first.');
-                        return;
-                    }
-
-                    var btn = document.querySelector('#authenticateButton');
-                    var btnText = document.querySelector('#authenticateButtonText');
-                    var progressEl = document.querySelector('#authProgress');
-                    var progressText = document.querySelector('#authProgressText');
-                    var countdownEl = document.querySelector('#authCountdown');
-                    var maxAttempts = 3;
-                    var attempt = 0;
-
-                    btn.disabled = true;
-                    progressEl.style.display = 'block';
-
-                    function tryAuth() {
-                        attempt++;
-                        btnText.textContent = 'Attempt ' + attempt + ' of ' + maxAttempts + '...';
-                        progressText.textContent = 'Attempting to pair with bridge... (' + attempt + '/' + maxAttempts + ')';
-                        countdownEl.textContent = '';
-
-                        ApiClient.ajax({
-                            type: 'POST',
-                            url: ApiClient.getUrl('api/hueplugin/authenticate'),
-                            data: JSON.stringify({ BridgeIp: bridgeIp }),
-                            contentType: 'application/json'
-                        }).then(function (result) {
-                            if (result.Success) {
-                                // Success
-                                btn.disabled = false;
-                                btnText.textContent = 'Authenticate';
-                                progressEl.style.display = 'none';
-                                document.querySelector('#username').value = result.Username;
-                                document.querySelector('#configSection').style.display = 'block';
-                                HuePluginConfig.setAuthStatus('connected');
-                                HuePluginConfig.updateStepper(3);
-                                HuePluginConfig.loadGroups();
-                                HuePluginConfig.loadScenes();
-                                Dashboard.alert('Successfully authenticated with Hue bridge!');
-                            } else if (attempt < maxAttempts) {
-                                // Retry with countdown
-                                var remaining = 3;
-                                countdownEl.textContent = 'Retrying in ' + remaining + 's...';
-                                var interval = setInterval(function () {
-                                    remaining--;
-                                    if (remaining > 0) {
-                                        countdownEl.textContent = 'Retrying in ' + remaining + 's...';
-                                    } else {
-                                        clearInterval(interval);
-                                        countdownEl.textContent = '';
-                                        tryAuth();
-                                    }
-                                }, 1000);
-                            } else {
-                                // All attempts exhausted
-                                btn.disabled = false;
-                                btnText.textContent = 'Authenticate';
-                                progressText.textContent = 'Authentication failed after ' + maxAttempts + ' attempts.';
-                                countdownEl.textContent = 'Press the bridge button and try again.';
-                            }
-                        }).catch(function (error) {
-                            btn.disabled = false;
-                            btnText.textContent = 'Authenticate';
-                            progressEl.style.display = 'none';
-                            console.error('Authentication error:', error);
-                            Dashboard.alert('Authentication failed. Check the server logs for details.');
-                        });
-                    }
-
-                    tryAuth();
-                },
-
-                loadGroups: function (savedValue) {
-                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/groups')).then(function (groups) {
-                        var select = document.querySelector('#targetGroupId');
-                        select.innerHTML = '<option value="0">All Lights</option>';
-                        
-                        for (var id in groups) {
-                            var option = document.createElement('option');
-                            option.value = id;
-                            option.text = groups[id].Name;
-                            select.appendChild(option);
-                        }
-                        
-                        // Set the saved value after populating
-                        if (savedValue) {
-                            select.value = savedValue;
-                        }
-                    });
-                },
-
-                loadScenes: function (savedPlaySceneId, savedPauseSceneId, savedStopSceneId) {
-                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/scenes')).then(function (scenes) {
-                        var playSelect = document.querySelector('#playSceneId');
-                        var pauseSelect = document.querySelector('#pauseSceneId');
-                        var stopSelect = document.querySelector('#stopSceneId');
-                        
-                        // Clear and populate all dropdowns
-                        [playSelect, pauseSelect, stopSelect].forEach(function(select) {
-                            select.innerHTML = '<option value="">None (Use Brightness)</option>';
-                            
-                            for (var id in scenes) {
-                                var option = document.createElement('option');
-                                option.value = id;
-                                option.text = scenes[id].Name + ' (Group: ' + scenes[id].Group + ')';
-                                select.appendChild(option);
-                            }
-                        });
-                        
-                        // Set saved values after populating
-                        if (savedPlaySceneId) {
-                            playSelect.value = savedPlaySceneId;
-                        }
-                        if (savedPauseSceneId) {
-                            pauseSelect.value = savedPauseSceneId;
-                        }
-                        if (savedStopSceneId) {
-                            stopSelect.value = savedStopSceneId;
-                        }
-                    });
-                },
-
-                testLights: function () {
-                    var groupId = document.querySelector('#targetGroupId').value;
-                    var brightness = parseInt(document.querySelector('#playBrightness').value);
-
-                    ApiClient.ajax({
-                        type: 'POST',
-                        url: ApiClient.getUrl('api/hueplugin/test'),
-                        data: JSON.stringify({ GroupId: groupId, Brightness: brightness }),
-                        contentType: 'application/json'
-                    }).then(function () {
-                        Dashboard.alert('Test successful! Lights should have changed.');
-                    }).catch(function (error) {
-                        console.error('Light test failed:', error);
-                        Dashboard.alert('Test failed. Check the server logs for details.');
-                    });
-                },
-
                 saveConfiguration: function () {
                     Dashboard.showLoadingMsg();
 
                     ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function (config) {
                         try {
-                            console.log('Saving configuration...');
-                            console.log('Current profiles:', HuePluginConfig.profiles);
-
-                            config.BridgeIpAddress = document.querySelector('#bridgeIpAddress').value;
+                            config.Bridges = HuePluginConfig.bridges;
                             config.Profiles = HuePluginConfig.profiles;
-
-                            console.log('Config to save:', config);
 
                             ApiClient.updatePluginConfiguration(HuePluginConfig.pluginId, config).then(function () {
                                 console.log('Configuration saved successfully');
@@ -1635,35 +1638,32 @@
                     console.error('HuePluginConfigForm not found');
                 }
 
-                var discoverButton = document.querySelector('#discoverButton');
-                if (discoverButton) {
-                    discoverButton.addEventListener('click', function () {
-                        HuePluginConfig.discoverBridge();
+                // Bridge management event handlers
+                var addBridgeButton = document.querySelector('#addBridgeButton');
+                if (addBridgeButton) {
+                    addBridgeButton.addEventListener('click', function () {
+                        HuePluginConfig.openAddBridge();
                     });
                 }
 
-                var authenticateButton = document.querySelector('#authenticateButton');
-                if (authenticateButton) {
-                    authenticateButton.addEventListener('click', function () {
-                        HuePluginConfig.authenticate();
+                var discoverBridgeInModal = document.querySelector('#discoverBridgeInModal');
+                if (discoverBridgeInModal) {
+                    discoverBridgeInModal.addEventListener('click', function () {
+                        HuePluginConfig.discoverBridgeInModal();
                     });
                 }
 
-                var reAuthButton = document.querySelector('#reAuthenticateButton');
-                if (reAuthButton) {
-                    reAuthButton.addEventListener('click', function () {
-                        if (confirm('Re-authenticating will replace your existing API key. You will need to press the button on your Hue bridge again.\n\nContinue?')) {
-                            HuePluginConfig.setAuthStatus('none');
-                            document.querySelector('#authenticateContainer').style.display = 'block';
-                            document.querySelector('#reAuthContainer').style.display = 'none';
-                        }
+                var authBridgeInModal = document.querySelector('#authBridgeInModal');
+                if (authBridgeInModal) {
+                    authBridgeInModal.addEventListener('click', function () {
+                        HuePluginConfig.authBridgeInModal();
                     });
                 }
 
-                var testButton = document.querySelector('#testButton');
-                if (testButton) {
-                    testButton.addEventListener('click', function () {
-                        HuePluginConfig.testLights();
+                var cancelAddBridge = document.querySelector('#cancelAddBridge');
+                if (cancelAddBridge) {
+                    cancelAddBridge.addEventListener('click', function () {
+                        document.querySelector('#addBridgeModal').style.display = 'none';
                     });
                 }
 
