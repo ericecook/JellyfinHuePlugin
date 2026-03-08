@@ -139,6 +139,18 @@
                 opacity: 0.7;
             }
 
+            /* Section cards */
+            .hue-section-card {
+                background: rgba(255,255,255,0.04);
+                border: 1px solid rgba(255,255,255,0.08);
+                border-radius: 6px;
+                padding: 20px;
+                margin-bottom: 20px;
+            }
+            .hue-section-card h2 {
+                margin-top: 0;
+            }
+
             /* Template menu */
             .hue-template-menu {
                 display: none;
@@ -153,26 +165,6 @@
             <div class="content-primary">
                 <form id="HuePluginConfigForm">
                     
-                    <!-- Connection Status Dashboard -->
-                    <div id="connectionStatus" style="display:none; background: rgba(0, 164, 220, 0.1); border: 2px solid #00a4dc; border-radius: 8px; padding: 12px; margin-bottom: 20px;">
-                        <div style="display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
-                            <div style="flex: 1; min-width: 200px;">
-                                <h3 style="margin: 0 0 8px 0; font-size: 1.1em;">Bridge Status</h3>
-                                <div id="connectionStatusText" style="font-size: 0.95em; opacity: 0.9;">
-                                    <div id="bridgeConnectionStatus">Connected to <span id="statusBridgeIp"></span></div>
-                                    <div id="bridgeResources" style="margin-top: 5px;"><span id="resourceCounts">Loading...</span></div>
-                                </div>
-                            </div>
-                            <div>
-                                <button is="emby-button" type="button" class="raised" id="testConnectionButton" style="background-color: #00a4dc;">
-                                    <span>Test Connection</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <h2>Hue Bridge Setup</h2>
-
                     <!-- Setup Stepper -->
                     <div id="setupStepper" style="display: flex; align-items: center; gap: 0; margin-bottom: 24px;">
                         <div class="setup-step" id="step1" data-step="1" style="display: flex; align-items: center; gap: 8px;">
@@ -191,25 +183,30 @@
                         </div>
                     </div>
 
-                    <div class="inputContainer">
-                        <label class="inputLabel" for="bridgeIpAddress">Bridge IP Address</label>
-                        <input type="text" id="bridgeIpAddress" name="bridgeIpAddress" is="emby-input" readonly />
-                        <div class="fieldDescription">IP address of your Hue bridge (discovered automatically)</div>
+                    <div class="hue-section-card">
+                        <h2>Bridge Discovery</h2>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="bridgeIpAddress">Bridge IP Address</label>
+                            <input type="text" id="bridgeIpAddress" name="bridgeIpAddress" is="emby-input" readonly />
+                            <div class="fieldDescription">IP address of your Hue bridge (discovered automatically)</div>
+                        </div>
+
+                        <!-- Bridge selector for multiple bridges -->
+                        <div id="bridgeSelector" style="display:none; margin-bottom: 15px;">
+                            <label class="inputLabel" for="bridgeSelect">Multiple bridges found — select one:</label>
+                            <select id="bridgeSelect" is="emby-select" style="margin-top: 5px;"></select>
+                        </div>
+
+                        <div class="inputContainer">
+                            <button is="emby-button" type="button" class="raised button-submit" id="discoverButton">
+                                <span>Discover Hue Bridge</span>
+                            </button>
+                        </div>
                     </div>
 
-                    <!-- Bridge selector for multiple bridges -->
-                    <div id="bridgeSelector" style="display:none; margin-bottom: 15px;">
-                        <label class="inputLabel" for="bridgeSelect">Multiple bridges found — select one:</label>
-                        <select id="bridgeSelect" is="emby-select" style="margin-top: 5px;"></select>
-                    </div>
-
-                    <div class="inputContainer">
-                        <button is="emby-button" type="button" class="raised button-submit" id="discoverButton">
-                            <span>Discover Hue Bridge</span>
-                        </button>
-                    </div>
-
-                    <div id="authenticationSection" style="display:none;">
+                    <div id="authenticationSection" class="hue-section-card" style="display:none;">
+                        <h2>Authentication</h2>
                         <!-- Auth status badge -->
                         <div class="inputContainer">
                             <label class="inputLabel">Authentication Status</label>
@@ -247,7 +244,7 @@
                         </div>
                     </div>
 
-                    <div id="configSection" style="display:none;">
+                    <div id="configSection" class="hue-section-card" style="display:none;">
                         <h2>Light Control Profiles</h2>
                         
                         <div class="fieldDescription" style="margin-bottom: 20px;">
@@ -896,37 +893,6 @@
                     setTimeout(function() {
                         HuePluginConfig.switchTab('general');
                     }, 50);
-                },
-
-                // Update connection status
-                updateConnectionStatus: function(bridgeIp) {
-                    var statusDiv = document.querySelector('#connectionStatus');
-                    var statusIp = document.querySelector('#statusBridgeIp');
-                    var resourceCounts = document.querySelector('#resourceCounts');
-                    
-                    if (statusDiv && bridgeIp) {
-                        statusDiv.style.display = 'block';
-                        if (statusIp) statusIp.textContent = bridgeIp;
-                        
-                        // Fetch resource counts
-                        Promise.all([
-                            ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/groups')),
-                            ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/scenes'))
-                        ]).then(function(results) {
-                            var groups = results[0] || {};
-                            var scenes = results[1] || {};
-                            var groupCount = Object.keys(groups).length;
-                            var sceneCount = Object.keys(scenes).length;
-                            
-                            if (resourceCounts) {
-                                resourceCounts.textContent = groupCount + ' groups • ' + sceneCount + ' scenes';
-                            }
-                        }).catch(function() {
-                            if (resourceCounts) {
-                                resourceCounts.textContent = 'Unable to fetch resource counts';
-                            }
-                        });
-                    }
                 },
 
                 loadConfiguration: function () {
