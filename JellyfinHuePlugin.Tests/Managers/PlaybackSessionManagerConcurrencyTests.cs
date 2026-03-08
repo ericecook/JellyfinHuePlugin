@@ -34,16 +34,24 @@ namespace JellyfinHuePlugin.Tests.Managers
             _mockSegmentManager = new Mock<IMediaSegmentManager>();
             _mockLibraryManager = new Mock<ILibraryManager>();
 
+            var testBridge = new HueBridge
+            {
+                Id = "bridge1",
+                Name = "Test Bridge",
+                IpAddress = "192.168.1.50",
+                Username = "testuser"
+            };
+
             _config = new PluginConfiguration
             {
                 EnablePlugin = true,
-                BridgeIpAddress = "192.168.1.50",
-                Username = "testuser",
+                Bridges = new List<HueBridge> { testBridge },
                 Profiles = new List<LightControlProfile>
                 {
                     new LightControlProfile
                     {
                         Name = "Catch All",
+                        BridgeId = "bridge1",
                         EnableForMovies = true,
                         EnableForTvShows = true,
                         PlayBrightness = 20,

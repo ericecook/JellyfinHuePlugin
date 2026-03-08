@@ -17,8 +17,7 @@ namespace JellyfinHuePlugin.Tests.Configuration
             var config = new PluginConfiguration();
 
             // Assert
-            config.BridgeIpAddress.Should().BeEmpty();
-            config.Username.Should().BeEmpty();
+            config.Bridges.Should().NotBeNull().And.BeEmpty();
             config.EnablePlugin.Should().BeTrue();
             config.Profiles.Should().NotBeNull().And.BeEmpty();
         }
@@ -252,11 +251,14 @@ namespace JellyfinHuePlugin.Tests.Configuration
             using var reader = new StringReader(oldXml);
             var config = (PluginConfiguration)serializer.Deserialize(reader)!;
 
-            // Top-level settings preserved
-            config.BridgeIpAddress.Should().Be("192.168.1.50");
-            config.Username.Should().Be("abc123");
+            // Legacy bridge fields should be absorbed; migrate to Bridges list
+            config.MigrateLegacyConfig();
+            config.Bridges.Should().HaveCount(1);
+            config.Bridges[0].IpAddress.Should().Be("192.168.1.50");
+            config.Bridges[0].Username.Should().Be("abc123");
             config.EnablePlugin.Should().BeTrue();
             config.Profiles.Should().HaveCount(1);
+            config.Profiles[0].BridgeId.Should().Be(config.Bridges[0].Id);
 
             // Profile settings preserved
             var p = config.Profiles[0];
@@ -308,7 +310,10 @@ namespace JellyfinHuePlugin.Tests.Configuration
             using var reader = new StringReader(newXml);
             var config = (PluginConfiguration)serializer.Deserialize(reader)!;
 
-            config.BridgeIpAddress.Should().Be("10.0.0.5");
+            // Legacy bridge fields migrated
+            config.MigrateLegacyConfig();
+            config.Bridges.Should().HaveCount(1);
+            config.Bridges[0].IpAddress.Should().Be("10.0.0.5");
             config.Profiles.Should().HaveCount(1);
 
             var p = config.Profiles[0];
