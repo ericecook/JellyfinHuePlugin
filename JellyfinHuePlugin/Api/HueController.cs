@@ -55,40 +55,27 @@ namespace JellyfinHuePlugin.Api
             CancellationToken cancellationToken)
         {
             _logger.LogInformation("API: Attempting authentication with bridge {BridgeIp}", request.BridgeIp);
-            
-            // Try authentication up to 3 times with delays to give user time to press button
-            for (int attempt = 1; attempt <= 3; attempt++)
+
+            var username = await _hueService.AuthenticateAsync(request.BridgeIp, cancellationToken: cancellationToken);
+
+            if (username != null)
             {
-                _logger.LogInformation("Authentication attempt {Attempt}/3", attempt);
-                
-                var username = await _hueService.AuthenticateAsync(request.BridgeIp, cancellationToken: cancellationToken);
-                
-                if (username != null)
+                // Success! Save to configuration
+                var config = Plugin.Instance?.Configuration;
+                if (config != null)
                 {
-                    // Success! Save to configuration
-                    var config = Plugin.Instance?.Configuration;
-                    if (config != null)
-                    {
-                        config.BridgeIpAddress = request.BridgeIp;
-                        config.Username = username;
-                        Plugin.Instance?.SaveConfiguration();
-                    }
-                    
-                    return Ok(new AuthenticationResult { Success = true, Username = username });
+                    config.BridgeIpAddress = request.BridgeIp;
+                    config.Username = username;
+                    Plugin.Instance?.SaveConfiguration();
                 }
-                
-                // If not the last attempt, wait before retrying
-                if (attempt < 3)
-                {
-                    _logger.LogInformation("Button not pressed yet, waiting 3 seconds before retry...");
-                    await Task.Delay(3000, cancellationToken);
-                }
+
+                return Ok(new AuthenticationResult { Success = true, Username = username });
             }
-            
-            return Ok(new AuthenticationResult 
-            { 
-                Success = false, 
-                Error = "Authentication failed after 3 attempts. Make sure to press and hold the large button on top of your Hue bridge for 2-3 seconds, then try again." 
+
+            return Ok(new AuthenticationResult
+            {
+                Success = false,
+                Error = "Link button not pressed. Press the button on your Hue bridge and try again."
             });
         }
 
