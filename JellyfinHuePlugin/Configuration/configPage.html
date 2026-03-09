@@ -627,7 +627,7 @@
                     // Bridge
                     if (profile.BridgeId && HuePluginConfig.bridges.length > 1) {
                         var bridge = HuePluginConfig.bridges.find(function(b) { return b.Id === profile.BridgeId; });
-                        items.push('Bridge: ' + (bridge ? bridge.Name : 'Unknown'));
+                        items.push('Bridge: ' + (bridge ? bridge.Name + ' (' + bridge.IpAddress + ')' : 'Unknown'));
                     }
 
                     // Special flags
@@ -1014,26 +1014,21 @@
                     var html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
                     HuePluginConfig.bridges.forEach(function(bridge, index) {
                         var isAuth = bridge.Username && bridge.Username.length > 0;
-                        var statusColor = isAuth ? '#4caf50' : '#ff9800';
-                        var statusText = isAuth ? 'Connected' : 'Not authenticated';
+                        var statusColor = isAuth ? '#888' : '#ff9800';
+                        var statusText = isAuth ? 'Checking...' : 'Not authenticated';
 
                         html += '<div class="hue-card" onclick="HuePluginConfig.editBridge(' + index + ')">';
                         html += '<div style="display: flex; align-items: center; justify-content: space-between;">';
                         html += '<div style="flex: 1;">';
                         html += '<h3 style="margin: 0;">' + (bridge.Name || 'Bridge') + '</h3>';
                         html += '<div style="font-size: 0.88em; opacity: 0.6; margin-top: 4px;">' + bridge.IpAddress + '</div>';
-                        html += '<div style="display: inline-flex; align-items: center; gap: 6px; margin-top: 6px;">';
-                        html += '<span style="width: 8px; height: 8px; border-radius: 50%; background: ' + statusColor + '; display: inline-block;"></span>';
-                        html += '<span style="font-size: 0.85em; color: ' + statusColor + ';">' + statusText + '</span>';
+                        html += '<div id="bridgeStatus-' + index + '" style="display: inline-flex; align-items: center; gap: 6px; margin-top: 6px;">';
+                        html += '<span class="bridge-status-dot" style="width: 8px; height: 8px; border-radius: 50%; background: ' + statusColor + '; display: inline-block;"></span>';
+                        html += '<span class="bridge-status-text" style="font-size: 0.85em; color: ' + statusColor + ';">' + statusText + '</span>';
                         html += '</div>';
                         html += '</div>';
                         html += '<div style="display: flex; gap: 8px;">';
                         html += '<button is="emby-button" type="button" class="raised" onclick="event.stopPropagation(); HuePluginConfig.editBridge(' + index + ')"><span>Edit</span></button>';
-                        if (!isAuth) {
-                            html += '<button is="emby-button" type="button" class="raised button-submit" onclick="event.stopPropagation(); HuePluginConfig.authenticateBridge(' + index + ')"><span>Authenticate</span></button>';
-                        } else {
-                            html += '<button is="emby-button" type="button" class="raised" onclick="event.stopPropagation(); HuePluginConfig.authenticateBridge(' + index + ')"><span>Re-auth</span></button>';
-                        }
                         html += '<button is="emby-button" type="button" class="raised" onclick="event.stopPropagation(); HuePluginConfig.deleteBridge(' + index + ')" style="opacity: 0.7;"><span>Delete</span></button>';
                         html += '</div>';
                         html += '</div>';
@@ -1041,6 +1036,35 @@
                     });
                     html += '</div>';
                     container.innerHTML = html;
+
+                    // Verify authenticated bridges in background
+                    HuePluginConfig.bridges.forEach(function(bridge, index) {
+                        if (!bridge.Username || bridge.Username.length === 0) return;
+                        ApiClient.ajax({
+                            type: 'POST',
+                            url: ApiClient.getUrl('api/hueplugin/verifyconnection'),
+                            data: JSON.stringify({ BridgeIp: bridge.IpAddress, Username: bridge.Username }),
+                            contentType: 'application/json',
+                            dataType: 'json'
+                        }).then(function(result) {
+                            HuePluginConfig.updateBridgeStatus(index, result.Success, result.Success ? 'Connected' : (result.Error || 'Auth failed'));
+                        }).catch(function() {
+                            HuePluginConfig.updateBridgeStatus(index, false, 'Connection error');
+                        });
+                    });
+                },
+
+                updateBridgeStatus: function(index, success, text) {
+                    if (HuePluginConfig.bridges[index]) {
+                        HuePluginConfig.bridges[index]._verified = success;
+                    }
+                    var el = document.querySelector('#bridgeStatus-' + index);
+                    if (!el) return;
+                    var color = success ? '#4caf50' : '#f44336';
+                    el.querySelector('.bridge-status-dot').style.background = color;
+                    var textEl = el.querySelector('.bridge-status-text');
+                    textEl.style.color = color;
+                    textEl.textContent = text;
                 },
 
                 // Edit a bridge by index
@@ -1124,7 +1148,16 @@
                     var bridge = HuePluginConfig.bridges[index];
                     if (!bridge) return;
 
-                    if (!confirm('Delete bridge "' + bridge.Name + '"? Profiles using this bridge will need to be reassigned.')) return;
+                    var affectedProfiles = HuePluginConfig.profiles.filter(function(p) {
+                        return p.BridgeId === bridge.Id;
+                    });
+                    if (affectedProfiles.length > 0) {
+                        var names = affectedProfiles.map(function(p) { return '"' + p.Name + '"'; }).join(', ');
+                        Dashboard.alert('Cannot delete this bridge. The following profiles still use it: ' + names + '. Reassign or delete those profiles first.');
+                        return;
+                    }
+
+                    if (!confirm('Delete bridge "' + bridge.Name + '"?')) return;
 
                     ApiClient.ajax({
                         type: 'DELETE',
@@ -1289,19 +1322,43 @@
                         return;
                     }
 
-                    var bridgeId = crypto.randomUUID ? crypto.randomUUID() : 'bridge-' + Date.now();
-                    HuePluginConfig.bridges.push({
-                        Id: bridgeId,
-                        Name: bridgeName,
-                        IpAddress: bridgeIp,
-                        Username: username
-                    });
-                    HuePluginConfig.renderBridges();
-                    document.querySelector('#configSection').style.display = 'block';
-                    HuePluginConfig.saveConfiguration();
+                    var btn = document.querySelector('#saveAddBridge');
+                    var btnText = btn.querySelector('span');
+                    btn.disabled = true;
+                    btnText.textContent = 'Verifying...';
 
-                    document.querySelector('#addBridgeModal').style.display = 'none';
-                    Dashboard.alert('Bridge "' + bridgeName + '" added!');
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('api/hueplugin/verifyconnection'),
+                        data: JSON.stringify({ BridgeIp: bridgeIp, Username: username }),
+                        contentType: 'application/json',
+                        dataType: 'json'
+                    }).then(function(result) {
+                        if (result.Success) {
+                            var bridgeId = crypto.randomUUID ? crypto.randomUUID() : 'bridge-' + Date.now();
+                            HuePluginConfig.bridges.push({
+                                Id: bridgeId,
+                                Name: bridgeName,
+                                IpAddress: bridgeIp,
+                                Username: username
+                            });
+                            HuePluginConfig.renderBridges();
+                            document.querySelector('#configSection').style.display = 'block';
+                            HuePluginConfig.saveConfiguration();
+
+                            document.querySelector('#addBridgeModal').style.display = 'none';
+                            Dashboard.alert('Bridge "' + bridgeName + '" added!');
+                        } else {
+                            Dashboard.alert('Connection failed: ' + (result.Error || 'Unknown error'));
+                        }
+                        btn.disabled = false;
+                        btnText.textContent = 'Save';
+                    }).catch(function(error) {
+                        console.error('Verify connection failed:', error);
+                        Dashboard.alert('Could not verify bridge connection. Check the IP address and try again.');
+                        btn.disabled = false;
+                        btnText.textContent = 'Save';
+                    });
                 },
 
                 setAuthStatus: function (status) {
@@ -1590,20 +1647,36 @@
                     HuePluginConfig.bridges.forEach(function(bridge) {
                         var opt = document.createElement('option');
                         opt.value = bridge.Id;
-                        var authLabel = (bridge.Username && bridge.Username.length > 0) ? '' : ' (not authenticated)';
-                        opt.textContent = bridge.Name + ' (' + bridge.IpAddress + ')' + authLabel;
+                        var label = bridge.Name + ' (' + bridge.IpAddress + ')';
+                        if (bridge._verified === false) {
+                            label += ' (auth failed)';
+                            opt.disabled = true;
+                        } else if (!bridge.Username) {
+                            label += ' (not authenticated)';
+                            opt.disabled = true;
+                        }
+                        opt.textContent = label;
                         select.appendChild(opt);
                     });
 
                     if (selectedBridgeId) {
                         select.value = selectedBridgeId;
                     }
+                    // Fall back to first verified bridge if no selection or selection is disabled
+                    if (!select.value || select.selectedOptions[0].disabled) {
+                        var firstVerified = HuePluginConfig.bridges.find(function(b) { return b._verified !== false && b.Username; });
+                        if (firstVerified) select.value = firstVerified.Id;
+                    }
 
-                    // Reload groups/scenes when bridge changes
+                    // Reload groups/scenes when bridge changes, preserving current selections
                     select.onchange = function() {
                         var bridgeId = select.value;
-                        HuePluginConfig.loadProfileGroups(bridgeId, '0');
-                        HuePluginConfig.loadProfileScenes(bridgeId, '', '', '');
+                        var currentGroup = document.querySelector('#profileTargetGroupId').value;
+                        var currentPlayScene = document.querySelector('#profilePlaySceneId').value;
+                        var currentPauseScene = document.querySelector('#profilePauseSceneId').value;
+                        var currentStopScene = document.querySelector('#profileStopSceneId').value;
+                        HuePluginConfig.loadProfileGroups(bridgeId, currentGroup);
+                        HuePluginConfig.loadProfileScenes(bridgeId, currentPlayScene, currentPauseScene, currentStopScene);
                     };
                 },
 
@@ -1650,23 +1723,20 @@
                             }
                         });
                         
-                        // Set saved values after populating
-                        if (savedPlayId) {
-                            playSelect.value = savedPlayId;
-                        }
-                        if (savedPauseId) {
-                            pauseSelect.value = savedPauseId;
-                        }
-                        if (savedStopId) {
-                            stopSelect.value = savedStopId;
-                        }
+                        // Set saved values after populating (falls back to "None" if ID not found)
+                        if (savedPlayId) playSelect.value = savedPlayId;
+                        if (savedPauseId) pauseSelect.value = savedPauseId;
+                        if (savedStopId) stopSelect.value = savedStopId;
 
-                        // Update brightness visibility based on scene selections
+                        // Update brightness visibility based on actual selected values
+                        var activePlay = playSelect.value;
+                        var activePause = pauseSelect.value;
+                        var activeStop = stopSelect.value;
                         var turnOff = document.querySelector('#profileTurnOffLightsOnPlay').checked;
-                        document.querySelector('#playBrightnessContainer').style.display = (savedPlayId || turnOff) ? 'none' : '';
-                        document.querySelector('#playTurnOffContainer').style.display = savedPlayId ? 'none' : '';
-                        document.querySelector('#pauseBrightnessContainer').style.display = savedPauseId ? 'none' : '';
-                        document.querySelector('#stopBrightnessContainer').style.display = savedStopId ? 'none' : '';
+                        document.querySelector('#playBrightnessContainer').style.display = (activePlay || turnOff) ? 'none' : '';
+                        document.querySelector('#playTurnOffContainer').style.display = activePlay ? 'none' : '';
+                        document.querySelector('#pauseBrightnessContainer').style.display = activePause ? 'none' : '';
+                        document.querySelector('#stopBrightnessContainer').style.display = activeStop ? 'none' : '';
                     }).catch(function(err) {
                         console.error('Error loading scenes for profile:', err);
                     });

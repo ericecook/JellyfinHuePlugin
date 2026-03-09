@@ -46,4 +46,18 @@ namespace JellyfinHuePlugin.Api
         [Required]
         public string BridgeIp { get; set; } = string.Empty;
     }
+
+    public class VerifyConnectionRequest
+    {
+        [Required]
+        public string BridgeIp { get; set; } = string.Empty;
+        [Required]
+        public string Username { get; set; } = string.Empty;
+    }
+
+    public class VerifyConnectionResult
+    {
+        public bool Success { get; set; }
+        public string? Error { get; set; }
+    }
 }

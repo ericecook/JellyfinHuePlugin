@@ -316,6 +316,30 @@ namespace JellyfinHuePlugin.Api
 
             return Ok(new { result });
         }
+
+        [HttpPost("verifyconnection")]
+        public async Task<ActionResult<VerifyConnectionResult>> VerifyConnection(
+            [FromBody][Required] VerifyConnectionRequest request,
+            CancellationToken cancellationToken)
+        {
+            _logger.LogInformation("API: Verifying authenticated connection to bridge at {BridgeIp}", request.BridgeIp);
+
+            try
+            {
+                var lights = await _hueService.GetLightsAsync(request.BridgeIp, request.Username, cancellationToken);
+                if (lights != null)
+                {
+                    return Ok(new VerifyConnectionResult { Success = true });
+                }
+
+                return Ok(new VerifyConnectionResult { Success = false, Error = "Bridge returned no data. The API key may be invalid." });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Bridge verification failed for {BridgeIp}", request.BridgeIp);
+                return Ok(new VerifyConnectionResult { Success = false, Error = "Connection failed: " + ex.Message });
+            }
+        }
     }
 
 }
