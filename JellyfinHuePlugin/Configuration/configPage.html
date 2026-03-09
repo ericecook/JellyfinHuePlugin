@@ -165,19 +165,6 @@
             <div class="content-primary">
                 <form id="HuePluginConfigForm">
                     
-                    <!-- Setup Stepper -->
-                    <div id="setupStepper" style="display: flex; align-items: center; gap: 0; margin-bottom: 24px;">
-                        <div class="setup-step" id="step1" data-step="1" style="display: flex; align-items: center; gap: 8px;">
-                            <div class="step-circle" style="width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.85em; font-weight: bold; background: #00a4dc; color: #fff; transition: background 0.2s;">1</div>
-                            <span class="step-label" style="font-size: 0.9em; font-weight: 600; color: #fff; transition: opacity 0.2s;">Bridges</span>
-                        </div>
-                        <div style="flex: 1; height: 2px; background: rgba(255,255,255,0.15); margin: 0 8px;"></div>
-                        <div class="setup-step" id="step2" data-step="2" style="display: flex; align-items: center; gap: 8px;">
-                            <div class="step-circle" style="width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.85em; font-weight: bold; background: rgba(255,255,255,0.15); color: rgba(255,255,255,0.4); transition: background 0.2s;">2</div>
-                            <span class="step-label" style="font-size: 0.9em; font-weight: 600; color: rgba(255,255,255,0.4); transition: opacity 0.2s;">Configure</span>
-                        </div>
-                    </div>
-
                     <div class="hue-section-card">
                         <h2>Hue Bridges</h2>
                         <div class="fieldDescription" style="margin-bottom: 15px;">
@@ -945,9 +932,9 @@
 
                             if (hasAuthBridge) {
                                 document.querySelector('#configSection').style.display = 'block';
-                                HuePluginConfig.updateStepper(2);
+
                             } else {
-                                HuePluginConfig.updateStepper(1);
+
                             }
 
                             Dashboard.hideLoadingMsg();
@@ -961,34 +948,6 @@
                         Dashboard.hideLoadingMsg();
                         Dashboard.alert('Failed to load plugin configuration. Check the server logs for details.');
                     });
-                },
-
-                updateStepper: function (activeStep) {
-                    for (var i = 1; i <= 2; i++) {
-                        var stepEl = document.querySelector('#step' + i);
-                        if (!stepEl) continue;
-                        var circle = stepEl.querySelector('.step-circle');
-                        var label = stepEl.querySelector('.step-label');
-                        if (i < activeStep) {
-                            // Completed
-                            circle.style.background = '#4caf50';
-                            circle.style.color = '#fff';
-                            circle.innerHTML = '&#x2713;';
-                            label.style.color = '#4caf50';
-                        } else if (i === activeStep) {
-                            // Active
-                            circle.style.background = '#00a4dc';
-                            circle.style.color = '#fff';
-                            circle.textContent = i;
-                            label.style.color = '#fff';
-                        } else {
-                            // Future
-                            circle.style.background = 'rgba(255,255,255,0.15)';
-                            circle.style.color = 'rgba(255,255,255,0.4)';
-                            circle.textContent = i;
-                            label.style.color = 'rgba(255,255,255,0.4)';
-                        }
-                    }
                 },
 
                 // Render bridge cards
@@ -1058,7 +1017,7 @@
                                 if (btn) { btn.disabled = false; btn.querySelector('span').textContent = 'Re-auth'; }
                                 HuePluginConfig.renderBridges();
                                 document.querySelector('#configSection').style.display = 'block';
-                                HuePluginConfig.updateStepper(2);
+
                                 Dashboard.alert('Successfully authenticated with ' + bridge.Name + '!');
                             } else if (attempt < maxAttempts) {
                                 setTimeout(tryAuth, 3000);
@@ -1096,7 +1055,6 @@
                         });
                         if (!hasAuthBridge) {
                             document.querySelector('#configSection').style.display = 'none';
-                            HuePluginConfig.updateStepper(1);
                         }
                     }).catch(function(error) {
                         console.error('Delete bridge failed:', error);
@@ -1195,7 +1153,7 @@
                                 });
                                 HuePluginConfig.renderBridges();
                                 document.querySelector('#configSection').style.display = 'block';
-                                HuePluginConfig.updateStepper(2);
+
 
                                 // Close modal
                                 document.querySelector('#addBridgeModal').style.display = 'none';
