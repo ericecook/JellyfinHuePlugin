@@ -8,7 +8,15 @@
     "owner": "ericecook",
     "versions": [
       {
-        "changelog": "**Full Changelog**: https://github.com/ericecook/JellyfinHuePlugin/compare/v1.4.0.0...v2.0.0.0",
+        "changelog": "**Full Changelog**: https://github.com/ericecook/JellyfinHuePlugin/compare/v2.0.0.0...v2.0.1.0",
+        "checksum": "f1139763f0889e7e00451d88a50e3e3b",
+        "sourceUrl": "https://github.com/ericecook/JellyfinHuePlugin/releases/download/v2.0.1.0/JellyfinHuePlugin_2.0.1.0.zip",
+        "targetAbi": "10.9.0.0",
+        "timestamp": "2026-03-09T17:41:33Z",
+        "version": "2.0.1.0"
+      },
+      {
+        "changelog": "### Multi-Bridge Support\r\n- Support for multiple Hue bridges with independent configuration\r\n- Per-profile bridge assignment — each lighting profile targets a specific bridge\r\n- Bridge CRUD API endpoints for add, edit, and delete\r\n- Automatic migration from single-bridge to multi-bridge configuration\r\n\r\n### New Config UI\r\n- Redesigned configuration page with card-based layout\r\n- Profile templates (Movie Theater, TV Viewing, Bedroom Casual, Gaming Setup) for quick setup\r\n- Edit Bridge modal — click any bridge card to modify its name, IP, or API key\r\n- Click-outside-to-close for all modals\r\n- Auto-save on modal save, profile-reorder, etc. (no more global Save button)\r\n- Improved bridge authentication instructions\r\n\r\n### Pause Grace Period\r\n- Configurable grace period to skip pause lighting during the first N seconds of playback\r\n- Useful for skipping pause actions while getting settled at the start of a movie\r\n\r\n### Bug Fixes & Improvements\r\n- Fixed concurrency bugs in playback session management\r\n- Added comprehensive test coverage\r\n- Fixed long Device IDs overflowing their container\r\n- Replaced IntroSkipper DB hack with Jellyfin Media Segments API (from v1.4.0)\r\n\r\n**Full Changelog**: https://github.com/ericecook/JellyfinHuePlugin/compare/v1.4.0.0...v2.0.0.0",
         "checksum": "dc6526181041562f19e364b1f4784bae",
         "sourceUrl": "https://github.com/ericecook/JellyfinHuePlugin/releases/download/v2.0.0.0/JellyfinHuePlugin_2.0.0.0.zip",
         "targetAbi": "10.9.0.0",
