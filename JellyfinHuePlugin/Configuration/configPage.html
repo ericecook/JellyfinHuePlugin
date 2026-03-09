@@ -227,9 +227,8 @@
                                     <h3>Authenticate</h3>
                                     <div class="fieldDescription" style="margin-bottom: 10px; color: #e87c03;">
                                         <strong>How to authenticate:</strong><br>
-                                        1. Press and HOLD the large round button on TOP of your Hue bridge for 2-3 seconds<br>
-                                        2. The button should light up or flash<br>
-                                        3. Click "Authenticate" below WITHIN 30 seconds
+                                        1. Press the link button on your Hue bridge<br>
+                                        2. Click "Authenticate" below within 30 seconds
                                     </div>
                                     <div class="inputContainer">
                                         <button is="emby-button" type="button" class="raised button-submit" id="authBridgeInModal">
@@ -1065,7 +1064,7 @@
                                 setTimeout(tryAuth, 3000);
                             } else {
                                 if (btn) { btn.disabled = false; btn.querySelector('span').textContent = 'Authenticate'; }
-                                Dashboard.alert('Authentication failed after ' + maxAttempts + ' attempts. Press the bridge button and try again.');
+                                Dashboard.alert('Authentication failed after ' + maxAttempts + ' attempts. Press the link button on your Hue bridge and try again.');
                             }
                         }).catch(function(error) {
                             if (btn) { btn.disabled = false; btn.querySelector('span').textContent = 'Authenticate'; }
@@ -1218,7 +1217,7 @@
                                 btn.disabled = false;
                                 btnText.textContent = 'Authenticate';
                                 progressText.textContent = 'Authentication failed after ' + maxAttempts + ' attempts.';
-                                countdownEl.textContent = 'Press the bridge button and try again.';
+                                countdownEl.textContent = 'Press the link button on your Hue bridge and try again.';
                             }
                         }).catch(function(error) {
                             btn.disabled = false;
