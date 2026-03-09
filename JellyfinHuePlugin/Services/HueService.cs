@@ -4,6 +4,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.IO;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -31,6 +32,20 @@ namespace JellyfinHuePlugin.Services
             
             _httpClient = new HttpClient(handler);
             _httpClient.Timeout = TimeSpan.FromSeconds(5);
+        }
+
+        // Retry once on transient connection failures (stale pooled connections to Hue bridge)
+        private async Task<HttpResponseMessage> SendWithRetryAsync(Func<Task<HttpResponseMessage>> request)
+        {
+            try
+            {
+                return await request();
+            }
+            catch (HttpRequestException ex) when (ex.InnerException is IOException)
+            {
+                _logger.LogDebug("Connection reset, retrying request");
+                return await request();
+            }
         }
 
         // Discover Hue bridges on the network using N-UPnP
@@ -167,8 +182,8 @@ namespace JellyfinHuePlugin.Services
                 
                 _logger.LogDebug("Authentication URL: {Url}", url);
                 
-                var response = await _httpClient.PostAsJsonAsync(url, requestBody, cancellationToken);
-                
+                var response = await SendWithRetryAsync(() => _httpClient.PostAsJsonAsync(url, requestBody, cancellationToken));
+
                 // Read response as string first to check what we got
                 var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
                 _logger.LogDebug("Authentication response: {Response}", responseContent);
@@ -245,10 +260,10 @@ namespace JellyfinHuePlugin.Services
                 
                 _logger.LogInformation("Testing connection to bridge at {Url}", url);
                 
-                var response = await _httpClient.GetAsync(url, cancellationToken);
+                var response = await SendWithRetryAsync(() => _httpClient.GetAsync(url, cancellationToken));
                 var content = await response.Content.ReadAsStringAsync(cancellationToken);
-                
-                _logger.LogInformation("Bridge test response - Status: {Status}, Content length: {Length}", 
+
+                _logger.LogInformation("Bridge test response - Status: {Status}, Content length: {Length}",
                     response.StatusCode, content.Length);
                 
                 return $"Status: {response.StatusCode}\nContent: {content.Substring(0, Math.Min(500, content.Length))}";
@@ -266,7 +281,7 @@ namespace JellyfinHuePlugin.Services
             try
             {
                 bridgeIp = NormalizeBridgeIp(bridgeIp);
-                var response = await _httpClient.GetAsync($"https://{bridgeIp}/api/{username}/lights", cancellationToken);
+                var response = await SendWithRetryAsync(() => _httpClient.GetAsync($"https://{bridgeIp}/api/{username}/lights", cancellationToken));
                 response.EnsureSuccessStatusCode();
                 
                 return await response.Content.ReadFromJsonAsync<Dictionary<string, HueLight>>(cancellationToken);
@@ -284,7 +299,7 @@ namespace JellyfinHuePlugin.Services
             try
             {
                 bridgeIp = NormalizeBridgeIp(bridgeIp);
-                var response = await _httpClient.GetAsync($"https://{bridgeIp}/api/{username}/groups", cancellationToken);
+                var response = await SendWithRetryAsync(() => _httpClient.GetAsync($"https://{bridgeIp}/api/{username}/groups", cancellationToken));
                 response.EnsureSuccessStatusCode();
                 
                 return await response.Content.ReadFromJsonAsync<Dictionary<string, HueGroup>>(cancellationToken);
@@ -302,7 +317,7 @@ namespace JellyfinHuePlugin.Services
             try
             {
                 bridgeIp = NormalizeBridgeIp(bridgeIp);
-                var response = await _httpClient.GetAsync($"https://{bridgeIp}/api/{username}/scenes", cancellationToken);
+                var response = await SendWithRetryAsync(() => _httpClient.GetAsync($"https://{bridgeIp}/api/{username}/scenes", cancellationToken));
                 response.EnsureSuccessStatusCode();
                 
                 return await response.Content.ReadFromJsonAsync<Dictionary<string, HueScene>>(cancellationToken);
@@ -323,11 +338,11 @@ namespace JellyfinHuePlugin.Services
                 object requestBody = transitionTime.HasValue
                     ? new { scene = sceneId, transitiontime = transitionTime.Value }
                     : new { scene = sceneId };
-                var response = await _httpClient.PutAsJsonAsync(
+                var response = await SendWithRetryAsync(() => _httpClient.PutAsJsonAsync(
                     $"https://{bridgeIp}/api/{username}/groups/{groupId}/action",
                     requestBody,
-                    cancellationToken);
-                
+                    cancellationToken));
+
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -343,11 +358,11 @@ namespace JellyfinHuePlugin.Services
             try
             {
                 bridgeIp = NormalizeBridgeIp(bridgeIp);
-                var response = await _httpClient.PutAsJsonAsync(
+                var response = await SendWithRetryAsync(() => _httpClient.PutAsJsonAsync(
                     $"https://{bridgeIp}/api/{username}/groups/{groupId}/action",
                     state,
-                    cancellationToken);
-                
+                    cancellationToken));
+
                 return response.IsSuccessStatusCode;
             }
             catch (Exception ex)
@@ -363,10 +378,10 @@ namespace JellyfinHuePlugin.Services
             try
             {
                 bridgeIp = NormalizeBridgeIp(bridgeIp);
-                var response = await _httpClient.PutAsJsonAsync(
+                var response = await SendWithRetryAsync(() => _httpClient.PutAsJsonAsync(
                     $"https://{bridgeIp}/api/{username}/lights/{lightId}/state",
                     state,
-                    cancellationToken);
+                    cancellationToken));
 
                 return response.IsSuccessStatusCode;
             }
