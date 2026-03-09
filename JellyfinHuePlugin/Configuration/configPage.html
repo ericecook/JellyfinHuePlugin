@@ -1093,7 +1093,8 @@
                             type: 'POST',
                             url: ApiClient.getUrl('api/hueplugin/authenticate'),
                             data: JSON.stringify({ BridgeIp: bridge.IpAddress, BridgeId: bridge.Id, BridgeName: bridge.Name }),
-                            contentType: 'application/json'
+                            contentType: 'application/json',
+                            dataType: 'json'
                         }).then(function(result) {
                             if (result.Success) {
                                 bridge.Username = result.Username;
@@ -1222,7 +1223,8 @@
                             type: 'POST',
                             url: ApiClient.getUrl('api/hueplugin/authenticate'),
                             data: JSON.stringify({ BridgeIp: bridgeIp, BridgeName: bridgeName }),
-                            contentType: 'application/json'
+                            contentType: 'application/json',
+                            dataType: 'json'
                         }).then(function(result) {
                             if (result.Success) {
                                 btn.disabled = false;
