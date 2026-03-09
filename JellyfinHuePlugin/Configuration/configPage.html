@@ -369,12 +369,17 @@
                                     <div class="inputContainer">
                                         <label class="inputLabel">Target Device IDs (Optional)</label>
                                         <div id="profileDeviceIdList" style="margin-bottom: 10px;"></div>
-                                        <div style="display: flex; gap: 10px;">
-                                            <input type="text" id="profileNewDeviceId" is="emby-input" placeholder="Enter Device ID" style="flex: 1;" />
-                                            <button is="emby-button" type="button" class="raised" id="profileAddDeviceIdButton">
-                                                <span>Add</span>
-                                            </button>
+                                        <div id="profileDeviceIdInputRow" style="display: none;">
+                                            <div style="display: flex; gap: 10px;">
+                                                <input type="text" id="profileNewDeviceId" is="emby-input" placeholder="Enter Device ID" style="flex: 1;" />
+                                                <button is="emby-button" type="button" class="raised" id="profileAddDeviceIdButton">
+                                                    <span>Add</span>
+                                                </button>
+                                            </div>
                                         </div>
+                                        <button is="emby-button" type="button" class="raised button-submit" id="profileShowAddDeviceId" style="margin-top: 5px;">
+                                            <span>Add Device ID</span>
+                                        </button>
                                         <div class="fieldDescription">Find Device ID in logs: "Playback started on [Client] (Device: [DeviceID], IP: [IP])"</div>
                                     </div>
 
@@ -944,6 +949,8 @@
                     
                     HuePluginConfig.profileDeviceIds = [];
                     HuePluginConfig.renderProfileDeviceIdList();
+                    document.querySelector('#profileDeviceIdInputRow').style.display = 'none';
+                    document.querySelector('#profileShowAddDeviceId').style.display = '';
 
                     var defaultBridgeId = HuePluginConfig.bridges.length > 0 ? HuePluginConfig.bridges[0].Id : '';
                     HuePluginConfig.populateBridgeDropdown(defaultBridgeId);
@@ -1403,6 +1410,8 @@
                     
                     HuePluginConfig.profileDeviceIds = profile.TargetDeviceIds || [];
                     HuePluginConfig.renderProfileDeviceIdList();
+                    document.querySelector('#profileDeviceIdInputRow').style.display = 'none';
+                    document.querySelector('#profileShowAddDeviceId').style.display = '';
 
                     // Populate bridge dropdown and load groups/scenes for the profile's bridge
                     HuePluginConfig.populateBridgeDropdown(profile.BridgeId);
@@ -1496,7 +1505,7 @@
                     var html = '';
                     HuePluginConfig.profileDeviceIds.forEach(function(id, index) {
                         html += '<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 4px;">';
-                        html += '<span style="flex: 1; font-family: monospace;">' + id + '</span>';
+                        html += '<span style="flex: 1; min-width: 0; font-family: monospace; overflow-wrap: break-word;">' + id + '</span>';
                         html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.removeProfileDeviceId(' + index + ')">Remove</button>';
                         html += '</div>';
                     });
@@ -1520,12 +1529,16 @@
                     
                     HuePluginConfig.profileDeviceIds.push(deviceId);
                     input.value = '';
+                    document.querySelector('#profileDeviceIdInputRow').style.display = 'none';
+                    document.querySelector('#profileShowAddDeviceId').style.display = '';
                     HuePluginConfig.renderProfileDeviceIdList();
                 },
 
                 removeProfileDeviceId: function(index) {
                     HuePluginConfig.profileDeviceIds.splice(index, 1);
                     HuePluginConfig.renderProfileDeviceIdList();
+                    document.querySelector('#profileDeviceIdInputRow').style.display = 'none';
+                    document.querySelector('#profileShowAddDeviceId').style.display = '';
                 },
 
                 // Populate bridge dropdown in profile editor
@@ -1779,6 +1792,12 @@
                         }
                     });
                 }
+
+                document.querySelector('#profileShowAddDeviceId').addEventListener('click', function() {
+                    document.querySelector('#profileDeviceIdInputRow').style.display = '';
+                    this.style.display = 'none';
+                    document.querySelector('#profileNewDeviceId').focus();
+                });
 
                 // Tab switching event listeners
                 document.querySelectorAll('.profile-tab').forEach(function(tab) {
