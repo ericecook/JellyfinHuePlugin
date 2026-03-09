@@ -194,7 +194,13 @@
 
                                 <div class="inputContainer">
                                     <label class="inputLabel" for="newBridgeIp">Bridge IP Address</label>
-                                    <input type="text" id="newBridgeIp" is="emby-input" placeholder="Discover or enter manually" />
+                                    <div style="display: flex; align-items: center;">
+                                        <input type="text" id="newBridgeIp" is="emby-input" placeholder="Discover or enter manually" style="flex: 1;" />
+                                        <button is="emby-button" type="button" class="raised" id="discoverBridgeInModal" style="margin-left: 10px; padding: 0.68em 1em;">
+                                            <span>Discover</span>
+                                        </button>
+                                    </div>
+                                    <div class="fieldDescription">Use Discover or enter your bridge's IP address manually</div>
                                 </div>
 
                                 <div id="addBridgeSelector" style="display:none; margin-bottom: 15px;">
@@ -203,34 +209,27 @@
                                 </div>
 
                                 <div class="inputContainer">
-                                    <button is="emby-button" type="button" class="raised" id="discoverBridgeInModal">
-                                        <span>Discover</span>
-                                    </button>
-                                </div>
-
-                                <div class="hue-divider"></div>
-
-                                <div id="addBridgeAuthSection" style="display:none;">
-                                    <h3>Authenticate</h3>
-                                    <div class="fieldDescription" style="margin-bottom: 10px; color: #e87c03;">
-                                        <strong>How to authenticate:</strong><br>
-                                        1. Press the link button on your Hue bridge<br>
-                                        2. Click "Authenticate" below within 30 seconds
-                                    </div>
-                                    <div class="inputContainer">
-                                        <button is="emby-button" type="button" class="raised button-submit" id="authBridgeInModal">
+                                    <label class="inputLabel" for="newBridgeUsername">API Key</label>
+                                    <div style="display: flex; align-items: center;">
+                                        <input type="text" id="newBridgeUsername" is="emby-input"
+                                               style="flex: 1; font-family: monospace; min-height: 40px;" placeholder="Press link button on bridge, then click Authenticate" />
+                                        <button is="emby-button" type="button" class="raised" id="authBridgeInModal" style="margin-left: 10px; padding: 0.68em 1em;">
                                             <span id="authBridgeInModalText">Authenticate</span>
                                         </button>
-                                        <div id="addBridgeAuthProgress" style="display:none; margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 6px;">
-                                            <div id="addBridgeAuthProgressText" style="font-weight: 600;"></div>
-                                            <div id="addBridgeAuthCountdown" style="font-size: 0.85em; opacity: 0.7; margin-top: 4px;"></div>
-                                        </div>
+                                    </div>
+                                    <div class="fieldDescription">Authenticate to get an API key automatically, or paste one manually</div>
+                                    <div id="addBridgeAuthProgress" style="display:none; margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 6px;">
+                                        <div id="addBridgeAuthProgressText" style="font-weight: 600;"></div>
+                                        <div id="addBridgeAuthCountdown" style="font-size: 0.85em; opacity: 0.7; margin-top: 4px;"></div>
                                     </div>
                                 </div>
                             </div>
                             <div class="hue-modal-footer">
                                 <button is="emby-button" type="button" class="raised" id="cancelAddBridge">
                                     <span>Cancel</span>
+                                </button>
+                                <button is="emby-button" type="button" class="raised button-submit" id="saveAddBridge">
+                                    <span>Save</span>
                                 </button>
                             </div>
                         </div>
@@ -1152,8 +1151,9 @@
                 openAddBridge: function() {
                     document.querySelector('#newBridgeName').value = 'Bridge';
                     document.querySelector('#newBridgeIp').value = '';
+                    document.querySelector('#newBridgeUsername').value = '';
                     document.querySelector('#addBridgeSelector').style.display = 'none';
-                    document.querySelector('#addBridgeAuthSection').style.display = 'none';
+                    document.querySelector('#addBridgeAuthProgress').style.display = 'none';
                     document.querySelector('#addBridgeModal').style.display = 'block';
                 },
 
@@ -1184,7 +1184,6 @@
                         } else {
                             Dashboard.alert('No Hue bridges found. You can enter the IP address manually.');
                         }
-                        document.querySelector('#addBridgeAuthSection').style.display = 'block';
                         Dashboard.hideLoadingMsg();
                     }).catch(function(error) {
                         Dashboard.hideLoadingMsg();
@@ -1231,7 +1230,8 @@
                                 btnText.textContent = 'Authenticate';
                                 progressEl.style.display = 'none';
 
-                                // Add bridge to local list
+                                // Fill in the API key and save
+                                document.querySelector('#newBridgeUsername').value = result.Username;
                                 HuePluginConfig.bridges.push({
                                     Id: result.BridgeId,
                                     Name: bridgeName,
@@ -1242,7 +1242,6 @@
                                 document.querySelector('#configSection').style.display = 'block';
                                 HuePluginConfig.saveConfiguration();
 
-                                // Close modal
                                 document.querySelector('#addBridgeModal').style.display = 'none';
                                 Dashboard.alert('Bridge "' + bridgeName + '" added and authenticated!');
                             } else if (attempt < maxAttempts) {
@@ -1274,6 +1273,35 @@
                     }
 
                     tryAuth();
+                },
+
+                saveAddBridge: function() {
+                    var bridgeIp = document.querySelector('#newBridgeIp').value.trim();
+                    var bridgeName = document.querySelector('#newBridgeName').value.trim() || 'Bridge';
+                    var username = document.querySelector('#newBridgeUsername').value.trim();
+
+                    if (!bridgeIp) {
+                        Dashboard.alert('Please enter a bridge IP address.');
+                        return;
+                    }
+                    if (!username) {
+                        Dashboard.alert('Please authenticate with the bridge or paste an API key.');
+                        return;
+                    }
+
+                    var bridgeId = crypto.randomUUID ? crypto.randomUUID() : 'bridge-' + Date.now();
+                    HuePluginConfig.bridges.push({
+                        Id: bridgeId,
+                        Name: bridgeName,
+                        IpAddress: bridgeIp,
+                        Username: username
+                    });
+                    HuePluginConfig.renderBridges();
+                    document.querySelector('#configSection').style.display = 'block';
+                    HuePluginConfig.saveConfiguration();
+
+                    document.querySelector('#addBridgeModal').style.display = 'none';
+                    Dashboard.alert('Bridge "' + bridgeName + '" added!');
                 },
 
                 setAuthStatus: function (status) {
@@ -1716,6 +1744,13 @@
                 if (cancelAddBridge) {
                     cancelAddBridge.addEventListener('click', function () {
                         document.querySelector('#addBridgeModal').style.display = 'none';
+                    });
+                }
+
+                var saveAddBridge = document.querySelector('#saveAddBridge');
+                if (saveAddBridge) {
+                    saveAddBridge.addEventListener('click', function () {
+                        HuePluginConfig.saveAddBridge();
                     });
                 }
 
