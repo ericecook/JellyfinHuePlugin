@@ -21,8 +21,8 @@ A Jellyfin plugin that automatically controls Philips Hue lights based on media 
 
 - Jellyfin 10.11+
 - .NET 9.0
-- Philips Hue Bridge (v2)
-- For outro detection: a media segment provider such as [IntroSkipper](https://github.com/intro-skipper/intro-skipper)
+- Philips Hue Bridge (v2 or later) — tested with Hue Bridge Pro; should work with Hue Bridge v2 and v2.1 (same API). Original v1 bridge is not supported (HTTP only)
+- (Optional, but recommended) For outro detection: a media segment provider such as [IntroSkipper](https://github.com/intro-skipper/intro-skipper)
 
 ## Installation
 

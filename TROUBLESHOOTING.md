@@ -24,11 +24,11 @@ JellyfinHuePlugin/
   (dependency DLLs)
 ```
 
-Copy the **entire** `bin/Release/net8.0/` folder contents, not just the main DLL.
+Copy the **entire** `bin/Release/net9.0/` folder contents, not just the main DLL.
 
 ### Check .NET Runtime
 
-The plugin requires **.NET 8.0** and Jellyfin **10.9.0** or higher.
+The plugin requires **.NET 9.0** and Jellyfin **10.11** or higher.
 
 ### Check File Permissions (Linux)
 
@@ -43,7 +43,7 @@ sudo chmod -R 755 /var/lib/jellyfin/plugins/JellyfinHuePlugin/
 2. Delete the plugin folder completely
 3. Delete configuration: `C:\ProgramData\Jellyfin\Server\data\plugins\configurations\JellyfinHuePlugin.xml`
 4. Rebuild the plugin fresh
-5. Copy entire `bin/Release/net8.0/` folder
+5. Copy entire `bin/Release/net9.0/` folder
 6. Start Jellyfin
 
 ---
@@ -53,23 +53,17 @@ sudo chmod -R 755 /var/lib/jellyfin/plugins/JellyfinHuePlugin/
 ### Correct Button Press Procedure
 
 1. Locate the **large round button on top** of the Hue bridge (not the reset button on the back)
-2. **Press and hold for 2-3 seconds** until it lights up
-3. Release the button
-4. **Within 30 seconds**, click "Authenticate" in the plugin settings
-5. The plugin retries 3 times automatically (3 seconds apart), giving ~10 seconds total
+2. **Press the button** — it will light up briefly
+3. **Within 30 seconds**, click "Authenticate" in the plugin settings
+4. The plugin retries 3 times automatically (3 seconds apart)
+
+You can also click "Authenticate" first and then press the bridge button — the retries give you time to walk over and press it.
 
 ### Common Authentication Mistakes
 
-- **Tapping instead of holding**: Press and hold for a full 2-3 seconds
-- **Clicking authenticate first**: Press the bridge button *before* clicking authenticate
-- **Waiting too long**: The 30-second auth window expires
 - **Wrong button**: Use the large button on top, not the small reset button on the back
-
-### Alternative: Press During Retry
-
-1. Click "Authenticate" in Jellyfin first
-2. Immediately go press and hold the bridge button
-3. The plugin checks every 3 seconds for 10 seconds total
+- **Waiting too long**: The 30-second auth window expires — press the button and authenticate promptly
+- **Bridge unreachable**: Make sure the Jellyfin server can reach the bridge IP over HTTPS
 
 ---
 
