@@ -427,3 +427,7 @@ dev-output/
 
 # Claude Code local directory
 .claude/
+
+# Docker
+Dockerfile
+docker-compose.*
