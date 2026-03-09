@@ -480,6 +480,18 @@
                                             </div>
                                             <div id="profilePauseTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
                                         </div>
+
+                                        <div class="checkboxContainer" style="margin-top: 5px;">
+                                            <label>
+                                                <input type="checkbox" is="emby-checkbox" id="profileEnablePauseGracePeriod" />
+                                                <span>Grace Period</span>
+                                            </label>
+                                        </div>
+                                        <div id="pauseGracePeriodContainer" class="inputContainer" style="display:none; margin-top: 0;">
+                                            <label class="inputLabel" for="profilePauseGracePeriod">Seconds</label>
+                                            <input type="number" id="profilePauseGracePeriod" is="emby-input" min="1" max="600" value="30" style="width: 80px;" />
+                                            <div class="fieldDescription">Skip pause lighting during the first N seconds of playback</div>
+                                        </div>
                                     </div>
 
                                     <!-- Stop Section -->
@@ -841,6 +853,7 @@
                             EnableForTvShows: false,
                             TurnOffLightsOnPlay: true,
                             PauseBrightness: 15,
+                            PauseGracePeriodSeconds: 60,
                             StopBrightness: 60,
                             EnableOutroLights: true
                         },
@@ -883,6 +896,10 @@
                     document.querySelector('#profileTurnOffLightsOnPlay').checked = template.TurnOffLightsOnPlay || false;
                     document.querySelector('#profilePlayBrightness').value = template.PlayBrightness || 20;
                     document.querySelector('#profilePauseBrightness').value = template.PauseBrightness || 100;
+                    var templateGracePeriod = template.PauseGracePeriodSeconds || 0;
+                    document.querySelector('#profileEnablePauseGracePeriod').checked = templateGracePeriod > 0;
+                    document.querySelector('#profilePauseGracePeriod').value = templateGracePeriod > 0 ? templateGracePeriod : 30;
+                    document.querySelector('#pauseGracePeriodContainer').style.display = templateGracePeriod > 0 ? '' : 'none';
                     document.querySelector('#profileStopBrightness').value = template.StopBrightness || 254;
                     document.querySelector('#profileEnableOutroLights').checked = template.EnableOutroLights || false;
 
@@ -1341,6 +1358,10 @@
                     document.querySelector('#profileTurnOffLightsOnPlay').checked = profile.TurnOffLightsOnPlay || false;
                     document.querySelector('#profilePlayBrightness').value = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20;
                     document.querySelector('#profilePauseBrightness').value = profile.PauseBrightness !== undefined ? profile.PauseBrightness : 100;
+                    var gracePeriod = profile.PauseGracePeriodSeconds || 0;
+                    document.querySelector('#profileEnablePauseGracePeriod').checked = gracePeriod > 0;
+                    document.querySelector('#profilePauseGracePeriod').value = gracePeriod > 0 ? gracePeriod : 30;
+                    document.querySelector('#pauseGracePeriodContainer').style.display = gracePeriod > 0 ? '' : 'none';
                     document.querySelector('#profileStopBrightness').value = profile.StopBrightness !== undefined ? profile.StopBrightness : 254;
                     document.querySelector('#profileEnableOutroLights').checked = profile.EnableOutroLights || false;
 
@@ -1428,6 +1449,7 @@
                         TurnOffLightsOnPlay: document.querySelector('#profileTurnOffLightsOnPlay').checked,
                         PlayBrightness: Math.max(0, Math.min(254, parseInt(document.querySelector('#profilePlayBrightness').value) || 0)),
                         PauseBrightness: Math.max(0, Math.min(254, parseInt(document.querySelector('#profilePauseBrightness').value) || 0)),
+                        PauseGracePeriodSeconds: document.querySelector('#profileEnablePauseGracePeriod').checked ? Math.max(1, parseInt(document.querySelector('#profilePauseGracePeriod').value) || 30) : 0,
                         StopBrightness: Math.max(0, Math.min(254, parseInt(document.querySelector('#profileStopBrightness').value) || 0)),
                         EnablePlayTransition: document.querySelector('#profileEnablePlayTransition').checked,
                         PlayTransitionDuration: parseInt(document.querySelector('#profilePlayTransitionDuration').value),
@@ -1804,6 +1826,9 @@
                 });
                 document.querySelector('#profileEnableStopTransition').addEventListener('change', function() {
                     document.querySelector('#stopTransitionContainer').style.display = this.checked ? '' : 'none';
+                });
+                document.querySelector('#profileEnablePauseGracePeriod').addEventListener('change', function() {
+                    document.querySelector('#pauseGracePeriodContainer').style.display = this.checked ? '' : 'none';
                 });
 
                 // Hide brightness when a scene is selected

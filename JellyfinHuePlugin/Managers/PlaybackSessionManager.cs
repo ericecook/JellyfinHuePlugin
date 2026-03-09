@@ -184,6 +184,19 @@ namespace JellyfinHuePlugin.Managers
 
             if (session.PlaybackState != currentState)
             {
+                // Skip pause action during grace period at the start of playback
+                if (e.IsPaused && profile.PauseGracePeriodSeconds > 0)
+                {
+                    var positionTicks = e.PlaybackPositionTicks ?? 0;
+                    var positionSeconds = positionTicks / TimeSpan.TicksPerSecond;
+                    if (positionSeconds < profile.PauseGracePeriodSeconds)
+                    {
+                        _logger.LogInformation("[{ProfileName}] Pause ignored — within grace period ({PositionSeconds}s < {GracePeriod}s) on {ClientName}",
+                            profile.Name, positionSeconds, profile.PauseGracePeriodSeconds, e.ClientName);
+                        return;
+                    }
+                }
+
                 _logger.LogInformation("Playback state changed to {State} on {ClientName} (Device: {DeviceId}, IP: {RemoteEndpoint}) - Using profile: {ProfileName}",
                     currentState, e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, profile.Name);
                 session.PlaybackState = currentState;

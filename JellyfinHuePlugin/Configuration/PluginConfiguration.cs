@@ -70,6 +70,9 @@ namespace JellyfinHuePlugin.Configuration
         }
         public bool ShouldSerializeLegacyTransitionDuration() => false;
 
+        // Pause grace period — skip pause actions during the first N seconds of playback
+        public int PauseGracePeriodSeconds { get; set; } = 0;
+
         // Outro detection
         public bool EnableOutroLights { get; set; } = false;
     }
