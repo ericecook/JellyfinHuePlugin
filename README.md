@@ -4,6 +4,7 @@ A Jellyfin plugin that automatically controls Philips Hue lights based on media 
 
 ## Features
 
+- **Multi-Bridge Support** — configure and control multiple Hue bridges independently
 - **Automatic Bridge Discovery** — finds Hue bridges via cloud lookup or local SSDP
 - **Multi-Profile System** — configure different light behaviors for different rooms/devices
 - **Media Type Filtering** — separate rules for movies vs TV shows
@@ -12,8 +13,9 @@ A Jellyfin plugin that automatically controls Philips Hue lights based on media 
 - **Brightness Control** — dim lights on play, brighten on pause, restore on stop (0-254)
 - **Turn Off Lights** — optionally turn lights off completely during playback
 - **Smooth Transitions** — configurable transition duration (0-15 seconds)
+- **Pause Grace Period** — skip pause lighting during the first N seconds of playback
 - **Outro Detection** — raise lights when credits start (uses Jellyfin Media Segments API)
-- **Profile Templates** — 5 presets: Movie Theater, TV Viewing, Bedroom Casual, Gaming, Blank
+- **Profile Templates** — 4 presets: Movie Theater, TV Viewing, Bedroom Casual, Gaming
 
 ## Requirements
 
@@ -42,8 +44,8 @@ See [INSTALLATION.md](INSTALLATION.md) for building from source and manual insta
 ### Initial Setup
 
 1. Go to **Dashboard > Plugins > Hue Lighting Control**
-2. Click **Discover Hue Bridge** to find your bridge
-3. Press and hold the bridge button for 2-3 seconds, then click **Authenticate**
+2. Click **Add Bridge**, then click **Discover** to find your bridge
+3. Press the link button on your Hue bridge, then click **Authenticate**
 4. Create a profile and configure your light settings
 
 ### Profiles
@@ -51,6 +53,7 @@ See [INSTALLATION.md](INSTALLATION.md) for building from source and manual insta
 Each profile defines how lights behave for a specific playback context. Profiles are matched in order — the first match wins.
 
 **Profile settings:**
+- **Bridge**: Which Hue bridge this profile uses
 - **Media types**: Enable for Movies, TV Shows, or both
 - **Filters**: Target by client name (substring), device IDs (exact), or IP address
 - **Light group**: Which Hue group to control
@@ -58,6 +61,7 @@ Each profile defines how lights behave for a specific playback context. Profiles
 - **Pause state**: Activate a scene or brighten to a level
 - **Stop state**: Activate a scene or restore to a level
 - **Transition duration**: How quickly lights change (0-15 seconds)
+- **Pause grace period**: Skip pause lighting during the first N seconds of playback
 - **Outro detection**: Trigger stop-state lights when credits begin
 
 ### Light Control Priority
@@ -69,11 +73,11 @@ When playback starts, the plugin decides what to do in this order:
 
 ### Example: Multi-Room Setup
 
-| Profile | Filter | Group | Play | Pause | Stop |
-|---------|--------|-------|------|-------|------|
-| Theater | Device ID: `firetv-theater-123` | Theater | OFF | Brightness 30 | Brightness 254 |
-| Living Room | Client: `Roku` | Living Room | Brightness 10 | Brightness 100 | Brightness 254 |
-| Bedroom | IP: `192.168.1.50` | Bedroom | Scene: "Nightlight" | Scene: "Relax" | Scene: "Bright" |
+| Profile | Bridge | Filter | Group | Play | Pause | Stop |
+|---------|--------|--------|-------|------|-------|------|
+| Theater | Main | Device ID: `firetv-theater-123` | Theater | OFF | Brightness 30 | Brightness 254 |
+| Living Room | Main | Client: `Roku` | Living Room | Brightness 10 | Brightness 100 | Brightness 254 |
+| Bedroom | Upstairs | IP: `192.168.1.50` | Bedroom | Scene: "Nightlight" | Scene: "Relax" | Scene: "Bright" |
 
 Put more specific profiles first (device ID > client name > no filter).
 
@@ -84,6 +88,9 @@ All endpoints require Jellyfin authentication.
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/hueplugin/discover` | GET | Discover Hue bridges |
+| `/api/hueplugin/bridges` | GET | List configured bridges |
+| `/api/hueplugin/bridges` | POST | Add a new bridge |
+| `/api/hueplugin/bridges/{bridgeId}` | DELETE | Delete a bridge |
 | `/api/hueplugin/authenticate` | POST | Authenticate with bridge |
 | `/api/hueplugin/lights` | GET | List all lights |
 | `/api/hueplugin/groups` | GET | List all groups |
