@@ -236,6 +236,38 @@
                         </div>
                     </div>
 
+                    <!-- Edit Bridge Modal -->
+                    <div id="editBridgeModal" class="hue-modal-overlay">
+                        <div class="hue-modal" style="max-width: 600px;">
+                            <div class="hue-modal-header">
+                                <h2 style="margin: 0;">Edit Bridge</h2>
+                            </div>
+                            <div class="hue-modal-body">
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="editBridgeName">Bridge Name</label>
+                                    <input type="text" id="editBridgeName" is="emby-input" />
+                                </div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="editBridgeIp">IP Address</label>
+                                    <input type="text" id="editBridgeIp" is="emby-input" />
+                                </div>
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="editBridgeUsername">API Key</label>
+                                    <input type="text" id="editBridgeUsername" is="emby-input"
+                                           style="font-family: monospace;" placeholder="Auto-filled on authenticate" />
+                                </div>
+                            </div>
+                            <div class="hue-modal-footer">
+                                <button is="emby-button" type="button" class="raised" id="cancelEditBridge">
+                                    <span>Cancel</span>
+                                </button>
+                                <button is="emby-button" type="button" class="raised button-submit" id="saveEditBridge">
+                                    <span>Save</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
                     <div id="configSection" class="hue-section-card" style="display:none;">
                         <h2>Light Control Profiles</h2>
                         
@@ -966,7 +998,7 @@
                         var statusColor = isAuth ? '#4caf50' : '#ff9800';
                         var statusText = isAuth ? 'Connected' : 'Not authenticated';
 
-                        html += '<div class="hue-card">';
+                        html += '<div class="hue-card" onclick="HuePluginConfig.editBridge(' + index + ')">';
                         html += '<div style="display: flex; align-items: center; justify-content: space-between;">';
                         html += '<div style="flex: 1;">';
                         html += '<h3 style="margin: 0;">' + (bridge.Name || 'Bridge') + '</h3>';
@@ -977,18 +1009,48 @@
                         html += '</div>';
                         html += '</div>';
                         html += '<div style="display: flex; gap: 8px;">';
+                        html += '<button is="emby-button" type="button" class="raised" onclick="event.stopPropagation(); HuePluginConfig.editBridge(' + index + ')"><span>Edit</span></button>';
                         if (!isAuth) {
-                            html += '<button is="emby-button" type="button" class="raised button-submit" onclick="HuePluginConfig.authenticateBridge(' + index + ')"><span>Authenticate</span></button>';
+                            html += '<button is="emby-button" type="button" class="raised button-submit" onclick="event.stopPropagation(); HuePluginConfig.authenticateBridge(' + index + ')"><span>Authenticate</span></button>';
                         } else {
-                            html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.authenticateBridge(' + index + ')"><span>Re-auth</span></button>';
+                            html += '<button is="emby-button" type="button" class="raised" onclick="event.stopPropagation(); HuePluginConfig.authenticateBridge(' + index + ')"><span>Re-auth</span></button>';
                         }
-                        html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.deleteBridge(' + index + ')" style="opacity: 0.7;"><span>Delete</span></button>';
+                        html += '<button is="emby-button" type="button" class="raised" onclick="event.stopPropagation(); HuePluginConfig.deleteBridge(' + index + ')" style="opacity: 0.7;"><span>Delete</span></button>';
                         html += '</div>';
                         html += '</div>';
                         html += '</div>';
                     });
                     html += '</div>';
                     container.innerHTML = html;
+                },
+
+                // Edit a bridge by index
+                editBridgeIndex: null,
+
+                editBridge: function(index) {
+                    var bridge = HuePluginConfig.bridges[index];
+                    if (!bridge) return;
+                    HuePluginConfig.editBridgeIndex = index;
+                    document.querySelector('#editBridgeName').value = bridge.Name || '';
+                    document.querySelector('#editBridgeIp').value = bridge.IpAddress || '';
+                    document.querySelector('#editBridgeUsername').value = bridge.Username || '';
+                    document.querySelector('#editBridgeModal').style.display = 'block';
+                },
+
+                saveEditBridge: function() {
+                    var index = HuePluginConfig.editBridgeIndex;
+                    if (index === null || !HuePluginConfig.bridges[index]) return;
+                    var bridge = HuePluginConfig.bridges[index];
+                    bridge.Name = document.querySelector('#editBridgeName').value;
+                    bridge.IpAddress = document.querySelector('#editBridgeIp').value;
+                    bridge.Username = document.querySelector('#editBridgeUsername').value;
+                    document.querySelector('#editBridgeModal').style.display = 'none';
+                    HuePluginConfig.renderBridges();
+
+                    var hasAuthBridge = HuePluginConfig.bridges.some(function(b) {
+                        return b.Username && b.Username.length > 0;
+                    });
+                    document.querySelector('#configSection').style.display = hasAuthBridge ? 'block' : 'none';
                 },
 
                 // Authenticate a bridge by index
@@ -1624,6 +1686,29 @@
                     });
                 }
 
+                var saveEditBridge = document.querySelector('#saveEditBridge');
+                if (saveEditBridge) {
+                    saveEditBridge.addEventListener('click', function () {
+                        HuePluginConfig.saveEditBridge();
+                    });
+                }
+
+                var cancelEditBridge = document.querySelector('#cancelEditBridge');
+                if (cancelEditBridge) {
+                    cancelEditBridge.addEventListener('click', function () {
+                        document.querySelector('#editBridgeModal').style.display = 'none';
+                    });
+                }
+
+                // Close modals when clicking outside (on the overlay)
+                document.querySelectorAll('.hue-modal-overlay').forEach(function(overlay) {
+                    overlay.addEventListener('click', function(e) {
+                        if (e.target === overlay) {
+                            overlay.style.display = 'none';
+                        }
+                    });
+                });
+
                 // Profile management event handlers
                 var addProfileButton = document.querySelector('#addProfileButton');
                 if (addProfileButton) {
@@ -1698,11 +1783,6 @@
                 var profileEditorModal = document.querySelector('#profileEditorModal');
                 if (profileEditorModal) {
                     document.body.appendChild(profileEditorModal);
-                    profileEditorModal.addEventListener('click', function (e) {
-                        if (e.target === this) {
-                            HuePluginConfig.closeProfileEditor();
-                        }
-                    });
                 }
 
                 // Setup brightness sliders
