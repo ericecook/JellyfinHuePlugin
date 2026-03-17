@@ -330,6 +330,14 @@
                                         <input type="text" id="profileName" is="emby-input" placeholder="e.g., Living Room Roku" />
                                     </div>
 
+                                    <div class="checkboxContainer checkboxContainer-withDescription">
+                                        <label>
+                                            <input type="checkbox" is="emby-checkbox" id="profileEnabled" checked />
+                                            <span>Profile Enabled</span>
+                                        </label>
+                                        <div class="fieldDescription">Disabled profiles are skipped during playback matching</div>
+                                    </div>
+
                                     <h3>Media Type Filters</h3>
                                     <div class="fieldDescription" style="margin-bottom: 15px;">
                                         Choose which media types will trigger this profile. At least one must be enabled.
@@ -889,6 +897,7 @@
                     // Populate form with template values
                     document.querySelector('#profileEditorTitle').textContent = templateName === 'blank' ? 'Add Profile' : 'Add Profile from Template';
                     document.querySelector('#profileName').value = template.Name;
+                    document.querySelector('#profileEnabled').checked = true;
                     document.querySelector('#profileEnableForMovies').checked = template.EnableForMovies !== false;
                     document.querySelector('#profileEnableForTvShows').checked = template.EnableForTvShows || false;
                     document.querySelector('#profileClientName').value = '';
@@ -1383,12 +1392,15 @@
                         HuePluginConfig.profiles.forEach(function(profile, index) {
                             var summaryItems = HuePluginConfig.getProfileSummaryItems(profile);
 
-                            html += '<div class="hue-card profile-card" draggable="true" data-index="' + index + '" onclick="HuePluginConfig.onCardClick(event, ' + index + ')">';
+                            var isDisabled = profile.Enabled === false;
+                            html += '<div class="hue-card profile-card" draggable="true" data-index="' + index + '" onclick="HuePluginConfig.onCardClick(event, ' + index + ')"' + (isDisabled ? ' style="opacity: 0.5;"' : '') + '>';
 
                             // Header row
                             html += '<div style="display: flex; align-items: center; justify-content: space-between;">';
                             html += '<div style="display: flex; align-items: center; gap: 10px; flex: 1;">';
-                            html += '<h3 style="margin: 0; flex: 1;">' + (profile.Name || 'Unnamed Profile') + '</h3>';
+                            html += '<h3 style="margin: 0; flex: 1;">' + (profile.Name || 'Unnamed Profile');
+                            if (isDisabled) html += ' <span style="font-size: 0.7em; color: #ff9800; font-weight: normal;">Disabled</span>';
+                            html += '</h3>';
                             html += '</div>';
                             html += '<div class="profile-menu" style="position: relative;">';
                             html += '<button is="emby-button" type="button" class="raised" onclick="event.stopPropagation(); HuePluginConfig.toggleProfileMenu(' + index + ')" style="padding: 4px 12px;">&#x22EE;</button>';
@@ -1445,6 +1457,7 @@
                     
                     document.querySelector('#profileEditorTitle').textContent = 'Edit Profile';
                     document.querySelector('#profileName').value = profile.Name || '';
+                    document.querySelector('#profileEnabled').checked = profile.Enabled !== false;
                     document.querySelector('#profileEnableForMovies').checked = profile.EnableForMovies !== false;
                     document.querySelector('#profileEnableForTvShows').checked = profile.EnableForTvShows || false;
                     document.querySelector('#profileClientName').value = profile.TargetClientName || '';
@@ -1533,6 +1546,7 @@
                             HuePluginConfig.profiles[HuePluginConfig.currentEditingProfile].Id :
                             HuePluginConfig.generateGuid(),
                         Name: document.querySelector('#profileName').value,
+                        Enabled: document.querySelector('#profileEnabled').checked,
                         BridgeId: document.querySelector('#profileBridgeId').value,
                         EnableForMovies: document.querySelector('#profileEnableForMovies').checked,
                         EnableForTvShows: document.querySelector('#profileEnableForTvShows').checked,

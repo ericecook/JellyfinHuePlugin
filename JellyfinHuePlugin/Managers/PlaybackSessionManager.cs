@@ -259,6 +259,8 @@ namespace JellyfinHuePlugin.Managers
             {
                 foreach (var profile in config.Profiles)
                 {
+                    if (!profile.Enabled) continue;
+
                     // Check media type filter first
                     if (!MediaTypeMatches(profile, isMovie, isEpisode))
                     {

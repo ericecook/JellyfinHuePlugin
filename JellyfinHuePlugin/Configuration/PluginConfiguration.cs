@@ -17,6 +17,7 @@ namespace JellyfinHuePlugin.Configuration
     {
         public string Id { get; set; } = System.Guid.NewGuid().ToString();
         public string Name { get; set; } = "Default Profile";
+        public bool Enabled { get; set; } = true;
 
         // Bridge reference
         public string BridgeId { get; set; } = string.Empty;
