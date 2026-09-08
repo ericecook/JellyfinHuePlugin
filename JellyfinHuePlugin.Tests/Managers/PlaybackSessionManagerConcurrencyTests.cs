@@ -102,7 +102,7 @@ namespace JellyfinHuePlugin.Tests.Managers
                     try
                     {
                         // Start playback
-                        _mockSessionManager.Raise(s => s.PlaybackStart += null, null,
+                        _mockSessionManager.Raise(s => s.PlaybackStart += null,
                             new PlaybackProgressEventArgs
                             {
                                 ClientName = "TestClient",
@@ -123,7 +123,7 @@ namespace JellyfinHuePlugin.Tests.Managers
                     {
                         // Small delay then stop
                         await Task.Delay(10);
-                        _mockSessionManager.Raise(s => s.PlaybackStopped += null, null,
+                        _mockSessionManager.Raise(s => s.PlaybackStopped += null,
                             new PlaybackStopEventArgs
                             {
                                 ClientName = "TestClient",
@@ -159,7 +159,7 @@ namespace JellyfinHuePlugin.Tests.Managers
                 RemoteEndPoint = "192.168.1.100"
             };
 
-            _mockSessionManager.Raise(s => s.PlaybackStart += null, null,
+            _mockSessionManager.Raise(s => s.PlaybackStart += null,
                 new PlaybackProgressEventArgs
                 {
                     ClientName = "TestClient",
@@ -180,7 +180,7 @@ namespace JellyfinHuePlugin.Tests.Managers
                 {
                     try
                     {
-                        _mockSessionManager.Raise(s => s.PlaybackProgress += null, null,
+                        _mockSessionManager.Raise(s => s.PlaybackProgress += null,
                             new PlaybackProgressEventArgs
                             {
                                 ClientName = "TestClient",

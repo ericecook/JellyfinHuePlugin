@@ -112,7 +112,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             };
 
             // Act — raise the event
-            _mockSessionManager.Raise(s => s.PlaybackStart += null, null, args);
+            _mockSessionManager.Raise(s => s.PlaybackStart += null, args);
 
             // Allow async handler to complete
             await Task.Delay(200);
@@ -140,7 +140,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             };
 
             // Act
-            _mockSessionManager.Raise(s => s.PlaybackStart += null, null, args);
+            _mockSessionManager.Raise(s => s.PlaybackStart += null, args);
             await Task.Delay(200);
 
             // Assert
@@ -165,7 +165,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             };
 
             // Act
-            _mockSessionManager.Raise(s => s.PlaybackStart += null, null, args);
+            _mockSessionManager.Raise(s => s.PlaybackStart += null, args);
             await Task.Delay(200);
 
             // Assert
@@ -188,7 +188,7 @@ namespace JellyfinHuePlugin.Tests.Managers
                 Item = new MediaBrowser.Controller.Entities.Movies.Movie()
             };
 
-            _mockSessionManager.Raise(s => s.PlaybackStart += null, null, startArgs);
+            _mockSessionManager.Raise(s => s.PlaybackStart += null, startArgs);
             await Task.Delay(200);
 
             // Act — stop playback
@@ -200,7 +200,7 @@ namespace JellyfinHuePlugin.Tests.Managers
                 Item = new MediaBrowser.Controller.Entities.Movies.Movie()
             };
 
-            _mockSessionManager.Raise(s => s.PlaybackStopped += null, null, stopArgs);
+            _mockSessionManager.Raise(s => s.PlaybackStopped += null, stopArgs);
             await Task.Delay(200);
 
             // Assert
@@ -223,7 +223,7 @@ namespace JellyfinHuePlugin.Tests.Managers
                 Item = new MediaBrowser.Controller.Entities.Movies.Movie()
             };
 
-            _mockSessionManager.Raise(s => s.PlaybackStart += null, null, startArgs);
+            _mockSessionManager.Raise(s => s.PlaybackStart += null, startArgs);
             await Task.Delay(200);
 
             // Act — send progress with IsPaused=true
@@ -236,7 +236,7 @@ namespace JellyfinHuePlugin.Tests.Managers
                 IsPaused = true
             };
 
-            _mockSessionManager.Raise(s => s.PlaybackProgress += null, null, progressArgs);
+            _mockSessionManager.Raise(s => s.PlaybackProgress += null, progressArgs);
             await Task.Delay(200);
 
             // Assert — should set pause brightness
@@ -259,7 +259,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             };
 
             // Act — should not throw
-            _mockSessionManager.Raise(s => s.PlaybackStart += null, null, args);
+            _mockSessionManager.Raise(s => s.PlaybackStart += null, args);
             await Task.Delay(200);
 
             // Assert — no calls made
@@ -285,7 +285,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             };
 
             // Act
-            _mockSessionManager.Raise(s => s.PlaybackStart += null, null, args);
+            _mockSessionManager.Raise(s => s.PlaybackStart += null, args);
             await Task.Delay(200);
 
             // Assert
@@ -311,7 +311,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             };
 
             // Act
-            _mockSessionManager.Raise(s => s.PlaybackStart += null, null, args);
+            _mockSessionManager.Raise(s => s.PlaybackStart += null, args);
             await Task.Delay(200);
 
             // Assert
