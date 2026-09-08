@@ -15,7 +15,7 @@ if [ $? -eq 0 ]; then
     echo "Build successful!"
     echo ""
     echo "Installation instructions:"
-    echo "1. Copy the contents of bin/Release/net8.0/ to your Jellyfin plugins directory:"
+    echo "1. Copy the contents of bin/Release/net10.0/ to your Jellyfin plugins directory:"
     echo "   - Linux: /var/lib/jellyfin/plugins/JellyfinHuePlugin/"
     echo "   - Windows: C:\\ProgramData\\Jellyfin\\Server\\plugins\\JellyfinHuePlugin\\"
     echo "   - Docker: /config/plugins/JellyfinHuePlugin/"

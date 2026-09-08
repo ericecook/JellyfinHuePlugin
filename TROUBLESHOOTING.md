@@ -21,14 +21,13 @@ JellyfinHuePlugin/
   JellyfinHuePlugin.dll
   JellyfinHuePlugin.pdb
   JellyfinHuePlugin.deps.json
-  (dependency DLLs)
 ```
 
-Copy the **entire** `bin/Release/net9.0/` folder contents, not just the main DLL.
+Copy the **entire** `bin/Release/net10.0/` folder contents, not just the main DLL.
 
 ### Check .NET Runtime
 
-The plugin requires **.NET 9.0** and Jellyfin **10.11** or higher.
+The plugin requires **.NET 10.0** and Jellyfin **12.0** or higher. Jellyfin 10.11 users should stay on plugin v2.2.0.0.
 
 ### Check File Permissions (Linux)
 
@@ -43,7 +42,7 @@ sudo chmod -R 755 /var/lib/jellyfin/plugins/JellyfinHuePlugin/
 2. Delete the plugin folder completely
 3. Delete configuration: `C:\ProgramData\Jellyfin\Server\data\plugins\configurations\JellyfinHuePlugin.xml`
 4. Rebuild the plugin fresh
-5. Copy entire `bin/Release/net9.0/` folder
+5. Copy entire `bin/Release/net10.0/` folder
 6. Start Jellyfin
 
 ---

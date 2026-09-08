@@ -15,7 +15,7 @@ if %ERRORLEVEL% EQU 0 (
     echo Build successful!
     echo.
     echo Installation instructions:
-    echo 1. Copy the contents of bin\Release\net8.0\ to:
+    echo 1. Copy the contents of bin\Release\net10.0\ to:
     echo    C:\ProgramData\Jellyfin\Server\plugins\JellyfinHuePlugin\
     echo.
     echo 2. Restart Jellyfin

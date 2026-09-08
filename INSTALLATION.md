@@ -2,7 +2,7 @@
 
 ## Install via Plugin Repository (Recommended)
 
-The easiest way to install is through Jellyfin's built-in plugin system:
+The easiest way to install is through Jellyfin's built-in plugin system. Requires Jellyfin 12.0 or later; on Jellyfin 10.11 the catalog will continue to offer v2.2.0.0, the last release for that version.
 
 1. Open Jellyfin → **Dashboard** → **Plugins** → **Repositories**
 2. Click **+** to add a repository
@@ -57,29 +57,28 @@ Delete the old plugin folder completely:
 
 ### Step 4: Copy Plugin Files
 
-Copy **everything** from `bin/Release/net9.0/` to the plugin directory above.
+Copy **everything** from `bin/Release/net10.0/` to the plugin directory above.
 
 **Important:** Copy the entire folder contents, not just the `.dll` file. The folder should contain:
 - `JellyfinHuePlugin.dll`
 - `JellyfinHuePlugin.pdb`
 - `JellyfinHuePlugin.deps.json`
-- Multiple dependency DLLs
 
 **Windows:**
 ```powershell
-Copy-Item -Path "bin\Release\net9.0\*" -Destination "C:\ProgramData\Jellyfin\Server\plugins\JellyfinHuePlugin\" -Recurse
+Copy-Item -Path "bin\Release\net10.0\*" -Destination "C:\ProgramData\Jellyfin\Server\plugins\JellyfinHuePlugin\" -Recurse
 ```
 
 **Linux:**
 ```bash
-sudo cp -r bin/Release/net9.0 /var/lib/jellyfin/plugins/JellyfinHuePlugin
+sudo cp -r bin/Release/net10.0 /var/lib/jellyfin/plugins/JellyfinHuePlugin
 sudo chown -R jellyfin:jellyfin /var/lib/jellyfin/plugins/JellyfinHuePlugin
 sudo chmod -R 755 /var/lib/jellyfin/plugins/JellyfinHuePlugin
 ```
 
 **Docker:**
 ```bash
-docker cp bin/Release/net9.0 jellyfin:/config/plugins/JellyfinHuePlugin
+docker cp bin/Release/net10.0 jellyfin:/config/plugins/JellyfinHuePlugin
 ```
 
 ### Step 5: Start Jellyfin

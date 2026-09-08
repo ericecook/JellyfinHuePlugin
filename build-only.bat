@@ -22,7 +22,7 @@ echo.
 echo [2/2] Creating distribution package...
 cd ..
 if exist JellyfinHuePlugin.zip del JellyfinHuePlugin.zip
-powershell Compress-Archive -Path "JellyfinHuePlugin\bin\Release\net8.0\*" -DestinationPath "JellyfinHuePlugin.zip"
+powershell Compress-Archive -Path "JellyfinHuePlugin\bin\Release\net10.0\*" -DestinationPath "JellyfinHuePlugin.zip"
 
 echo.
 echo ========================================

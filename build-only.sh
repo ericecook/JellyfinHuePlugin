@@ -22,7 +22,7 @@ echo ""
 echo "[2/2] Creating distribution package..."
 cd ..
 rm -f JellyfinHuePlugin.zip
-cd JellyfinHuePlugin/bin/Release/net8.0 || exit 1
+cd JellyfinHuePlugin/bin/Release/net10.0 || exit 1
 zip -r ../../../../JellyfinHuePlugin.zip ./*
 cd ../../../..
 
