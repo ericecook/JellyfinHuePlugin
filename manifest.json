@@ -8,6 +8,14 @@
     "owner": "ericecook",
     "versions": [
       {
+        "changelog": "## Device picker for profile filters\n\nProfiles can now target devices by picking them from a list instead of hunting for Device IDs in the server log. \"Add Device ID\" in the profile editor's Filters tab shows every device that has signed in to your server, labelled with its name, app, the IP it is currently connected from, the last user, and when it was last seen. Devices already in the profile are hidden, manual entry remains available underneath, and saved IDs are shown with their resolved device name.\n\nRemember that each app and each browser on the same physical device has its own ID, so add every one that should trigger the profile.\n\n## Fixes\n\n- Cancelling a profile edit no longer drops device IDs you removed during the edit.\n- Bridge names, profile names, and filter values are HTML-escaped when rendered in the config page.\n- Duplicate device ID checks are case-insensitive, matching the server-side filter.\n\n## Housekeeping\n\n- The plugin repository manifest now advertises the correct minimum Jellyfin version for every past release: v1.3.0.0 through v2.2.0.0 require 10.11, v1.2.0.0 and earlier run on 10.9 and 10.10.\n- CI moved to current GitHub action majors and pins the .NET 10 SDK band.\n\nRequires **Jellyfin 12.0+**. Jellyfin 10.11 users stay on v2.2.0.0.\n\n\n**Full Changelog**: https://github.com/ericecook/JellyfinHuePlugin/compare/v3.0.0.0...v3.1.0.0",
+        "checksum": "09dfc60e0c560c788e6fd7398ecf2e71",
+        "sourceUrl": "https://github.com/ericecook/JellyfinHuePlugin/releases/download/v3.1.0.0/JellyfinHuePlugin_3.1.0.0.zip",
+        "targetAbi": "12.0.0.0",
+        "timestamp": "2026-09-08T17:23:26Z",
+        "version": "3.1.0.0"
+      },
+      {
         "changelog": "## Jellyfin 12.0 support\n\nThis release targets **Jellyfin 12.0+** (.NET 10). Plugins built for Jellyfin 10.11 do not load on 12.0, so this rebuild is required after upgrading your server.\n\n**Jellyfin 10.11 users:** stay on v2.2.0.0. The plugin catalog will keep offering that version to 10.11 servers and will not offer v3.0.0.0 until you upgrade Jellyfin.\n\nNo functional changes to lighting behaviour in this release.\n\n\n**Full Changelog**: https://github.com/ericecook/JellyfinHuePlugin/compare/v2.2.0.0...v3.0.0.0",
         "checksum": "faa3118bf999d94c19504ac0f7e8b4c7",
         "sourceUrl": "https://github.com/ericecook/JellyfinHuePlugin/releases/download/v3.0.0.0/JellyfinHuePlugin_3.0.0.0.zip",
