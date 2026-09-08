@@ -30,6 +30,7 @@
                 border-bottom: 1px solid rgba(255,255,255,0.1);
             }
             .hue-modal-header h2 { margin: 0; }
+            #HuePluginConfigPage .emby-button[disabled] { opacity: 0.5; cursor: default; }
             .hue-modal-body {
                 padding: 20px;
                 max-height: 70vh;
@@ -1041,8 +1042,8 @@
                         html += '<div class="hue-card" onclick="HuePluginConfig.editBridge(' + index + ')">';
                         html += '<div style="display: flex; align-items: center; justify-content: space-between;">';
                         html += '<div style="flex: 1;">';
-                        html += '<h3 style="margin: 0;">' + (bridge.Name || 'Bridge') + '</h3>';
-                        html += '<div style="font-size: 0.88em; opacity: 0.6; margin-top: 4px;">' + bridge.IpAddress + '</div>';
+                        html += '<h3 style="margin: 0;">' + HuePluginConfig.escapeHtml(bridge.Name || 'Bridge') + '</h3>';
+                        html += '<div style="font-size: 0.88em; opacity: 0.6; margin-top: 4px;">' + HuePluginConfig.escapeHtml(bridge.IpAddress) + '</div>';
                         html += '<div id="bridgeStatus-' + index + '" style="display: inline-flex; align-items: center; gap: 6px; margin-top: 6px;">';
                         html += '<span class="bridge-status-dot" style="width: 8px; height: 8px; border-radius: 50%; background: ' + statusColor + '; display: inline-block;"></span>';
                         html += '<span class="bridge-status-text" style="font-size: 0.85em; color: ' + statusColor + ';">' + statusText + '</span>';
@@ -1410,7 +1411,7 @@
                             // Header row
                             html += '<div style="display: flex; align-items: center; justify-content: space-between;">';
                             html += '<div style="display: flex; align-items: center; gap: 10px; flex: 1;">';
-                            html += '<h3 style="margin: 0; flex: 1;">' + (profile.Name || 'Unnamed Profile');
+                            html += '<h3 style="margin: 0; flex: 1;">' + HuePluginConfig.escapeHtml(profile.Name || 'Unnamed Profile');
                             if (isDisabled) html += ' <span style="font-size: 0.7em; color: #ff9800; font-weight: normal;">Disabled</span>';
                             html += '</h3>';
                             html += '</div>';
@@ -1434,7 +1435,7 @@
                             // Summary list
                             html += '<ul style="margin: 6px 0 0 0; padding-left: 20px; font-size: 0.88em; opacity: 0.6;">';
                             summaryItems.forEach(function(item) {
-                                html += '<li>' + item + '</li>';
+                                html += '<li>' + HuePluginConfig.escapeHtml(item) + '</li>';
                             });
                             html += '</ul>';
 
@@ -1624,6 +1625,7 @@
                     if (!isoDate) return 'never';
                     var then = new Date(isoDate).getTime();
                     if (isNaN(then)) return 'unknown';
+                    if (then < Date.UTC(2000, 0, 1)) return 'never'; // DateTime.MinValue or similar sentinel
                     var minutes = Math.round((Date.now() - then) / 60000);
                     if (minutes < 1) return 'just now';
                     if (minutes < 60) return minutes + 'm ago';
@@ -1634,11 +1636,23 @@
                     return new Date(isoDate).toLocaleDateString();
                 },
 
-                // Short display label for a device: "Name · App"
-                describeKnownDevice: function(device) {
+                // Short display label for a device: "Name · App", optionally with the IP of its active session
+                describeKnownDevice: function(device, includeIp) {
                     var label = device.name;
                     if (device.app) label += ' \u00b7 ' + device.app;
+                    if (includeIp && device.ip) label += ' \u00b7 ' + device.ip;
                     return label;
+                },
+
+                // Map DeviceId -> remote IP for sessions currently connected to the server.
+                // RemoteEndPoint is the bare address (no port). Keys are client-controlled, hence the null prototype.
+                sessionIpsByDevice: function(sessions) {
+                    var map = Object.create(null);
+                    (sessions || []).forEach(function(session) {
+                        if (!session || !session.DeviceId || !session.RemoteEndPoint) return;
+                        map[String(session.DeviceId).toLowerCase()] = String(session.RemoteEndPoint);
+                    });
+                    return map;
                 },
 
                 // The server matches device IDs case-insensitively; mirror that here
@@ -1655,15 +1669,20 @@
                     return null;
                 },
 
-                // Fetch every device that has signed in to this server (admin-only endpoint).
+                // Fetch every device that has signed in to this server (admin-only endpoint), and the
+                // active sessions so entries can show the IP they are connecting from.
                 // Resolves to the list; on failure leaves the cache untouched and reports via status line.
                 refreshKnownDevices: function() {
                     var status = document.querySelector('#profileKnownDeviceStatus');
                     if (status) status.textContent = 'Loading devices...';
                     HuePluginConfig.knownDevicesLoading = true;
 
-                    return ApiClient.getJSON(ApiClient.getUrl('Devices')).then(function(result) {
-                        var items = (result && result.Items) || [];
+                    // Sessions are an enrichment only: if that call fails, the picker still works
+                    var sessionsPromise = ApiClient.getJSON(ApiClient.getUrl('Sessions')).catch(function() { return []; });
+
+                    return Promise.all([ApiClient.getJSON(ApiClient.getUrl('Devices')), sessionsPromise]).then(function(results) {
+                        var items = (results[0] && results[0].Items) || [];
+                        var ipsByDevice = HuePluginConfig.sessionIpsByDevice(results[1]);
                         HuePluginConfig.knownDevices = items
                             .filter(function(d) { return d && d.Id; })
                             .map(function(d) {
@@ -1672,6 +1691,7 @@
                                     name: d.CustomName || d.Name || 'Unnamed device',
                                     app: d.AppName || '',
                                     user: d.LastUserName || '',
+                                    ip: ipsByDevice[d.Id.toLowerCase()] || '',
                                     lastActive: d.DateLastActivity || null
                                 };
                             })
@@ -1704,27 +1724,37 @@
                         });
                     });
 
-                    var html = '';
-                    if (candidates.length === 0) {
-                        var emptyText = 'All known devices already added';
-                        if (HuePluginConfig.knownDevices.length === 0) {
-                            emptyText = HuePluginConfig.knownDevicesLoading ? 'Loading devices...' : 'No devices found';
-                        }
-                        html += '<option value="">' + emptyText + '</option>';
-                    } else {
-                        html += '<option value="">Select a device...</option>';
-                        candidates.forEach(function(d) {
-                            var text = HuePluginConfig.describeKnownDevice(d);
-                            if (d.user) text += ' \u00b7 ' + d.user;
-                            text += ' \u00b7 ' + HuePluginConfig.formatRelativeTime(d.lastActive);
-                            html += '<option value="' + HuePluginConfig.escapeHtml(d.id) + '">' + HuePluginConfig.escapeHtml(text) + '</option>';
-                        });
-                    }
                     // Rebuilding the options must not discard a pick the user has already made
                     var previous = select.value;
-                    select.innerHTML = html;
+                    select.innerHTML = '';
+
+                    var placeholder = document.createElement('option');
+                    placeholder.value = '';
+                    if (candidates.length === 0) {
+                        placeholder.textContent = 'All known devices already added';
+                        if (HuePluginConfig.knownDevices.length === 0) {
+                            placeholder.textContent = HuePluginConfig.knownDevicesLoading ? 'Loading devices...' : 'No devices found';
+                        }
+                    } else {
+                        placeholder.textContent = 'Select a device...';
+                    }
+                    select.appendChild(placeholder);
+
+                    candidates.forEach(function(d) {
+                        var text = HuePluginConfig.describeKnownDevice(d, true);
+                        if (d.user) text += ' \u00b7 ' + d.user;
+                        text += ' \u00b7 ' + HuePluginConfig.formatRelativeTime(d.lastActive);
+                        var opt = document.createElement('option');
+                        opt.value = d.id;
+                        opt.textContent = text;
+                        select.appendChild(opt);
+                    });
+
                     select.value = previous;
                     if (select.value !== previous) select.value = '';
+
+                    var addButton = document.querySelector('#profileAddKnownDeviceButton');
+                    if (addButton) addButton.disabled = candidates.length === 0;
                 },
 
                 renderProfileDeviceIdList: function() {
