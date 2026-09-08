@@ -8,6 +8,14 @@
     "owner": "ericecook",
     "versions": [
       {
+        "changelog": "## Jellyfin 12.0 support\n\nThis release targets **Jellyfin 12.0+** (.NET 10). Plugins built for Jellyfin 10.11 do not load on 12.0, so this rebuild is required after upgrading your server.\n\n**Jellyfin 10.11 users:** stay on v2.2.0.0. The plugin catalog will keep offering that version to 10.11 servers and will not offer v3.0.0.0 until you upgrade Jellyfin.\n\nNo functional changes to lighting behaviour in this release.\n\n\n**Full Changelog**: https://github.com/ericecook/JellyfinHuePlugin/compare/v2.2.0.0...v3.0.0.0",
+        "checksum": "faa3118bf999d94c19504ac0f7e8b4c7",
+        "sourceUrl": "https://github.com/ericecook/JellyfinHuePlugin/releases/download/v3.0.0.0/JellyfinHuePlugin_3.0.0.0.zip",
+        "targetAbi": "12.0.0.0",
+        "timestamp": "2026-09-08T15:38:15Z",
+        "version": "3.0.0.0"
+      },
+      {
         "changelog": "**Full Changelog**: https://github.com/ericecook/JellyfinHuePlugin/compare/v2.1.0.0...v2.2.0.0",
         "checksum": "4596c475ae652dd6be037bb399c8d542",
         "sourceUrl": "https://github.com/ericecook/JellyfinHuePlugin/releases/download/v2.2.0.0/JellyfinHuePlugin_2.2.0.0.zip",
