@@ -377,8 +377,17 @@
                                         <label class="inputLabel">Target Device IDs (Optional)</label>
                                         <div id="profileDeviceIdList" style="margin-bottom: 10px;"></div>
                                         <div id="profileDeviceIdInputRow" style="display: none;">
-                                            <div style="display: flex; gap: 10px;">
-                                                <input type="text" id="profileNewDeviceId" is="emby-input" placeholder="Enter Device ID" style="flex: 1;" />
+                                            <div style="display: flex; gap: 10px; align-items: center;">
+                                                <select id="profileKnownDeviceSelect" is="emby-select" style="flex: 1; min-width: 0;">
+                                                    <!-- Populated from the server's device list -->
+                                                </select>
+                                                <button is="emby-button" type="button" class="raised" id="profileAddKnownDeviceButton">
+                                                    <span>Add</span>
+                                                </button>
+                                            </div>
+                                            <div id="profileKnownDeviceStatus" class="fieldDescription"></div>
+                                            <div style="display: flex; gap: 10px; margin-top: 10px;">
+                                                <input type="text" id="profileNewDeviceId" is="emby-input" placeholder="Or enter a Device ID manually" style="flex: 1;" />
                                                 <button is="emby-button" type="button" class="raised" id="profileAddDeviceIdButton">
                                                     <span>Add</span>
                                                 </button>
@@ -387,7 +396,7 @@
                                         <button is="emby-button" type="button" class="raised button-submit" id="profileShowAddDeviceId" style="margin-top: 5px;">
                                             <span>Add Device ID</span>
                                         </button>
-                                        <div class="fieldDescription">Find Device ID in logs: "Playback started on [Client] (Device: [DeviceID], IP: [IP])"</div>
+                                        <div class="fieldDescription">Pick from devices that have signed in to this server. Each app and each browser on the same physical device has its own ID, so add every one that should trigger this profile.</div>
                                     </div>
 
                                     <div class="inputContainer">
@@ -579,6 +588,8 @@
                 bridges: [],
                 currentEditingProfile: null,
                 profileDeviceIds: [],
+                knownDevices: [],
+                knownDevicesLoading: false,
 
                 // Helper: Get brightness description
                 getBrightnessDescription: function(value) {
@@ -955,6 +966,7 @@
                     HuePluginConfig.renderProfileDeviceIdList();
                     document.querySelector('#profileDeviceIdInputRow').style.display = 'none';
                     document.querySelector('#profileShowAddDeviceId').style.display = '';
+                    HuePluginConfig.refreshKnownDevices();
 
                     var defaultBridgeId = HuePluginConfig.bridges.length > 0 ? HuePluginConfig.bridges[0].Id : '';
                     HuePluginConfig.populateBridgeDropdown(defaultBridgeId);
@@ -1508,10 +1520,11 @@
                     document.querySelector('#profilePauseBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(pauseBrightness) + ' (' + pauseBrightness + ' / 254)';
                     document.querySelector('#profileStopBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(stopBrightness) + ' (' + stopBrightness + ' / 254)';
                     
-                    HuePluginConfig.profileDeviceIds = profile.TargetDeviceIds || [];
+                    HuePluginConfig.profileDeviceIds = (profile.TargetDeviceIds || []).slice();
                     HuePluginConfig.renderProfileDeviceIdList();
                     document.querySelector('#profileDeviceIdInputRow').style.display = 'none';
                     document.querySelector('#profileShowAddDeviceId').style.display = '';
+                    HuePluginConfig.refreshKnownDevices();
 
                     // Populate bridge dropdown and load groups/scenes for the profile's bridge
                     HuePluginConfig.populateBridgeDropdown(profile.BridgeId);
@@ -1598,6 +1611,122 @@
                     document.querySelector('#profileEditorModal').style.display = 'none';
                 },
 
+                escapeHtml: function(value) {
+                    return String(value == null ? '' : value)
+                        .replace(/&/g, '&amp;')
+                        .replace(/</g, '&lt;')
+                        .replace(/>/g, '&gt;')
+                        .replace(/"/g, '&quot;')
+                        .replace(/'/g, '&#39;');
+                },
+
+                formatRelativeTime: function(isoDate) {
+                    if (!isoDate) return 'never';
+                    var then = new Date(isoDate).getTime();
+                    if (isNaN(then)) return 'unknown';
+                    var minutes = Math.round((Date.now() - then) / 60000);
+                    if (minutes < 1) return 'just now';
+                    if (minutes < 60) return minutes + 'm ago';
+                    var hours = Math.round(minutes / 60);
+                    if (hours < 48) return hours + 'h ago';
+                    var days = Math.round(hours / 24);
+                    if (days < 30) return days + 'd ago';
+                    return new Date(isoDate).toLocaleDateString();
+                },
+
+                // Short display label for a device: "Name · App"
+                describeKnownDevice: function(device) {
+                    var label = device.name;
+                    if (device.app) label += ' \u00b7 ' + device.app;
+                    return label;
+                },
+
+                // The server matches device IDs case-insensitively; mirror that here
+                sameDeviceId: function(a, b) {
+                    return String(a).toLowerCase() === String(b).toLowerCase();
+                },
+
+                findKnownDevice: function(deviceId) {
+                    for (var i = 0; i < HuePluginConfig.knownDevices.length; i++) {
+                        if (HuePluginConfig.sameDeviceId(HuePluginConfig.knownDevices[i].id, deviceId)) {
+                            return HuePluginConfig.knownDevices[i];
+                        }
+                    }
+                    return null;
+                },
+
+                // Fetch every device that has signed in to this server (admin-only endpoint).
+                // Resolves to the list; on failure leaves the cache untouched and reports via status line.
+                refreshKnownDevices: function() {
+                    var status = document.querySelector('#profileKnownDeviceStatus');
+                    if (status) status.textContent = 'Loading devices...';
+                    HuePluginConfig.knownDevicesLoading = true;
+
+                    return ApiClient.getJSON(ApiClient.getUrl('Devices')).then(function(result) {
+                        var items = (result && result.Items) || [];
+                        HuePluginConfig.knownDevices = items
+                            .filter(function(d) { return d && d.Id; })
+                            .map(function(d) {
+                                return {
+                                    id: d.Id,
+                                    name: d.CustomName || d.Name || 'Unnamed device',
+                                    app: d.AppName || '',
+                                    user: d.LastUserName || '',
+                                    lastActive: d.DateLastActivity || null
+                                };
+                            })
+                            .sort(function(a, b) {
+                                var ta = a.lastActive ? new Date(a.lastActive).getTime() : 0;
+                                var tb = b.lastActive ? new Date(b.lastActive).getTime() : 0;
+                                return tb - ta;
+                            });
+                        HuePluginConfig.knownDevicesLoading = false;
+                        if (status) status.textContent = '';
+                        HuePluginConfig.populateKnownDeviceSelect();
+                        HuePluginConfig.renderProfileDeviceIdList();
+                        return HuePluginConfig.knownDevices;
+                    }).catch(function(err) {
+                        console.error('Failed to load device list', err);
+                        HuePluginConfig.knownDevicesLoading = false;
+                        if (status) status.textContent = 'Could not load the device list from Jellyfin. Enter a Device ID manually below.';
+                        HuePluginConfig.populateKnownDeviceSelect();
+                        return HuePluginConfig.knownDevices;
+                    });
+                },
+
+                populateKnownDeviceSelect: function() {
+                    var select = document.querySelector('#profileKnownDeviceSelect');
+                    if (!select) return;
+
+                    var candidates = HuePluginConfig.knownDevices.filter(function(d) {
+                        return !HuePluginConfig.profileDeviceIds.some(function(id) {
+                            return HuePluginConfig.sameDeviceId(id, d.id);
+                        });
+                    });
+
+                    var html = '';
+                    if (candidates.length === 0) {
+                        var emptyText = 'All known devices already added';
+                        if (HuePluginConfig.knownDevices.length === 0) {
+                            emptyText = HuePluginConfig.knownDevicesLoading ? 'Loading devices...' : 'No devices found';
+                        }
+                        html += '<option value="">' + emptyText + '</option>';
+                    } else {
+                        html += '<option value="">Select a device...</option>';
+                        candidates.forEach(function(d) {
+                            var text = HuePluginConfig.describeKnownDevice(d);
+                            if (d.user) text += ' \u00b7 ' + d.user;
+                            text += ' \u00b7 ' + HuePluginConfig.formatRelativeTime(d.lastActive);
+                            html += '<option value="' + HuePluginConfig.escapeHtml(d.id) + '">' + HuePluginConfig.escapeHtml(text) + '</option>';
+                        });
+                    }
+                    // Rebuilding the options must not discard a pick the user has already made
+                    var previous = select.value;
+                    select.innerHTML = html;
+                    select.value = previous;
+                    if (select.value !== previous) select.value = '';
+                },
+
                 renderProfileDeviceIdList: function() {
                     var container = document.querySelector('#profileDeviceIdList');
                     if (HuePluginConfig.profileDeviceIds.length === 0) {
@@ -1607,13 +1736,45 @@
                     
                     var html = '';
                     HuePluginConfig.profileDeviceIds.forEach(function(id, index) {
+                        var known = HuePluginConfig.findKnownDevice(id);
                         html += '<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 4px;">';
-                        html += '<span style="flex: 1; min-width: 0; font-family: monospace; overflow-wrap: break-word;">' + id + '</span>';
+                        html += '<div style="flex: 1; min-width: 0; overflow-wrap: break-word;">';
+                        if (known) {
+                            html += '<div>' + HuePluginConfig.escapeHtml(HuePluginConfig.describeKnownDevice(known)) + '</div>';
+                            html += '<div style="font-family: monospace; font-size: 0.85em; opacity: 0.7;">' + HuePluginConfig.escapeHtml(id) + '</div>';
+                        } else {
+                            html += '<div style="font-family: monospace;">' + HuePluginConfig.escapeHtml(id) + '</div>';
+                        }
+                        html += '</div>';
                         html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.removeProfileDeviceId(' + index + ')">Remove</button>';
                         html += '</div>';
                     });
                     
                     container.innerHTML = html;
+                },
+
+                addDeviceIdToProfile: function(deviceId) {
+                    var exists = HuePluginConfig.profileDeviceIds.some(function(id) {
+                        return HuePluginConfig.sameDeviceId(id, deviceId);
+                    });
+                    if (exists) {
+                        Dashboard.alert('This Device ID is already in the list');
+                        return false;
+                    }
+                    HuePluginConfig.profileDeviceIds.push(deviceId);
+                    HuePluginConfig.renderProfileDeviceIdList();
+                    HuePluginConfig.populateKnownDeviceSelect();
+                    return true;
+                },
+
+                addKnownDevice: function() {
+                    var select = document.querySelector('#profileKnownDeviceSelect');
+                    var deviceId = select ? select.value : '';
+                    if (!deviceId) {
+                        Dashboard.alert('Please select a device');
+                        return;
+                    }
+                    HuePluginConfig.addDeviceIdToProfile(deviceId);
                 },
 
                 addProfileDeviceId: function() {
@@ -1625,23 +1786,15 @@
                         return;
                     }
                     
-                    if (HuePluginConfig.profileDeviceIds.includes(deviceId)) {
-                        Dashboard.alert('This Device ID is already in the list');
-                        return;
+                    if (HuePluginConfig.addDeviceIdToProfile(deviceId)) {
+                        input.value = '';
                     }
-                    
-                    HuePluginConfig.profileDeviceIds.push(deviceId);
-                    input.value = '';
-                    document.querySelector('#profileDeviceIdInputRow').style.display = 'none';
-                    document.querySelector('#profileShowAddDeviceId').style.display = '';
-                    HuePluginConfig.renderProfileDeviceIdList();
                 },
 
                 removeProfileDeviceId: function(index) {
                     HuePluginConfig.profileDeviceIds.splice(index, 1);
                     HuePluginConfig.renderProfileDeviceIdList();
-                    document.querySelector('#profileDeviceIdInputRow').style.display = 'none';
-                    document.querySelector('#profileShowAddDeviceId').style.display = '';
+                    HuePluginConfig.populateKnownDeviceSelect();
                 },
 
                 // Populate bridge dropdown in profile editor
@@ -1900,6 +2053,13 @@
                     });
                 }
 
+                var profileAddKnownDeviceButton = document.querySelector('#profileAddKnownDeviceButton');
+                if (profileAddKnownDeviceButton) {
+                    profileAddKnownDeviceButton.addEventListener('click', function () {
+                        HuePluginConfig.addKnownDevice();
+                    });
+                }
+
                 var profileNewDeviceId = document.querySelector('#profileNewDeviceId');
                 if (profileNewDeviceId) {
                     profileNewDeviceId.addEventListener('keypress', function (e) {
@@ -1913,7 +2073,10 @@
                 document.querySelector('#profileShowAddDeviceId').addEventListener('click', function() {
                     document.querySelector('#profileDeviceIdInputRow').style.display = '';
                     this.style.display = 'none';
-                    document.querySelector('#profileNewDeviceId').focus();
+                    HuePluginConfig.populateKnownDeviceSelect();
+                    // Re-fetch so a device that just signed in shows up without reopening the editor
+                    HuePluginConfig.refreshKnownDevices();
+                    document.querySelector('#profileKnownDeviceSelect').focus();
                 });
 
                 // Tab switching event listeners
