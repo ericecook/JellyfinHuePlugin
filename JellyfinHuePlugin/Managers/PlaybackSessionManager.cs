@@ -71,7 +71,7 @@ namespace JellyfinHuePlugin.Managers
             var isMovie = e.Item?.GetType().Name == "Movie" || e.MediaInfo?.Container == "Movie";
             var isEpisode = e.Item?.GetType().Name == "Episode" || e.MediaInfo?.Container == "Episode";
 
-            var profile = FindMatchingProfile(e.ClientName, e.DeviceId, e.Session.RemoteEndPoint ?? "", isMovie, isEpisode, config);
+            var profile = TryMatchProfile(e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, isMovie, isEpisode, config);
 
             if (profile == null)
             {
@@ -113,7 +113,7 @@ namespace JellyfinHuePlugin.Managers
             var isMovie = e.Item?.GetType().Name == "Movie";
             var isEpisode = e.Item?.GetType().Name == "Episode";
 
-            var profile = FindMatchingProfile(e.ClientName, e.DeviceId, e.Session.RemoteEndPoint ?? "", isMovie, isEpisode, config);
+            var profile = TryMatchProfile(e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, isMovie, isEpisode, config);
 
             if (profile == null)
             {
@@ -150,7 +150,7 @@ namespace JellyfinHuePlugin.Managers
             var isMovie = e.Item?.GetType().Name == "Movie";
             var isEpisode = e.Item?.GetType().Name == "Episode";
 
-            var profile = FindMatchingProfile(e.ClientName, e.DeviceId, e.Session.RemoteEndPoint ?? "", isMovie, isEpisode, config);
+            var profile = TryMatchProfile(e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, isMovie, isEpisode, config);
 
             if (profile == null)
             {
@@ -247,136 +247,34 @@ namespace JellyfinHuePlugin.Managers
             return false;
         }
         
-        private LightControlProfile? FindMatchingProfile(string clientName, string deviceId, string remoteEndpoint, bool isMovie, bool isEpisode, PluginConfiguration config)
+        // Matching itself is pure (ProfileMatcher); this wraps it with the Debug
+        // diagnostics that TROUBLESHOOTING.md points users at.
+        private LightControlProfile? TryMatchProfile(string? clientName, string? deviceId, string? remoteEndpoint, bool isMovie, bool isEpisode, PluginConfiguration config)
         {
-            if (!config.EnablePlugin)
+            var request = new MatchRequest(clientName ?? string.Empty, deviceId ?? string.Empty, remoteEndpoint ?? string.Empty, isMovie, isEpisode);
+            var result = ProfileMatcher.FindMatchingProfile(config, request);
+
+            foreach (var rejection in result.Rejections)
             {
-                return null;
+                _logger.LogDebug("[{ProfileName}] {Filter} filter rejected: {Actual} vs {Expected}",
+                    rejection.ProfileName, rejection.Filter, rejection.Actual, rejection.Expected);
             }
 
-            // Try to match against defined profiles
-            if (config.Profiles != null && config.Profiles.Count > 0)
+            switch (result.Status)
             {
-                foreach (var profile in config.Profiles)
-                {
-                    if (!profile.Enabled) continue;
-
-                    // Check media type filter first
-                    if (!MediaTypeMatches(profile, isMovie, isEpisode))
-                    {
-                        _logger.LogDebug("[{ProfileName}] Media type mismatch (Movie={IsMovie}, Episode={IsEpisode}, EnableMovies={EnableMovies}, EnableTv={EnableTv})", 
-                            profile.Name, isMovie, isEpisode, profile.EnableForMovies, profile.EnableForTvShows);
-                        continue;
-                    }
-                    
-                    if (ProfileMatches(profile, clientName, deviceId, remoteEndpoint))
-                    {
-                        _logger.LogDebug("Matched profile: {ProfileName}", profile.Name);
-                        return profile;
-                    }
-                }
-                
-                // Profiles defined but none matched
-                _logger.LogDebug("No profiles matched for {ClientName} (Device: {DeviceId}, IP: {IP})", 
-                    clientName, deviceId, ExtractIpAddress(remoteEndpoint));
-            }
-            else
-            {
-                _logger.LogDebug("No profiles configured");
+                case MatchStatus.Matched:
+                    _logger.LogDebug("Matched profile: {ProfileName}", result.Profile!.Name);
+                    break;
+                case MatchStatus.NoMatch:
+                    _logger.LogDebug("No profiles matched for {ClientName} (Device: {DeviceId}, IP: {IP})",
+                        request.ClientName, request.DeviceId, ProfileMatcher.ExtractIpAddress(request.RemoteEndpoint));
+                    break;
+                case MatchStatus.NoProfiles:
+                    _logger.LogDebug("No profiles configured");
+                    break;
             }
 
-            return null;
-        }
-
-        private bool MediaTypeMatches(LightControlProfile profile, bool isMovie, bool isEpisode)
-        {
-            // If it's a movie, check if movies are enabled
-            if (isMovie)
-            {
-                return profile.EnableForMovies;
-            }
-            
-            // If it's an episode/TV show, check if TV shows are enabled
-            if (isEpisode)
-            {
-                return profile.EnableForTvShows;
-            }
-            
-            // Unknown media type - don't match
-            return false;
-        }
-
-        private bool ProfileMatches(LightControlProfile profile, string clientName, string deviceId, string remoteEndpoint)
-        {
-            bool hasClientFilter = !string.IsNullOrWhiteSpace(profile.TargetClientName);
-            bool hasDeviceFilter = profile.TargetDeviceIds != null && profile.TargetDeviceIds.Count > 0;
-            bool hasIpFilter = !string.IsNullOrWhiteSpace(profile.TargetIpAddress);
-            
-            // If no filters in profile, it matches everything
-            if (!hasClientFilter && !hasDeviceFilter && !hasIpFilter)
-            {
-                return true;
-            }
-
-            // Check IP address (most specific)
-            if (hasIpFilter)
-            {
-                var clientIp = ExtractIpAddress(remoteEndpoint);
-                bool ipMatches = clientIp.Equals(profile.TargetIpAddress, StringComparison.OrdinalIgnoreCase);
-                _logger.LogDebug("[{ProfileName}] IP address filter check: {ClientIp} vs {TargetIp} = {Match}", 
-                    profile.Name, clientIp, profile.TargetIpAddress, ipMatches);
-                
-                if (!ipMatches)
-                {
-                    return false;
-                }
-            }
-            
-            // Check Device ID list
-            if (hasDeviceFilter)
-            {
-                bool deviceMatches = profile.TargetDeviceIds?.Any(id => 
-                    deviceId.Equals(id, StringComparison.OrdinalIgnoreCase)) ?? false;
-                _logger.LogDebug("[{ProfileName}] DeviceId filter check: {DeviceId} in [{TargetDeviceIds}] = {Match}", 
-                    profile.Name, deviceId, string.Join(", ", profile.TargetDeviceIds ?? new List<string>()), deviceMatches);
-                
-                if (!deviceMatches)
-                {
-                    return false;
-                }
-            }
-            
-            // Check ClientName (least specific, substring match)
-            if (hasClientFilter)
-            {
-                bool clientMatches = clientName.Contains(profile.TargetClientName, StringComparison.OrdinalIgnoreCase);
-                _logger.LogDebug("[{ProfileName}] ClientName filter check: {ClientName} contains {TargetClientName} = {Match}", 
-                    profile.Name, clientName, profile.TargetClientName, clientMatches);
-                
-                if (!clientMatches)
-                {
-                    return false;
-                }
-            }
-
-            return true;
-        }
-        
-        private string ExtractIpAddress(string remoteEndpoint)
-        {
-            if (string.IsNullOrWhiteSpace(remoteEndpoint))
-            {
-                return string.Empty;
-            }
-            
-            // Remote endpoint format is usually "IP:PORT" or just "IP"
-            var colonIndex = remoteEndpoint.IndexOf(':');
-            if (colonIndex > 0)
-            {
-                return remoteEndpoint.Substring(0, colonIndex);
-            }
-            
-            return remoteEndpoint;
+            return result.Profile;
         }
 
         private HueBridge? ResolveBridge(PluginConfiguration config, LightControlProfile profile)
