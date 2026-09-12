@@ -8,6 +8,7 @@ using System.IO;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -19,19 +20,79 @@ namespace JellyfinHuePlugin.Services
         private readonly ILogger<HueService> _logger;
         private readonly HttpClient _httpClient;
 
+        // Hue v1 API: lowercase keys (see [JsonPropertyName] on HueLightState), and
+        // absent fields rather than nulls — the bridge reports an error for every
+        // key it can't apply, so "hue": null is not a no-op.
+        private static readonly JsonSerializerOptions HueJsonOptions = new(JsonSerializerDefaults.Web)
+        {
+            DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+        };
+
         public HueService(ILogger<HueService> logger)
+            : this(logger, CreateDefaultHandler())
+        {
+        }
+
+        // Test seam: lets tests capture requests and feed canned bridge responses.
+        public HueService(ILogger<HueService> logger, HttpMessageHandler handler)
         {
             _logger = logger;
-            
-            // Create HttpClient with handler that doesn't validate SSL for local bridge
-            var handler = new HttpClientHandler
-            {
-                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
-                AllowAutoRedirect = false // Prevent HTTP->HTTPS redirects
-            };
-            
             _httpClient = new HttpClient(handler);
             _httpClient.Timeout = TimeSpan.FromSeconds(5);
+        }
+
+        // Handler that doesn't validate SSL for the local bridge (self-signed cert)
+        private static HttpMessageHandler CreateDefaultHandler() => new HttpClientHandler
+        {
+            ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator,
+            AllowAutoRedirect = false // Prevent HTTP->HTTPS redirects
+        };
+
+        // The bridge answers state changes with HTTP 200 and a JSON array of
+        // {"success":{...}} / {"error":{"type","address","description"}} entries, one per
+        // key. An unknown key or a bad API key is therefore invisible to IsSuccessStatusCode.
+        private async Task<bool> ReadBridgeResultAsync(HttpResponseMessage response, string operation, CancellationToken cancellationToken)
+        {
+            var content = await response.Content.ReadAsStringAsync(cancellationToken);
+            // A wrong IP can serve a whole web page; keep log lines bounded.
+            var excerpt = content.Length > 500 ? content[..500] + "…" : content;
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Bridge returned {Status} for {Operation}: {Content}", response.StatusCode, operation, excerpt);
+                return false;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(content);
+                if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                {
+                    _logger.LogWarning("Unexpected bridge response for {Operation}: {Content}", operation, excerpt);
+                    return false;
+                }
+
+                var ok = true;
+                foreach (var entry in doc.RootElement.EnumerateArray())
+                {
+                    if (entry.TryGetProperty("error", out var error))
+                    {
+                        ok = false;
+                        _logger.LogWarning("Bridge error for {Operation}: type {Type} at {Address}: {Description}",
+                            operation,
+                            error.TryGetProperty("type", out var t) ? t.ToString() : "?",
+                            error.TryGetProperty("address", out var a) ? a.ToString() : "?",
+                            error.TryGetProperty("description", out var d) ? d.ToString() : "?");
+                    }
+                }
+
+                return ok;
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "Could not parse bridge response for {Operation}: {Content}", operation, excerpt);
+                return false;
+            }
         }
 
         // Retry once on transient connection failures (stale pooled connections to Hue bridge)
@@ -341,9 +402,10 @@ namespace JellyfinHuePlugin.Services
                 var response = await SendWithRetryAsync(() => _httpClient.PutAsJsonAsync(
                     $"https://{bridgeIp}/api/{username}/groups/{groupId}/action",
                     requestBody,
+                    HueJsonOptions,
                     cancellationToken));
 
-                return response.IsSuccessStatusCode;
+                return await ReadBridgeResultAsync(response, $"scene {sceneId} on group {groupId}", cancellationToken);
             }
             catch (Exception ex)
             {
@@ -361,9 +423,10 @@ namespace JellyfinHuePlugin.Services
                 var response = await SendWithRetryAsync(() => _httpClient.PutAsJsonAsync(
                     $"https://{bridgeIp}/api/{username}/groups/{groupId}/action",
                     state,
+                    HueJsonOptions,
                     cancellationToken));
 
-                return response.IsSuccessStatusCode;
+                return await ReadBridgeResultAsync(response, $"group {groupId} state", cancellationToken);
             }
             catch (Exception ex)
             {
@@ -381,9 +444,10 @@ namespace JellyfinHuePlugin.Services
                 var response = await SendWithRetryAsync(() => _httpClient.PutAsJsonAsync(
                     $"https://{bridgeIp}/api/{username}/lights/{lightId}/state",
                     state,
+                    HueJsonOptions,
                     cancellationToken));
 
-                return response.IsSuccessStatusCode;
+                return await ReadBridgeResultAsync(response, $"light {lightId} state", cancellationToken);
             }
             catch (Exception ex)
             {

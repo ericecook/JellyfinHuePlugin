@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Text.Json.Serialization;
 
 namespace JellyfinHuePlugin.Services
 {
@@ -32,6 +33,9 @@ namespace JellyfinHuePlugin.Services
         public List<string> Lights { get; set; } = new();
     }
 
+    // Sent to the bridge with HueService.HueJsonOptions (camelCase, nulls omitted).
+    // The Hue v1 API keys are all lowercase, so multi-word names need an explicit
+    // [JsonPropertyName]; camelCase "transitionTime" is rejected as an unknown parameter.
     public class HueLightState
     {
         public bool? On { get; set; }
@@ -40,6 +44,7 @@ namespace JellyfinHuePlugin.Services
         public int? Sat { get; set; } // 0-254
         public int? Ct { get; set; }  // Color temperature
         public List<float>? Xy { get; set; } // CIE color space
+        [JsonPropertyName("transitiontime")]
         public int? TransitionTime { get; set; } // In 100ms increments
     }
 }

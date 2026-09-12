@@ -72,6 +72,10 @@ You can also click "Authenticate" first and then press the bridge button — the
 - Check that your profile's client/device/IP filters match your playback device
 - Test the light control using the "Test" button in the profile editor
 - Check Jellyfin logs for profile matching debug messages
+- Look for `Bridge error for ...` warnings from `HueService` in the Jellyfin log. The bridge
+  answers every light command with a per-parameter result; a rejected parameter, a revoked
+  API key (`unauthorized user`) or an unknown group or scene id shows up there with the
+  bridge's own error type and description
 
 ---
 
