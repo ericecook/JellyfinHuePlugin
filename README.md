@@ -83,7 +83,7 @@ Put more specific profiles first (device ID > client name > no filter).
 
 ## API Endpoints
 
-All endpoints require Jellyfin authentication.
+All endpoints require an authenticated Jellyfin **administrator** account (the same access level as the plugin configuration page).
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|

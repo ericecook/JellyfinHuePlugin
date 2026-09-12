@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.Mime;
 using System.Threading;
 using System.Threading.Tasks;
+using MediaBrowser.Common.Api;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -14,7 +15,9 @@ using JellyfinHuePlugin.Services;
 namespace JellyfinHuePlugin.Api
 {
     [ApiController]
-    [Authorize]
+    // Plain [Authorize] admits any signed-in Jellyfin account. Bridge keys, light
+    // control and outbound test connections are admin-only, like the plugin config page.
+    [Authorize(Policy = Policies.RequiresElevation)]
     [Route("api/hueplugin")]
     [Produces(MediaTypeNames.Application.Json)]
     public class HueController : ControllerBase
