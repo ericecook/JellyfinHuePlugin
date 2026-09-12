@@ -288,7 +288,7 @@ namespace JellyfinHuePlugin.Services
         }
         
         // Normalize bridge IP to remove any protocol and ensure it's just IP:port
-        private string NormalizeBridgeIp(string bridgeIp)
+        internal static string NormalizeBridgeIp(string bridgeIp)
         {
             if (string.IsNullOrWhiteSpace(bridgeIp))
             {
