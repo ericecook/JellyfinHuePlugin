@@ -16,4 +16,8 @@
     <EmbeddedResource Include="Configuration\configPage.html" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="JellyfinHuePlugin.Tests" />
+  </ItemGroup>
+
 </Project>
