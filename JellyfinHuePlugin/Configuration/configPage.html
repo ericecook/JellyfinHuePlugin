@@ -1249,8 +1249,8 @@
 
                 // Authenticate bridge in add modal
                 authBridgeInModal: function() {
-                    var bridgeIp = document.querySelector('#newBridgeIp').value;
-                    var bridgeName = document.querySelector('#newBridgeName').value || 'Bridge';
+                    var bridgeIp = document.querySelector('#newBridgeIp').value.trim();
+                    var bridgeName = document.querySelector('#newBridgeName').value.trim() || 'Bridge';
                     if (!bridgeIp) {
                         Dashboard.alert('Please enter or discover a bridge IP address.');
                         return;
@@ -1285,9 +1285,10 @@
                                 btnText.textContent = 'Authenticate';
                                 progressEl.style.display = 'none';
 
-                                // Fill in the API key and save
+                                // Fill in the API key and save. The server upserts by IP and
+                                // returns the existing Id for a re-added bridge, so merge rather than push.
                                 document.querySelector('#newBridgeUsername').value = result.Username;
-                                HuePluginConfig.bridges.push({
+                                var savedBridge = HuePluginConfig.upsertBridge({
                                     Id: result.BridgeId,
                                     Name: bridgeName,
                                     IpAddress: bridgeIp,
@@ -1298,7 +1299,7 @@
                                 HuePluginConfig.saveConfiguration();
 
                                 document.querySelector('#addBridgeModal').style.display = 'none';
-                                Dashboard.alert('Bridge "' + bridgeName + '" added and authenticated!');
+                                Dashboard.alert('Bridge "' + savedBridge.Name + '" added and authenticated!');
                             } else if (attempt < maxAttempts) {
                                 var remaining = 3;
                                 countdownEl.textContent = 'Retrying in ' + remaining + 's...';
@@ -1358,7 +1359,7 @@
                     }).then(function(result) {
                         if (result.Success) {
                             var bridgeId = crypto.randomUUID ? crypto.randomUUID() : 'bridge-' + Date.now();
-                            HuePluginConfig.bridges.push({
+                            var savedBridge = HuePluginConfig.upsertBridge({
                                 Id: bridgeId,
                                 Name: bridgeName,
                                 IpAddress: bridgeIp,
@@ -1369,7 +1370,7 @@
                             HuePluginConfig.saveConfiguration();
 
                             document.querySelector('#addBridgeModal').style.display = 'none';
-                            Dashboard.alert('Bridge "' + bridgeName + '" added!');
+                            Dashboard.alert('Bridge "' + savedBridge.Name + '" added!');
                         } else {
                             Dashboard.alert('Connection failed: ' + (result.Error || 'Unknown error'));
                         }
@@ -1577,11 +1578,11 @@
                         PauseGracePeriodSeconds: document.querySelector('#profileEnablePauseGracePeriod').checked ? Math.max(1, parseInt(document.querySelector('#profilePauseGracePeriod').value) || 30) : 0,
                         StopBrightness: Math.max(0, Math.min(254, parseInt(document.querySelector('#profileStopBrightness').value) || 0)),
                         EnablePlayTransition: document.querySelector('#profileEnablePlayTransition').checked,
-                        PlayTransitionDuration: parseInt(document.querySelector('#profilePlayTransitionDuration').value),
+                        PlayTransitionDuration: HuePluginConfig.parseNonNegativeInt('#profilePlayTransitionDuration'),
                         EnablePauseTransition: document.querySelector('#profileEnablePauseTransition').checked,
-                        PauseTransitionDuration: parseInt(document.querySelector('#profilePauseTransitionDuration').value),
+                        PauseTransitionDuration: HuePluginConfig.parseNonNegativeInt('#profilePauseTransitionDuration'),
                         EnableStopTransition: document.querySelector('#profileEnableStopTransition').checked,
-                        StopTransitionDuration: parseInt(document.querySelector('#profileStopTransitionDuration').value),
+                        StopTransitionDuration: HuePluginConfig.parseNonNegativeInt('#profileStopTransitionDuration'),
                         EnableOutroLights: document.querySelector('#profileEnableOutroLights').checked
                     };
                     
@@ -1944,6 +1945,39 @@
                         var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
                         return v.toString(16);
                     });
+                },
+
+                // Add a bridge, or update the entry that already has this Id or IP so a
+                // re-added bridge never becomes a duplicate. Keeps the existing Id so
+                // profiles that reference it stay linked, and keeps the existing name
+                // unless the user typed one ('Bridge' is the modal's pre-filled default,
+                // see openAddBridge). Returns the stored entry.
+                upsertBridge: function(bridge) {
+                    var existing = null;
+                    for (var i = 0; i < HuePluginConfig.bridges.length; i++) {
+                        var b = HuePluginConfig.bridges[i];
+                        if (b.Id === bridge.Id || b.IpAddress === bridge.IpAddress) {
+                            existing = b;
+                            break;
+                        }
+                    }
+                    if (existing) {
+                        if (bridge.Name && bridge.Name !== 'Bridge') {
+                            existing.Name = bridge.Name;
+                        }
+                        existing.IpAddress = bridge.IpAddress;
+                        existing.Username = bridge.Username;
+                        return existing;
+                    }
+                    HuePluginConfig.bridges.push(bridge);
+                    return bridge;
+                },
+
+                // Number input parsed as a non-negative integer. A cleared field gives
+                // parseInt NaN, which JSON.stringify sends as null and the server rejects.
+                parseNonNegativeInt: function(selector) {
+                    var value = parseInt(document.querySelector(selector).value);
+                    return isNaN(value) ? 0 : Math.max(0, value);
                 },
 
                 saveConfiguration: function () {
