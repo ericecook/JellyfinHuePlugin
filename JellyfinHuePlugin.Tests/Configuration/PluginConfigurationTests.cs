@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Xml.Linq;
 using System.Xml.Serialization;
 using FluentAssertions;
 using JellyfinHuePlugin.Configuration;
@@ -282,6 +284,38 @@ namespace JellyfinHuePlugin.Tests.Configuration
             p.EnablePlayTransition.Should().BeTrue();
             p.EnablePauseTransition.Should().BeTrue();
             p.EnableStopTransition.Should().BeTrue();
+        }
+
+        [Fact]
+        public void XmlSerialization_ShouldNotWriteLegacyElements()
+        {
+            // Jellyfin persists config with XmlSerializer; the ShouldSerialize* methods must
+            // keep suppressing the legacy elements alongside the [JsonIgnore] attributes.
+            var config = new PluginConfiguration();
+            var bridge = new HueBridge { Name = "B", IpAddress = "10.0.0.5", Username = "u" };
+            config.Bridges.Add(bridge);
+            config.Profiles.Add(new LightControlProfile { Name = "P", BridgeId = bridge.Id, EnablePlayTransition = true, PlayTransitionDuration = 30 });
+
+            var serializer = new XmlSerializer(typeof(PluginConfiguration));
+            using var writer = new StringWriter();
+            serializer.Serialize(writer, config);
+            var xml = writer.ToString();
+
+            var doc = XDocument.Parse(xml);
+            var topLevel = doc.Root!.Elements().Select(e => e.Name.LocalName).ToList();
+            topLevel.Should().NotContain(new[] { "BridgeIpAddress", "Username", "BridgeId", "UseLightGroups" });
+            topLevel.Should().Contain(new[] { "Bridges", "Profiles", "EnablePlugin" });
+
+            var profile = doc.Root.Element("Profiles")!.Elements().Single();
+            var profileElements = profile.Elements().Select(e => e.Name.LocalName).ToList();
+            profileElements.Should().NotContain("TransitionDuration");
+            profile.Element("PlayTransitionDuration")!.Value.Should().Be("30");
+
+            using var reader = new StringReader(xml);
+            var restored = (PluginConfiguration)serializer.Deserialize(reader)!;
+            restored.Profiles[0].PlayTransitionDuration.Should().Be(30);
+            restored.Profiles[0].BridgeId.Should().Be(bridge.Id);
+            restored.Bridges[0].Username.Should().Be("u");
         }
 
         [Fact]

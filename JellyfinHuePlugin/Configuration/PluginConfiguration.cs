@@ -1,6 +1,7 @@
 using MediaBrowser.Model.Plugins;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 using System.Xml.Serialization;
 
 namespace JellyfinHuePlugin.Configuration
@@ -54,8 +55,12 @@ namespace JellyfinHuePlugin.Configuration
         public int StopTransitionDuration { get; set; } = 4;
 
         // Backward compat: old configs had a single TransitionDuration property.
-        // When deserialized, apply it to all three per-state durations.
+        // When deserialized from XML, apply it to all three per-state durations.
+        // ShouldSerialize* only applies to XmlSerializer; the config page talks JSON
+        // (System.Text.Json), which would otherwise emit this as 0 and call the setter
+        // on the way back, clobbering the real per-state values. Hence [JsonIgnore].
         [XmlElement("TransitionDuration")]
+        [JsonIgnore]
         public int LegacyTransitionDuration
         {
             get => 0; // never serialize this
@@ -86,21 +91,26 @@ namespace JellyfinHuePlugin.Configuration
 
         public bool EnablePlugin { get; set; } = true;
 
-        // Legacy single-bridge fields — absorbed on deserialization, never written back.
+        // Legacy single-bridge fields — absorbed on XML deserialization, never written
+        // back and never exposed over the JSON config API.
         // MigrateLegacyConfig() converts them to a Bridges entry.
         [XmlElement("BridgeIpAddress")]
+        [JsonIgnore]
         public string LegacyBridgeIpAddress { get; set; } = string.Empty;
         public bool ShouldSerializeLegacyBridgeIpAddress() => false;
 
         [XmlElement("Username")]
+        [JsonIgnore]
         public string LegacyUsername { get; set; } = string.Empty;
         public bool ShouldSerializeLegacyUsername() => false;
 
         [XmlElement("BridgeId")]
+        [JsonIgnore]
         public string LegacyBridgeId { get; set; } = string.Empty;
         public bool ShouldSerializeLegacyBridgeId() => false;
 
         // Backward compat: absorb removed property from old configs
+        [JsonIgnore]
         public bool UseLightGroups { get; set; } = true;
         public bool ShouldSerializeUseLightGroups() => false;
 
