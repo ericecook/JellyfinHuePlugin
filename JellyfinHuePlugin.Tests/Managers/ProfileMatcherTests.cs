@@ -63,6 +63,22 @@ namespace JellyfinHuePlugin.Tests.Managers
             Find(config, "Android", "device3", "192.168.1.102").Should().NotBeNull();
         }
 
+        [Fact]
+        public void ProfileMatching_WhitespaceOnlyFilterIsNoFilter()
+        {
+            var config = ConfigWith(new LightControlProfile
+            {
+                Name = "Match All",
+                TargetClientName = "   ",
+                TargetDeviceIds = new List<string>(),
+                TargetIpAddress = string.Empty
+            });
+
+            Find(config, "Roku", "device1", "192.168.1.100").Should().NotBeNull();
+            Find(config, "Web", "device2", "192.168.1.101").Should().NotBeNull();
+            Find(config, "Android", "device3", "192.168.1.102").Should().NotBeNull();
+        }
+
         #endregion
 
         #region Client Name Filtering Tests
@@ -216,7 +232,9 @@ namespace JellyfinHuePlugin.Tests.Managers
             var profile1 = Find(config, "Roku", "roku-123", "192.168.1.100");
             var profile2 = Find(config, "Roku", "roku-456", "192.168.1.100");
 
+            profile1.Should().NotBeNull();
             profile1!.Name.Should().Be("Specific");
+            profile2.Should().NotBeNull();
             profile2!.Name.Should().Be("General");
         }
 
@@ -347,6 +365,28 @@ namespace JellyfinHuePlugin.Tests.Managers
             rejection.Filter.Should().Be(RejectionFilter.DeviceId);
             rejection.Actual.Should().Be("zzz");
             rejection.Expected.Should().Be("a, b");
+        }
+
+        [Fact]
+        public void FindMatchingProfile_ReportsFirstFailingFilter_IpBeforeDeviceBeforeClient()
+        {
+            var profile = new LightControlProfile
+            {
+                Name = "Strict",
+                Enabled = true,
+                EnableForMovies = true,
+                TargetIpAddress = "10.0.0.1",
+                TargetDeviceIds = new List<string> { "device-a" },
+                TargetClientName = "Jellyfin Web"
+            };
+            var config = ConfigWith(profile);
+
+            var result = ProfileMatcher.FindMatchingProfile(
+                config, Req(clientName: "Infuse", deviceId: "device-z", remoteEndpoint: "10.0.0.2:5000", isMovie: true));
+
+            result.Status.Should().Be(MatchStatus.NoMatch);
+            result.Rejections.Should().ContainSingle()
+                .Which.Filter.Should().Be(RejectionFilter.IpAddress);
         }
 
         [Theory]

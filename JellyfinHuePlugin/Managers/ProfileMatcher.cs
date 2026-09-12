@@ -94,7 +94,7 @@ namespace JellyfinHuePlugin.Managers
         internal static Rejection? ProfileMatches(LightControlProfile profile, MatchRequest request)
         {
             bool hasClientFilter = !string.IsNullOrWhiteSpace(profile.TargetClientName);
-            bool hasDeviceFilter = profile.TargetDeviceIds.Count > 0;
+            bool hasDeviceFilter = profile.TargetDeviceIds is { Count: > 0 };
             bool hasIpFilter = !string.IsNullOrWhiteSpace(profile.TargetIpAddress);
 
             // No filters: matches everything

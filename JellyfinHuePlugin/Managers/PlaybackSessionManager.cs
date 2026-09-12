@@ -272,6 +272,9 @@ namespace JellyfinHuePlugin.Managers
                 case MatchStatus.NoProfiles:
                     _logger.LogDebug("No profiles configured");
                     break;
+                case MatchStatus.PluginDisabled:
+                    // Nothing is logged when the plugin is disabled, as before.
+                    break;
             }
 
             return result.Profile;
