@@ -431,3 +431,6 @@ dev-output/
 # Docker
 Dockerfile
 docker-compose.*
+
+# Superpowers scratch (SDD ledgers, briefs, review packages) — never committed
+.superpowers/
