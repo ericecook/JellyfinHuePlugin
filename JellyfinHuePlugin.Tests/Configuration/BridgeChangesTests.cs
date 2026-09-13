@@ -33,23 +33,55 @@ namespace JellyfinHuePlugin.Tests.Configuration
         {
             var result = BridgeChanges.Between(new[] { Bridge("a", ip: "Bridge.Local") }, new[] { Bridge("a", ip: " bridge.local ") });
 
-            result.Should().BeSameAs(BridgeChanges.Result.None);
+            result.Changed.Should().BeEmpty();
+            result.Removed.Should().BeEmpty();
+            result.Unchanged.Should().ContainSingle();
         }
 
         [Fact]
-        public void RenameOnly_IsNotAChange()
+        public void RenameOnly_IsUnchanged()
         {
-            var result = BridgeChanges.Between(new[] { Bridge("a") }, new[] { Bridge("a", name: "Living room") });
+            var old = Bridge("a");
+            var renamed = Bridge("a", name: "Living room");
 
-            result.Should().BeSameAs(BridgeChanges.Result.None);
+            var result = BridgeChanges.Between(new[] { old }, new[] { renamed });
+
+            result.Changed.Should().BeEmpty();
+            result.Removed.Should().BeEmpty();
+            var pair = result.Unchanged.Should().ContainSingle().Subject;
+            pair.Old.Should().BeSameAs(old);
+            pair.New.Should().BeSameAs(renamed);
         }
 
         [Fact]
-        public void AddedBridge_IsNeitherChangedNorRemoved()
+        public void IdenticalEntry_IsUnchanged()
+        {
+            var result = BridgeChanges.Between(new[] { Bridge("a") }, new[] { Bridge("a") });
+
+            result.Changed.Should().BeEmpty();
+            result.Unchanged.Should().ContainSingle().Which.New.Id.Should().Be("a");
+        }
+
+        [Fact]
+        public void ChangedAndRemovedEntries_AreNotAlsoUnchanged()
+        {
+            var result = BridgeChanges.Between(
+                new[] { Bridge("a"), Bridge("b"), Bridge("c") },
+                new[] { Bridge("a", ip: "192.168.1.60"), Bridge("c") });
+
+            result.Changed.Should().ContainSingle().Which.Old.Id.Should().Be("a");
+            result.Removed.Should().ContainSingle().Which.Id.Should().Be("b");
+            result.Unchanged.Should().ContainSingle().Which.Old.Id.Should().Be("c");
+        }
+
+        [Fact]
+        public void AddedBridge_IsInNoList()
         {
             var result = BridgeChanges.Between(new[] { Bridge("a") }, new[] { Bridge("a"), Bridge("b") });
 
-            result.Should().BeSameAs(BridgeChanges.Result.None);
+            result.Changed.Should().BeEmpty();
+            result.Removed.Should().BeEmpty();
+            result.Unchanged.Should().ContainSingle().Which.New.Id.Should().Be("a");
         }
 
         [Fact]
@@ -69,6 +101,15 @@ namespace JellyfinHuePlugin.Tests.Configuration
 
             result.Changed.Should().ContainSingle().Which.New.Username.Should().Be("new");
             result.Removed.Should().ContainSingle().Which.Id.Should().Be("b");
+        }
+
+        [Fact]
+        public void MissingId_IsRemovedAndNotUnchanged()
+        {
+            var result = BridgeChanges.Between(new[] { Bridge("a") }, new[] { Bridge("b") });
+
+            result.Removed.Should().ContainSingle().Which.Id.Should().Be("a");
+            result.Unchanged.Should().BeEmpty();
         }
 
         [Fact]

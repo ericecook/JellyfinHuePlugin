@@ -7,14 +7,23 @@ namespace JellyfinHuePlugin.Configuration
     /// <summary>
     /// What a configuration save did to the bridge list, matched by configuration id. A bridge
     /// whose address or application key differs is <c>Changed</c>: its certificate pin and
-    /// caches describe the previous bridge. A missing id is <c>Removed</c>. Added and renamed
-    /// bridges are neither. Pure; never throws on well-formed lists.
+    /// caches describe the previous bridge. A missing id is <c>Removed</c>. Every other matched
+    /// pair - identical or renamed - is <c>Unchanged</c>: the page carries its own copy of the
+    /// bridge list and may post a stale pin back, so the caller restores the live one from these
+    /// pairs. Added bridges are in none of the three. Pure; never throws on well-formed lists.
     /// </summary>
     public static class BridgeChanges
     {
-        public sealed record Result(IReadOnlyList<(HueBridge Old, HueBridge New)> Changed, IReadOnlyList<HueBridge> Removed)
+        public sealed record Result(
+            IReadOnlyList<(HueBridge Old, HueBridge New)> Changed,
+            IReadOnlyList<HueBridge> Removed,
+            IReadOnlyList<(HueBridge Old, HueBridge New)> Unchanged)
         {
-            public static readonly Result None = new(Array.Empty<(HueBridge, HueBridge)>(), Array.Empty<HueBridge>());
+            /// <summary>Nothing matched at all - only returned for an empty or null <c>before</c> list.</summary>
+            public static readonly Result None = new(
+                Array.Empty<(HueBridge, HueBridge)>(),
+                Array.Empty<HueBridge>(),
+                Array.Empty<(HueBridge, HueBridge)>());
         }
 
         public static Result Between(IReadOnlyList<HueBridge>? before, IReadOnlyList<HueBridge>? after)
@@ -31,6 +40,7 @@ namespace JellyfinHuePlugin.Configuration
 
             var changed = new List<(HueBridge, HueBridge)>();
             var removed = new List<HueBridge>();
+            var unchanged = new List<(HueBridge, HueBridge)>();
             foreach (var old in before)
             {
                 if (old == null || string.IsNullOrEmpty(old.Id))
@@ -49,9 +59,13 @@ namespace JellyfinHuePlugin.Configuration
                 {
                     changed.Add((old, updated));
                 }
+                else
+                {
+                    unchanged.Add((old, updated));
+                }
             }
 
-            return changed.Count == 0 && removed.Count == 0 ? Result.None : new Result(changed, removed);
+            return new Result(changed, removed, unchanged);
         }
 
         private static string Normalize(string? address) => (address ?? string.Empty).Trim();
