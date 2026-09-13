@@ -11,6 +11,7 @@ using JellyfinHuePlugin.Configuration;
 using JellyfinHuePlugin.Services;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Xunit;
 
 namespace JellyfinHuePlugin.Tests.Services
@@ -387,6 +388,69 @@ namespace JellyfinHuePlugin.Tests.Services
             await FluentActions.Awaiting(() => _service.SetGroupedLightAsync(bridge, "gl-1", new GroupedLightState { On = true }, cts.Token)).Should().ThrowAsync<OperationCanceledException>();
             await FluentActions.Awaiting(() => _service.RecallSceneAsync(bridge, "sc-1", null, cts.Token)).Should().ThrowAsync<OperationCanceledException>();
             await FluentActions.Awaiting(() => _service.DiscoverBridgesAsync(cts.Token)).Should().ThrowAsync<OperationCanceledException>();
+        }
+
+        private const string CloudBody = @"[{""id"":""001788FFFE123456"",""internalipaddress"":""192.168.1.50""}]";
+
+        private static Mock<MdnsBridgeDiscovery> Mdns(params HueBridgeDiscovery[] answers)
+        {
+            var mdns = new Mock<MdnsBridgeDiscovery>(NullLogger.Instance);
+            mdns.Setup(m => m.DiscoverAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
+                .Returns((TimeSpan _, CancellationToken ct) =>
+                {
+                    ct.ThrowIfCancellationRequested();
+                    return Task.FromResult(answers.ToList());
+                });
+            return mdns;
+        }
+
+        [Fact]
+        public async Task Discover_WhenMdnsAnswers_NeverCallsTheCloud()
+        {
+            var mdns = Mdns(new HueBridgeDiscovery { Id = "c42996fffec03a49", InternalIpAddress = "192.168.1.170" });
+            var service = new HueService(_log, _handler, mdns.Object);
+            _handler.Responses["/"] = (HttpStatusCode.OK, CloudBody);
+
+            var found = await service.DiscoverBridgesAsync();
+
+            found.Should().ContainSingle().Which.Id.Should().Be("c42996fffec03a49");
+            _handler.Requests.Should().BeEmpty();
+            _log.Lines.Should().Contain("Found 1 Hue bridge(s) via mDNS");
+        }
+
+        [Fact]
+        public async Task Discover_WhenMdnsIsSilent_FallsBackToTheCloud()
+        {
+            var service = new HueService(_log, _handler, Mdns().Object);
+            _handler.Responses["/"] = (HttpStatusCode.OK, CloudBody);
+
+            var found = await service.DiscoverBridgesAsync();
+
+            found.Should().ContainSingle().Which.InternalIpAddress.Should().Be("192.168.1.50");
+            _handler.Requests.Should().ContainSingle().Which.Path.Should().Be("/");
+            _log.Lines.Should().Contain("No Hue bridge answered mDNS; trying cloud discovery");
+        }
+
+        [Fact]
+        public async Task Discover_WithoutLocalDiscovery_UsesTheCloud()
+        {
+            _handler.Responses["/"] = (HttpStatusCode.OK, CloudBody);
+
+            var found = await _service.DiscoverBridgesAsync();
+
+            found.Should().ContainSingle();
+            _handler.Requests.Should().ContainSingle().Which.Path.Should().Be("/");
+        }
+
+        [Fact]
+        public async Task Discover_CancelledDuringMdns_Propagates()
+        {
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+            var service = new HueService(_log, _handler, Mdns().Object);
+
+            await FluentActions.Awaiting(() => service.DiscoverBridgesAsync(cts.Token)).Should().ThrowAsync<OperationCanceledException>();
+            _handler.Requests.Should().BeEmpty();
         }
     }
 }

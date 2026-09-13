@@ -52,6 +52,12 @@ namespace JellyfinHuePlugin.Services
         /// </summary>
         private readonly HttpClient _bridgeInfoClient;
 
+        /// <summary>Local discovery; null in the test constructor unless a test supplies one, which keeps the existing tests cloud-only.</summary>
+        private readonly MdnsBridgeDiscovery? _mdns;
+
+        /// <summary>How long DiscoverBridgesAsync listens for mDNS answers. A real bridge answers within milliseconds.</summary>
+        internal static readonly TimeSpan MdnsWindow = TimeSpan.FromSeconds(2);
+
         /// <summary>Bridge ids learned from /api/0/config for bridges whose configuration has none yet.</summary>
         private readonly ConcurrentDictionary<string, string> _bridgeIdsByHost = new(StringComparer.OrdinalIgnoreCase);
 
@@ -69,16 +75,18 @@ namespace JellyfinHuePlugin.Services
             _httpClient.Timeout = TimeSpan.FromSeconds(5);
             _bridgeInfoClient = new HttpClient(CreateBridgeInfoHandler(logger, roots));
             _bridgeInfoClient.Timeout = TimeSpan.FromSeconds(5);
+            _mdns = new MdnsBridgeDiscovery(logger);
         }
 
         // Test seam: lets tests capture requests and feed canned bridge responses. Both clients route
         // through the one supplied handler, so existing tests see every request through one mock.
-        public HueService(ILogger<HueService> logger, HttpMessageHandler handler)
+        public HueService(ILogger<HueService> logger, HttpMessageHandler handler, MdnsBridgeDiscovery? mdns = null)
         {
             _logger = logger;
             _httpClient = new HttpClient(handler);
             _httpClient.Timeout = TimeSpan.FromSeconds(5);
             _bridgeInfoClient = _httpClient;
+            _mdns = mdns;
         }
 
         // Judged by the extracted, independently-testable decision function; anything that isn't a
@@ -711,19 +719,36 @@ namespace JellyfinHuePlugin.Services
             }
         }
 
-        // Discover Hue bridges on the network using N-UPnP
+        /// <summary>mDNS first; the Philips cloud endpoint only when no bridge answers locally (e.g. Jellyfin in Docker bridge networking).</summary>
         public virtual async Task<List<HueBridgeDiscovery>> DiscoverBridgesAsync(CancellationToken cancellationToken = default)
         {
             try
             {
                 _logger.LogInformation("Discovering Hue bridges...");
-                
+
+                if (_mdns != null)
+                {
+                    var local = await _mdns.DiscoverAsync(MdnsWindow, cancellationToken);
+                    if (local.Count > 0)
+                    {
+                        foreach (var bridge in local)
+                        {
+                            _logger.LogInformation("Found bridge {Id} at {Ip}", bridge.Id, bridge.InternalIpAddress);
+                        }
+
+                        _logger.LogInformation("Found {Count} Hue bridge(s) via mDNS", local.Count);
+                        return local;
+                    }
+
+                    _logger.LogInformation("No Hue bridge answered mDNS; trying cloud discovery");
+                }
+
                 // Use Philips Hue discovery endpoint
                 var response = await _httpClient.GetAsync("https://discovery.meethue.com/", cancellationToken);
                 response.EnsureSuccessStatusCode();
-                
+
                 var bridges = await response.Content.ReadFromJsonAsync<List<HueBridgeDiscovery>>(cancellationToken);
-                
+
                 if (bridges != null)
                 {
                     // Normalize all bridge IPs
@@ -733,7 +758,7 @@ namespace JellyfinHuePlugin.Services
                         _logger.LogInformation("Found bridge {Id} at {Ip}", bridge.Id, bridge.InternalIpAddress);
                     }
                 }
-                
+
                 _logger.LogInformation("Found {Count} Hue bridge(s)", bridges?.Count ?? 0);
                 return bridges ?? new List<HueBridgeDiscovery>();
             }
