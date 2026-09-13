@@ -21,7 +21,7 @@ namespace JellyfinHuePlugin.Tests.Api
     /// The page ↔ controller contract, endpoint by endpoint, over mocked services. The response
     /// shapes here are what configPage.html reads; see PageContractTests for the names.
     /// </summary>
-    public class HueControllerTests
+    public class HueControllerTests : IDisposable
     {
         private const string Key = "SECRETKEY0123456789";
         private const string HardwareId = "c42996fffec03a49";
@@ -59,6 +59,12 @@ namespace JellyfinHuePlugin.Tests.Api
         private static T Value<T>(ActionResult<T> result) => ((OkObjectResult)result.Result!).Value.Should().BeOfType<T>().Subject;
         private static int Status(ActionResult result) => ((IStatusCodeActionResult)result).StatusCode!.Value;
         private static int Status<T>(ActionResult<T> result) => ((IStatusCodeActionResult)result.Result!).StatusCode!.Value;
+
+        /// <summary>Every fact's log lines are checked here, not just the dedicated Authenticate test.</summary>
+        public void Dispose()
+        {
+            _log.Lines.Should().NotContain(l => l.Contains(Key) || l.Contains("SECRET"));
+        }
 
         [Fact]
         public void GetBridges_ReportsAuthenticationWithoutTheKey()
@@ -160,12 +166,17 @@ namespace JellyfinHuePlugin.Tests.Api
         public async Task Authenticate_ExistingByAddressWithNewKey_ClearsThenRelearnsThePin()
         {
             _hue.Setup(h => h.AuthenticateAsync("192.168.1.50", It.IsAny<CancellationToken>())).ReturnsAsync(new AuthenticationOutcome("ROTATED", "ffff88fffe000000"));
+            string? keyAtInvalidation = null;
+            _catalog.Setup(c => c.Invalidate(It.IsAny<HueBridge>())).Callback<HueBridge>(b => keyAtInvalidation = b.Username);
 
             var result = Value(await _controller.Authenticate(new AuthenticationRequest { BridgeIp = "192.168.1.50" }, CancellationToken.None));
 
             result.Id.Should().Be("b1");
             _config.Bridges[0].Username.Should().Be("ROTATED");
             _config.Bridges[0].HardwareId.Should().Be("ffff88fffe000000");
+            // The catalog's cache key is address + key: Invalidate must fire before Username is
+            // rewritten, or it invalidates the entry under the NEW key and leaves the old one cached.
+            keyAtInvalidation.Should().Be(Key);
             _catalog.Verify(c => c.Invalidate(_config.Bridges[0]), Times.Once);
             _log.Lines.Should().Contain(l => l.Contains("changed address or application key"));
         }
