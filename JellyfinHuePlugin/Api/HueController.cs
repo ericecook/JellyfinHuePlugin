@@ -402,7 +402,7 @@ namespace JellyfinHuePlugin.Api
                     return Ok(result);
                 }
 
-                result.Error = "Bridge returned no data. The API key may be invalid.";
+                result.Error = "Bridge returned no data. The API key may be invalid, or the bridge certificate was rejected; the Jellyfin log names the reason.";
                 return Ok(result);
             }
             catch (Exception ex)
