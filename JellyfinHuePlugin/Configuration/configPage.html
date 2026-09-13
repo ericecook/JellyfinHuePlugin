@@ -641,7 +641,7 @@
                         items.push('Activates scene on play');
                     } else {
                         var bri = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 8;
-                        items.push('Dims to ' + bri + ' on play');
+                        items.push('Dims to ' + bri + '% on play');
                     }
 
                     // Bridge
@@ -1878,6 +1878,25 @@
                     };
                 },
 
+                // Select savedValue, keeping it even when the bridge offers no such option.
+                // A legacy v1 id (or a resource that has since been renamed away) matches nothing,
+                // and the browser then reports the select as empty - which the next save would
+                // write back, silently retargeting the profile at All Lights or no scene. Carry
+                // the stored value in an option of its own, flagged so it is obvious it needs
+                // attention; resolving legacy ids is a separate job.
+                setSelectValuePreservingUnknown: function(select, savedValue) {
+                    if (!savedValue) return;
+
+                    select.value = savedValue;
+                    if (select.value === savedValue) return;
+
+                    var option = document.createElement('option');
+                    option.value = savedValue;
+                    option.text = 'Unresolved (' + savedValue + ') \u2014 re-select';
+                    select.appendChild(option);
+                    select.value = savedValue;
+                },
+
                 loadProfileGroups: function(bridgeId, savedValue) {
                     var url = 'api/hueplugin/groups';
                     if (bridgeId) url += '?bridgeId=' + encodeURIComponent(bridgeId);
@@ -1893,9 +1912,7 @@
                         }
                         
                         // Set the saved value after populating
-                        if (savedValue) {
-                            select.value = savedValue;
-                        }
+                        HuePluginConfig.setSelectValuePreservingUnknown(select, savedValue);
                     }).catch(function(err) {
                         console.error('Error loading groups for profile:', err);
                     });
@@ -1921,10 +1938,11 @@
                             }
                         });
                         
-                        // Set saved values after populating (falls back to "None" if ID not found)
-                        if (savedPlayId) playSelect.value = savedPlayId;
-                        if (savedPauseId) pauseSelect.value = savedPauseId;
-                        if (savedStopId) stopSelect.value = savedStopId;
+                        // Set saved values after populating (an id this bridge does not offer is
+                        // kept as a flagged option rather than falling back to "None")
+                        HuePluginConfig.setSelectValuePreservingUnknown(playSelect, savedPlayId);
+                        HuePluginConfig.setSelectValuePreservingUnknown(pauseSelect, savedPauseId);
+                        HuePluginConfig.setSelectValuePreservingUnknown(stopSelect, savedStopId);
 
                         // Update brightness visibility based on actual selected values
                         var activePlay = playSelect.value;
