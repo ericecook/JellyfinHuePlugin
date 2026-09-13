@@ -1,0 +1,74 @@
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+
+namespace JellyfinHuePlugin.Managers
+{
+    /// <summary>
+    /// Latest-wins command queue for one session. Enqueue cancels the running command's token
+    /// and chains the new command behind it, so a superseded command exits at its next await
+    /// before the new one sends anything. Commands never overlap.
+    /// </summary>
+    internal sealed class SessionCommandQueue
+    {
+        private readonly object _gate = new();
+        private CancellationTokenSource? _current;
+        private Task _tail = Task.CompletedTask;
+
+        /// <summary>
+        /// Returns a task that completes when the command has finished, been superseded before
+        /// it started, or thrown. The task never faults: cancellation and exceptions are
+        /// absorbed here; the caller logs inside the command.
+        /// </summary>
+        public Task Enqueue(Func<CancellationToken, Task> command)
+        {
+            lock (_gate)
+            {
+                _current?.Cancel();
+                var source = new CancellationTokenSource();
+                _current = source;
+                // ContinueWith runs the command off this thread, so nothing executes under the gate.
+                _tail = _tail
+                    .ContinueWith(_ => RunAsync(command, source), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default)
+                    .Unwrap();
+                return _tail;
+            }
+        }
+
+        /// <summary>Cancels the running command and any command not yet started.</summary>
+        public void Cancel()
+        {
+            lock (_gate)
+            {
+                _current?.Cancel();
+            }
+        }
+
+        private async Task RunAsync(Func<CancellationToken, Task> command, CancellationTokenSource source)
+        {
+            try
+            {
+                if (!source.IsCancellationRequested)
+                {
+                    await command(source.Token).ConfigureAwait(false);
+                }
+            }
+            catch (Exception)
+            {
+                // Absorbed by contract: the command logs its own failures and cancellations.
+            }
+            finally
+            {
+                lock (_gate)
+                {
+                    if (ReferenceEquals(_current, source))
+                    {
+                        _current = null;
+                    }
+                }
+
+                source.Dispose();
+            }
+        }
+    }
+}
