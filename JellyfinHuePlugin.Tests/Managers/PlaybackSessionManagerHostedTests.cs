@@ -158,6 +158,32 @@ namespace JellyfinHuePlugin.Tests.Managers
         }
 
         [Fact]
+        public async Task StartTwice_SubscribesOnce()
+        {
+            await _manager.StartAsync(CancellationToken.None);
+            await _manager.StartAsync(CancellationToken.None);
+
+            _sessionManager.Raise(s => s.PlaybackStart += null, StartArgs());
+            await _manager.WhenIdleAsync();
+
+            _hue.Verify(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()), Times.Once);
+            _log.Lines.Count(l => l == "Playback listener started").Should().Be(1);
+        }
+
+        [Fact]
+        public async Task StartAfterStop_SubscribesNothing()
+        {
+            await _manager.StartAsync(CancellationToken.None);
+            await _manager.StopAsync(CancellationToken.None);
+
+            await _manager.StartAsync(CancellationToken.None);
+            _sessionManager.Raise(s => s.PlaybackStart += null, StartArgs());
+            await _manager.WhenIdleAsync();
+
+            _hue.Verify(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
         public async Task StopAndDisposeTwice_DoNotThrow_AndLogOnce()
         {
             await _manager.StartAsync(CancellationToken.None);

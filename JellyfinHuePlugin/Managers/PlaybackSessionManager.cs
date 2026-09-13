@@ -44,6 +44,9 @@ namespace JellyfinHuePlugin.Managers
         /// <summary>0 = running, 1 = stopped. An int so Stop() can gate with a single atomic exchange.</summary>
         private int _stopped;
 
+        /// <summary>0 = never started, 1 = StartAsync has subscribed. Gates a second subscription.</summary>
+        private int _started;
+
         /// <summary>Whether Stop() has run (or is running). Test/guard reads only; Stop() uses Interlocked.Exchange directly.</summary>
         private bool Stopped => Volatile.Read(ref _stopped) == 1;
 
@@ -453,9 +456,19 @@ namespace JellyfinHuePlugin.Managers
             return bridge;
         }
 
-        /// <summary>Subscribes to Jellyfin's session events. Called once by the host after every plugin is loaded.</summary>
+        /// <summary>
+        /// Subscribes to Jellyfin's session events. Called once by the host after every plugin is
+        /// loaded. A second call subscribes nothing (every event would otherwise be handled
+        /// twice), and a call after <see cref="StopAsync"/> or <see cref="Dispose"/> subscribes
+        /// nothing at all - the instance is finished.
+        /// </summary>
         public Task StartAsync(CancellationToken cancellationToken)
         {
+            if (Stopped || Interlocked.Exchange(ref _started, 1) == 1)
+            {
+                return Task.CompletedTask;
+            }
+
             _sessionManager.PlaybackStart += OnPlaybackStart;
             _sessionManager.PlaybackStopped += OnPlaybackStopped;
             _sessionManager.PlaybackProgress += OnPlaybackProgress;
