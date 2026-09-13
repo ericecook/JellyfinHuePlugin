@@ -192,9 +192,11 @@ namespace JellyfinHuePlugin.Managers
 
             var config = _getConfig();
             var input = new ProgressInput(e.IsPaused, e.PlaybackPositionTicks ?? 0, config.EnablePlugin, _clock.GetUtcNow());
+            var progressItem = ItemIdOf(e.Item);
 
-            SessionSnapshot before;
-            ProgressResult result;
+            SessionSnapshot? before = null;
+            ProgressResult? result = null;
+            Guid? ignoredForCurrentItem = null;
             lock (entry.Gate)
             {
                 if (entry.State == null)
@@ -202,13 +204,29 @@ namespace JellyfinHuePlugin.Managers
                     return;
                 }
 
-                before = entry.State;
-                result = SessionPolicy.OnProgress(before, input);
-                entry.State = result.State;
+                // Jellyfin raises each event on its own task, so a trailing progress report for the
+                // previous item can arrive after the next item's start. That report must not touch the new item.
+                if (entry.State is { ItemId: Guid current } && progressItem is Guid progress && current != progress)
+                {
+                    ignoredForCurrentItem = current;
+                }
+                else
+                {
+                    before = entry.State;
+                    result = SessionPolicy.OnProgress(before, input);
+                    entry.State = result.State;
+                }
             }
 
-            var profile = result.State.Profile;
-            switch (result.Decision)
+            if (ignoredForCurrentItem is Guid ignoredFor)
+            {
+                _logger.LogDebug("Ignoring progress for item {ProgressItem}: session {SessionId} is playing {CurrentItem}", progressItem, e.Session.Id, ignoredFor);
+                return;
+            }
+
+            var progressResult = result!;
+            var profile = progressResult.State.Profile;
+            switch (progressResult.Decision)
             {
                 case ProgressDecision.Outro:
                     _logger.LogInformation("[{ProfileName}] Outro segment detected at {Position:F1}s - triggering stop lights on {ClientName}",
@@ -216,16 +234,16 @@ namespace JellyfinHuePlugin.Managers
                     break;
                 case ProgressDecision.GraceIgnored:
                     _logger.LogInformation("[{ProfileName}] Pause ignored — within grace period ({ElapsedSeconds}s < {GracePeriod}s) on {ClientName}",
-                        profile.Name, (int)(input.Now - before.StartedAt).TotalSeconds, profile.PauseGracePeriodSeconds, e.ClientName);
+                        profile.Name, (int)(input.Now - before!.StartedAt).TotalSeconds, profile.PauseGracePeriodSeconds, e.ClientName);
                     break;
                 case ProgressDecision.Pause:
                 case ProgressDecision.Resume:
                     _logger.LogInformation("Playback state changed to {State} on {ClientName} (Device: {DeviceId}, IP: {RemoteEndpoint}) - Using profile: {ProfileName}",
-                        result.State.PlaybackState, e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, profile.Name);
+                        progressResult.State.PlaybackState, e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, profile.Name);
                     break;
             }
 
-            if (result.Action is not LightAction action)
+            if (progressResult.Action is not LightAction action)
             {
                 return;
             }

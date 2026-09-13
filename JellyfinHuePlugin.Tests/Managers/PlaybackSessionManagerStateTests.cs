@@ -652,5 +652,43 @@ namespace JellyfinHuePlugin.Tests.Managers
 
             VerifyBrightness(100, Times.Once());
         }
+
+        [Fact]
+        public async Task Progress_ForDifferentItem_IsIgnored()
+        {
+            var session = Session();
+            var episode1 = new Episode { Id = Guid.NewGuid() };
+            var episode2 = new Episode { Id = Guid.NewGuid() };
+            await _manager.OnPlaybackStartAsync(Progress(session, episode2));
+
+            await _manager.OnPlaybackProgressAsync(Progress(session, episode1, paused: true)); // late report for the previous item
+
+            VerifyBrightness(60, Times.Never());
+            await _manager.OnPlaybackProgressAsync(Progress(session, episode2, paused: true));
+            VerifyBrightness(60, Times.Once()); // state stayed Playing, so this pause still fires
+        }
+
+        [Fact]
+        public async Task Progress_ForSameItem_Acts()
+        {
+            var session = Session();
+            var movie = new Movie { Id = Guid.NewGuid() };
+            await _manager.OnPlaybackStartAsync(Progress(session, movie));
+
+            await _manager.OnPlaybackProgressAsync(Progress(session, movie, paused: true));
+
+            VerifyBrightness(60, Times.Once());
+        }
+
+        [Fact]
+        public async Task Progress_WithoutItem_StillActs()
+        {
+            var session = Session();
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie { Id = Guid.NewGuid() }));
+
+            await _manager.OnPlaybackProgressAsync(Progress(session, null, paused: true));
+
+            VerifyBrightness(60, Times.Once());
+        }
     }
 }
