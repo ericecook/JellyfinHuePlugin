@@ -5,12 +5,12 @@ A Jellyfin plugin that automatically controls Philips Hue lights based on media 
 ## Features
 
 - **Multi-Bridge Support** — configure and control multiple Hue bridges independently
-- **Automatic Bridge Discovery** — finds Hue bridges via cloud lookup or local SSDP
+- **Automatic Bridge Discovery** — finds Hue bridges on the local network via mDNS, with Philips' cloud lookup as fallback
 - **Multi-Profile System** — configure different light behaviors for different rooms/devices
 - **Media Type Filtering** — separate rules for movies vs TV shows
 - **Client Filtering** — target by client name, device ID, or IP address
 - **Scene Support** — activate Hue scenes for play/pause/stop states
-- **Brightness Control** — dim lights on play, brighten on pause, restore on stop (0-254)
+- **Brightness Control** — dim lights on play, brighten on pause, restore on stop (0–100 %)
 - **Turn Off Lights** — optionally turn lights off completely during playback
 - **Smooth Transitions** — configurable transition duration (0-15 seconds)
 - **Pause Grace Period** — skip pause lighting during the first N seconds of playback
@@ -21,7 +21,7 @@ A Jellyfin plugin that automatically controls Philips Hue lights based on media 
 
 - Jellyfin 12.0+ (for Jellyfin 10.11, install v2.2.0.0 — the last release targeting that version)
 - .NET 10.0 SDK (for building and testing)
-- Philips Hue Bridge (v2 or later) — tested with Hue Bridge Pro; should work with Hue Bridge v2 and v2.1 (same API). Original v1 bridge is not supported (HTTP only)
+- Philips Hue Bridge running software **1948086000 or newer** (any square bridge — v2, v2.1 or Hue Bridge Pro — updated since late 2020; tested with Hue Bridge Pro). The round v1 bridge is not supported. The plugin speaks Hue's CLIP v2 API over HTTPS and verifies the bridge's certificate against Signify's root CA
 - (Optional, but recommended) For outro detection: a media segment provider such as [IntroSkipper](https://github.com/intro-skipper/intro-skipper)
 
 ## Installation
@@ -44,7 +44,7 @@ See [INSTALLATION.md](INSTALLATION.md) for building from source and manual insta
 ### Initial Setup
 
 1. Go to **Dashboard > Plugins > Hue Lighting Control**
-2. Click **Add Bridge**, then click **Discover** to find your bridge
+2. Click **Add Bridge**, then click **Discover** to find your bridge. Discovery asks the local network first (mDNS); if Jellyfin runs in Docker with bridge networking that cannot reach your LAN, it falls back to Philips' cloud lookup, and you can always type the bridge's IP address
 3. Press the link button on your Hue bridge, then click **Authenticate**
 4. Create a profile and configure your light settings
 
@@ -56,7 +56,8 @@ Each profile defines how lights behave for a specific playback context. Profiles
 - **Bridge**: Which Hue bridge this profile uses
 - **Media types**: Enable for Movies, TV Shows, or both
 - **Filters**: Target by client name (substring), device IDs (exact), or IP address
-- **Light group**: Which Hue group to control
+- **Light group**: Which room or zone to control (or all lights)
+- **Scenes**: A Hue scene belongs to a room or zone and always lights that room or zone, whatever the profile's light group says
 - **Play state**: Activate a scene, dim to a brightness level, or turn off completely
 - **Pause state**: Activate a scene or brighten to a level
 - **Stop state**: Activate a scene or restore to a level
@@ -75,11 +76,19 @@ When playback starts, the plugin decides what to do in this order:
 
 | Profile | Bridge | Filter | Group | Play | Pause | Stop |
 |---------|--------|--------|-------|------|-------|------|
-| Theater | Main | Device ID: `firetv-theater-123` | Theater | OFF | Brightness 30 | Brightness 254 |
-| Living Room | Main | Client: `Roku` | Living Room | Brightness 10 | Brightness 100 | Brightness 254 |
+| Theater | Main | Device ID: `firetv-theater-123` | Theater | OFF | Brightness 30 | Brightness 100 |
+| Living Room | Main | Client: `Roku` | Living Room | Brightness 10 | Brightness 40 | Brightness 100 |
 | Bedroom | Upstairs | IP: `192.168.1.50` | Bedroom | Scene: "Nightlight" | Scene: "Relax" | Scene: "Bright" |
 
 Put more specific profiles first (device ID > client name > no filter).
+
+## Upgrading from 3.x
+
+Version 4 talks only Hue's CLIP v2 API. On the first start, profile brightness values are converted once from the old 0–254 scale to percent. On the first visit to the plugin page, stored room and scene ids are rewritten to v2 ids; anything that no longer exists on the bridge is shown as **Unresolved** in the profile editor and must be re-selected. Scenes now light the room or zone they belong to rather than the profile's light group.
+
+### Testing against a non-Signify bridge
+
+For test rigs only: set the environment variable `JELLYFIN_HUE_EXTRA_ROOT_PEM` to the path of one extra root certificate (PEM) and the plugin trusts bridge certificates chaining to it as well as to Signify's root. The certificate's subject CN must still be the bridge id.
 
 ## API Endpoints
 
@@ -97,17 +106,22 @@ All endpoints require an authenticated Jellyfin **administrator** account (the s
 | `/api/hueplugin/scenes` | GET | List all scenes |
 | `/api/hueplugin/test` | POST | Test light control |
 | `/api/hueplugin/testconnection` | POST | Test bridge connectivity |
+| `/api/hueplugin/verifyconnection` | POST | Check a stored bridge key and report the bridge's id, model and software |
+| `/api/hueplugin/migrate` | POST | Rewrite stored v1 ids to v2 ids and learn bridge ids (the plugin page calls it on load) |
 
 ## Architecture
 
 ```
-Plugin.cs                             Entry point and lifecycle
-├── Services/HueService.cs            Hue Bridge HTTP API client
-├── Managers/PlaybackSessionManager.cs Playback events and light orchestration
-├── Configuration/PluginConfiguration.cs Settings models
-├── Configuration/configPage.html      Web configuration UI
-├── Api/HueController.cs              REST API for the config UI
-└── Models/                           Hue API data models
+Plugin.cs                                 Entry point and lifecycle
+├── Services/HueService.cs                CLIP v2 client with certificate pinning
+├── Services/HueResourceCatalog.cs        Rooms, zones and scenes per bridge; resolves v1 ids
+├── Services/MdnsBridgeDiscovery.cs       Local discovery (_hue._tcp)
+├── Services/ConfigurationMigrator.cs     One-time rewrite of stored v1 ids
+├── Managers/PlaybackSessionManager.cs    Playback events and light orchestration
+├── Configuration/PluginConfiguration.cs  Settings models
+├── Configuration/configPage.html         Web configuration UI
+├── Api/HueController.cs                  REST API for the config UI
+└── Models/                               Hue API data models
 ```
 
 ## Troubleshooting
