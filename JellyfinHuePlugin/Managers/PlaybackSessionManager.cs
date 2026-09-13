@@ -41,7 +41,11 @@ namespace JellyfinHuePlugin.Managers
         /// <summary>Handlers started by raised events, so tests can wait for them without sleeping.</summary>
         private readonly ConcurrentDictionary<Task, byte> _inFlightHandlers = new();
 
-        private volatile bool _stopped;
+        /// <summary>0 = running, 1 = stopped. An int so Stop() can gate with a single atomic exchange.</summary>
+        private int _stopped;
+
+        /// <summary>Whether Stop() has run (or is running). Test/guard reads only; Stop() uses Interlocked.Exchange directly.</summary>
+        private bool Stopped => Volatile.Read(ref _stopped) == 1;
 
         private sealed class SessionEntry
         {
@@ -158,7 +162,7 @@ namespace JellyfinHuePlugin.Managers
                 ? await LoadOutroSegmentsAsync(e.Item)
                 : Array.Empty<TickRange>();
 
-            if (_stopped) return;
+            if (Stopped) return;
 
             var entry = _sessions.GetOrAdd(e.Session.Id, _ => new SessionEntry());
             lock (entry.Gate)
@@ -363,7 +367,7 @@ namespace JellyfinHuePlugin.Managers
         {
             return queue.Enqueue(async ct =>
             {
-                if (_stopped) return;
+                if (Stopped) return;
 
                 try
                 {
@@ -470,12 +474,10 @@ namespace JellyfinHuePlugin.Managers
 
         private void Stop()
         {
-            if (_stopped)
+            if (Interlocked.Exchange(ref _stopped, 1) == 1)
             {
                 return;
             }
-
-            _stopped = true;
 
             _sessionManager.PlaybackStart -= OnPlaybackStart;
             _sessionManager.PlaybackStopped -= OnPlaybackStopped;
