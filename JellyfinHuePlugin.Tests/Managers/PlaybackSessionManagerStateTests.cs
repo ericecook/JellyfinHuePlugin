@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -22,9 +23,10 @@ using Xunit;
 namespace JellyfinHuePlugin.Tests.Managers
 {
     /// <summary>
-    /// Per-session behaviour: profile reuse, grace timing, outro caching. The handlers are
-    /// awaited directly, so there are no sleeps. PlaybackSessionManagerHandlerTests covers
-    /// the event wiring.
+    /// Per-session behaviour: profile reuse, grace timing, outro caching, queue ordering,
+    /// session-ended and Dispose. The handlers are awaited directly and complete when their
+    /// enqueued light command has finished, so there are no sleeps.
+    /// PlaybackSessionManagerHandlerTests covers the event wiring.
     /// </summary>
     public class PlaybackSessionManagerStateTests : IDisposable
     {
@@ -40,6 +42,7 @@ namespace JellyfinHuePlugin.Tests.Managers
         private readonly Mock<IMediaSegmentManager> _segments = new();
         private readonly Mock<ILibraryManager> _library = new();
         private readonly FakeClock _clock = new();
+        private readonly List<int?> _sentBrightness = new();
         private readonly PluginConfiguration _config;
         private readonly PlaybackSessionManager _manager;
 
@@ -49,6 +52,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             _hue.Setup(h => h.SetGroupStateAsync(
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
                     It.IsAny<HueLightState>(), It.IsAny<CancellationToken>()))
+                .Callback<string, string, string, HueLightState, CancellationToken>((_, _, _, s, _) => _sentBrightness.Add(s.On == false ? -1 : s.Bri))
                 .ReturnsAsync(true);
             _hue.Setup(h => h.ActivateSceneAsync(
                     It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
@@ -117,6 +121,19 @@ namespace JellyfinHuePlugin.Tests.Managers
         private void VerifyTotalGroupCalls(Times times) =>
             _hue.Verify(h => h.SetGroupStateAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
                 It.IsAny<HueLightState>(), It.IsAny<CancellationToken>()), times);
+
+        private void VerifyOff(Times times) =>
+            _hue.Verify(h => h.SetGroupStateAsync("192.168.1.50", "testuser", "1",
+                It.Is<HueLightState>(s => s.On == false), It.IsAny<CancellationToken>()), times);
+
+        private static SessionEventArgs Ended(SessionInfo session) => new() { SessionInfo = session };
+
+        private void GivenTurnOffWithLongTransition()
+        {
+            _config.Profiles[0].TurnOffLightsOnPlay = true;
+            _config.Profiles[0].EnablePlayTransition = true;
+            _config.Profiles[0].PlayTransitionDuration = 50; // 5 s: long enough that a test always cancels it first
+        }
 
         private void GivenOutroSegment(long startSeconds, long endSeconds) =>
             _segments
@@ -369,6 +386,150 @@ namespace JellyfinHuePlugin.Tests.Managers
             await _manager.OnPlaybackStoppedAsync(Stop(session, new Movie()));
 
             VerifyBrightness(254, Times.Exactly(2)); // idempotent by design
+        }
+
+        [Fact]
+        public async Task Stop_DuringPlayTransition_CancelsTurnOff()
+        {
+            GivenTurnOffWithLongTransition();
+            var session = Session();
+
+            var start = _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+            await _manager.OnPlaybackStoppedAsync(Stop(session, new Movie()));
+            await start;
+
+            VerifyOff(Times.Never());
+            VerifyBrightness(254, Times.Once());
+        }
+
+        [Fact]
+        public async Task Progress_ConcurrentPauseReports_SendOnePauseCommand()
+        {
+            var session = Session();
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+
+            await Task.WhenAll(
+                _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: true)),
+                _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: true)));
+
+            VerifyBrightness(100, Times.Once());
+        }
+
+        [Fact]
+        public async Task Progress_PauseThenResume_SendsInOrder()
+        {
+            var session = Session();
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+
+            var pause = _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: true));
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: false));
+            await pause;
+
+            // Latest wins: the pause either ran before the resume or was superseded, never after it.
+            _sentBrightness.Last().Should().Be(20);
+            _sentBrightness.Count(b => b == 100).Should().BeLessThanOrEqualTo(1);
+        }
+
+        [Fact]
+        public async Task SessionEnded_WithEntry_RestoresLightsAndRemovesEntry()
+        {
+            var session = Session();
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+
+            await _manager.OnSessionEndedAsync(Ended(session));
+            VerifyBrightness(254, Times.Once());
+
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: true));
+            VerifyBrightness(100, Times.Never());
+        }
+
+        [Fact]
+        public async Task SessionEnded_WithoutEntry_SendsNothing()
+        {
+            await _manager.OnSessionEndedAsync(Ended(Session()));
+
+            VerifyTotalGroupCalls(Times.Never());
+        }
+
+        [Fact]
+        public async Task SessionEnded_PluginDisabled_StillRestoresLights()
+        {
+            var session = Session();
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+
+            _config.EnablePlugin = false;
+            await _manager.OnSessionEndedAsync(Ended(session));
+
+            VerifyBrightness(254, Times.Once());
+        }
+
+        [Fact]
+        public async Task SessionEnded_AfterStop_SendsNothing()
+        {
+            var session = Session();
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+            await _manager.OnPlaybackStoppedAsync(Stop(session, new Movie()));
+
+            await _manager.OnSessionEndedAsync(Ended(session));
+
+            VerifyBrightness(254, Times.Once());
+        }
+
+        [Fact]
+        public async Task StopThenStart_SameSession_ShareOneQueue()
+        {
+            var stopEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _hue.Setup(h => h.SetGroupStateAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                    It.Is<HueLightState>(s => s.Bri == 254), It.IsAny<CancellationToken>()))
+                .Callback(() => stopEntered.TrySetResult())
+                .Returns(() => release.Task); // ignores the token: simulates a bridge call that cannot be interrupted
+            var session = Session();
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+
+            var stop = _manager.OnPlaybackStoppedAsync(Stop(session, new Movie()));
+            await stopEntered.Task;
+            var start = _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+
+            VerifyBrightness(20, Times.Once()); // only the first play; the second waits behind the blocked stop
+            release.SetResult(true);
+            await Task.WhenAll(stop, start);
+
+            VerifyBrightness(20, Times.Exactly(2));
+        }
+
+        [Fact]
+        public async Task Dispose_CancelsInFlightAndSendsNothing()
+        {
+            GivenTurnOffWithLongTransition();
+            var session = Session();
+
+            var start = _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+            _manager.Dispose();
+            await start;
+
+            VerifyOff(Times.Never());
+            VerifyBrightness(254, Times.Never());
+
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: true));
+            VerifyBrightness(100, Times.Never());
+        }
+
+        [Fact]
+        public async Task Progress_OutroWithMissingBridge_SendsNothing()
+        {
+            _config.Profiles[0].EnableOutroLights = true;
+            _config.Profiles[0].BridgeId = "no-such-bridge";
+            GivenOutroSegment(100, 110);
+            var session = Session();
+
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), positionSeconds: 105));
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: true, positionSeconds: 106));
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: false, positionSeconds: 107));
+
+            VerifyTotalGroupCalls(Times.Never());
         }
 
     }

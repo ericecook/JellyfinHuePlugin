@@ -19,6 +19,11 @@ using JellyfinHuePlugin.Services;
 
 namespace JellyfinHuePlugin.Managers
 {
+    /// <summary>
+    /// Wires Jellyfin session events to light commands. Decisions come from
+    /// <see cref="SessionPolicy"/>; sends go through one <see cref="SessionCommandQueue"/>
+    /// per session into <see cref="LightCommandExecutor"/>.
+    /// </summary>
     public class PlaybackSessionManager : IDisposable
     {
         private readonly ISessionManager _sessionManager;
@@ -29,15 +34,18 @@ namespace JellyfinHuePlugin.Managers
         private readonly ILibraryManager _libraryManager;
         private readonly TimeProvider _clock;
 
-        private readonly ConcurrentDictionary<string, SessionState> _sessions = new();
+        /// <summary>One entry per Jellyfin session id, kept until the session ends or the plugin is disposed.</summary>
+        private readonly ConcurrentDictionary<string, SessionEntry> _sessions = new();
 
-        private sealed class SessionState
+        /// <summary>Handlers started by raised events, so tests can wait for them without sleeping.</summary>
+        private readonly ConcurrentDictionary<Task, byte> _inFlightHandlers = new();
+
+        private sealed class SessionEntry
         {
-            public required LightControlProfile Profile { get; init; }
-            public required DateTimeOffset StartedAt { get; init; }
-            public required IReadOnlyList<TickRange> OutroSegments { get; init; }
-            public string PlaybackState { get; set; } = "Playing";
-            public bool OutroLightsTriggered { get; set; }
+            public readonly object Gate = new();
+            /// <summary>Read and written only under Gate. Null between a stop and the next start.</summary>
+            public SessionSnapshot? State;
+            public readonly SessionCommandQueue Queue = new();
         }
 
         public PlaybackSessionManager(
@@ -61,6 +69,7 @@ namespace JellyfinHuePlugin.Managers
             _sessionManager.PlaybackStart += OnPlaybackStart;
             _sessionManager.PlaybackStopped += OnPlaybackStopped;
             _sessionManager.PlaybackProgress += OnPlaybackProgress;
+            _sessionManager.SessionEnded += OnSessionEnded;
         }
 
         /// <summary>Movie/episode detection by entity type. Anything else, including null, is neither.</summary>
@@ -68,9 +77,48 @@ namespace JellyfinHuePlugin.Managers
             => (item is Movie, item is Episode);
 
         private async void OnPlaybackStart(object? sender, PlaybackProgressEventArgs e)
+            => await TrackAsync(OnPlaybackStartAsync(e), "playback start");
+
+        private async void OnPlaybackStopped(object? sender, PlaybackStopEventArgs e)
+            => await TrackAsync(OnPlaybackStoppedAsync(e), "playback stop");
+
+        private async void OnPlaybackProgress(object? sender, PlaybackProgressEventArgs e)
+            => await TrackAsync(OnPlaybackProgressAsync(e), "playback progress");
+
+        private async void OnSessionEnded(object? sender, SessionEventArgs e)
+            => await TrackAsync(OnSessionEndedAsync(e), "session ended");
+
+        private async Task TrackAsync(Task handler, string what)
         {
-            try { await OnPlaybackStartAsync(e); }
-            catch (Exception ex) { _logger.LogError(ex, "Error handling playback start"); }
+            _inFlightHandlers[handler] = 0;
+            try
+            {
+                await handler;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error handling {What}", what);
+            }
+            finally
+            {
+                _inFlightHandlers.TryRemove(handler, out _);
+            }
+        }
+
+        /// <summary>Completes when every handler started by a raised event has finished. Tests only.</summary>
+        internal async Task WhenIdleAsync()
+        {
+            while (!_inFlightHandlers.IsEmpty)
+            {
+                try
+                {
+                    await Task.WhenAll(_inFlightHandlers.Keys);
+                }
+                catch (Exception)
+                {
+                    // Handler failures are logged by TrackAsync; idle only cares that they finished.
+                }
+            }
         }
 
         internal async Task OnPlaybackStartAsync(PlaybackProgressEventArgs e)
@@ -80,17 +128,25 @@ namespace JellyfinHuePlugin.Managers
             var config = _getConfig();
 
             var (isMovie, isEpisode) = ClassifyItem(e.Item);
-            var mediaType = e.Item?.GetType().Name ?? "Unknown";
 
             var profile = TryMatchProfile(e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, isMovie, isEpisode, config);
 
             if (profile == null)
             {
                 // A profile stored for an earlier item on this session must not drive lights for this one.
-                _sessions.TryRemove(e.Session.Id, out _);
+                // The entry and its queue stay so a pending stop for the earlier item can still finish.
+                if (_sessions.TryGetValue(e.Session.Id, out var stale))
+                {
+                    lock (stale.Gate)
+                    {
+                        stale.State = null;
+                    }
+                }
+
                 return;
             }
 
+            var mediaType = e.Item?.GetType().Name ?? "Unknown";
             _logger.LogInformation("Playback started on {ClientName} (Device: {DeviceId}, IP: {RemoteEndpoint}, Type: {MediaType}) - Using profile: {ProfileName}",
                 e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, mediaType, profile.Name);
 
@@ -98,28 +154,71 @@ namespace JellyfinHuePlugin.Managers
                 ? await LoadOutroSegmentsAsync(e.Item)
                 : Array.Empty<TickRange>();
 
-            _sessions[e.Session.Id] = new SessionState
+            var entry = _sessions.GetOrAdd(e.Session.Id, _ => new SessionEntry());
+            lock (entry.Gate)
             {
-                Profile = profile,
-                StartedAt = _clock.GetUtcNow(),
-                OutroSegments = outroSegments,
-                PlaybackState = "Playing"
-            };
+                entry.State = new SessionSnapshot(profile, _clock.GetUtcNow(), outroSegments, PlaybackState.Playing, false);
+            }
 
             var bridge = ResolveBridge(config, profile);
-            if (bridge == null)
+            if (bridge == null) return;
+
+            await EnqueueAsync(entry.Queue, e.Session.Id, LightAction.Play, bridge, profile);
+        }
+
+        internal async Task OnPlaybackProgressAsync(PlaybackProgressEventArgs e)
+        {
+            if (e.Session == null) return;
+
+            if (!_sessions.TryGetValue(e.Session.Id, out var entry))
             {
-                _logger.LogWarning("No bridge found for profile {ProfileName} (BridgeId: {BridgeId})", profile.Name, profile.BridgeId);
                 return;
             }
 
-            await _executor.ExecuteAsync(LightAction.Play, bridge, profile, CancellationToken.None);
-        }
+            var config = _getConfig();
+            var input = new ProgressInput(e.IsPaused, e.PlaybackPositionTicks ?? 0, config.EnablePlugin, _clock.GetUtcNow());
 
-        private async void OnPlaybackStopped(object? sender, PlaybackStopEventArgs e)
-        {
-            try { await OnPlaybackStoppedAsync(e); }
-            catch (Exception ex) { _logger.LogError(ex, "Error handling playback stop"); }
+            SessionSnapshot before;
+            ProgressResult result;
+            lock (entry.Gate)
+            {
+                if (entry.State == null)
+                {
+                    return;
+                }
+
+                before = entry.State;
+                result = SessionPolicy.OnProgress(before, input);
+                entry.State = result.State;
+            }
+
+            var profile = result.State.Profile;
+            switch (result.Decision)
+            {
+                case ProgressDecision.Outro:
+                    _logger.LogInformation("[{ProfileName}] Outro segment detected at {Position:F1}s - triggering stop lights on {ClientName}",
+                        profile.Name, input.PositionTicks / (double)TimeSpan.TicksPerSecond, e.ClientName);
+                    break;
+                case ProgressDecision.GraceIgnored:
+                    _logger.LogInformation("[{ProfileName}] Pause ignored — within grace period ({ElapsedSeconds}s < {GracePeriod}s) on {ClientName}",
+                        profile.Name, (int)(input.Now - before.StartedAt).TotalSeconds, profile.PauseGracePeriodSeconds, e.ClientName);
+                    break;
+                case ProgressDecision.Pause:
+                case ProgressDecision.Resume:
+                    _logger.LogInformation("Playback state changed to {State} on {ClientName} (Device: {DeviceId}, IP: {RemoteEndpoint}) - Using profile: {ProfileName}",
+                        result.State.PlaybackState, e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, profile.Name);
+                    break;
+            }
+
+            if (result.Action is not LightAction action)
+            {
+                return;
+            }
+
+            var bridge = ResolveBridge(config, profile);
+            if (bridge == null) return;
+
+            await EnqueueAsync(entry.Queue, e.Session.Id, action, bridge, profile);
         }
 
         internal async Task OnPlaybackStoppedAsync(PlaybackStopEventArgs e)
@@ -128,8 +227,19 @@ namespace JellyfinHuePlugin.Managers
 
             var config = _getConfig();
 
-            _sessions.TryRemove(e.Session.Id, out var state);
-            var profile = state?.Profile;
+            // The entry stays in the map so a start that follows shares its queue.
+            _sessions.TryGetValue(e.Session.Id, out var entry);
+            SessionSnapshot? snapshot = null;
+            if (entry != null)
+            {
+                lock (entry.Gate)
+                {
+                    snapshot = entry.State;
+                    entry.State = null;
+                }
+            }
+
+            var profile = snapshot?.Profile;
             if (profile == null)
             {
                 // No recorded start (for example the server restarted mid-playback):
@@ -147,93 +257,59 @@ namespace JellyfinHuePlugin.Managers
                 e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, profile.Name);
 
             var bridge = ResolveBridge(config, profile);
-            if (bridge == null)
+            if (bridge == null) return;
+
+            await EnqueueAsync(entry?.Queue ?? new SessionCommandQueue(), e.Session.Id, LightAction.Stop, bridge, profile);
+        }
+
+        internal async Task OnSessionEndedAsync(SessionEventArgs e)
+        {
+            var session = e.SessionInfo;
+            if (session == null) return;
+
+            if (!_sessions.TryRemove(session.Id, out var entry))
             {
-                _logger.LogWarning("No bridge found for profile {ProfileName} (BridgeId: {BridgeId})", profile.Name, profile.BridgeId);
                 return;
             }
 
-            await _executor.ExecuteAsync(LightAction.Stop, bridge, profile, CancellationToken.None);
-        }
-
-        private async void OnPlaybackProgress(object? sender, PlaybackProgressEventArgs e)
-        {
-            try { await OnPlaybackProgressAsync(e); }
-            catch (Exception ex) { _logger.LogError(ex, "Error handling playback progress"); }
-        }
-
-        internal async Task OnPlaybackProgressAsync(PlaybackProgressEventArgs e)
-        {
-            if (e.Session == null) return;
-
-            if (!_sessions.TryGetValue(e.Session.Id, out var state))
+            SessionSnapshot? snapshot;
+            lock (entry.Gate)
             {
+                snapshot = entry.State;
+                entry.State = null;
+            }
+
+            if (snapshot == null)
+            {
+                // Already stopped; the stop restored the lights.
                 return;
             }
 
             var config = _getConfig();
-            if (!config.EnablePlugin)
-            {
-                // The kill switch applies to sessions already playing: no pause, resume or
-                // outro commands once the plugin is disabled. Stop still restores the lights.
-                return;
-            }
+            var profile = snapshot.Profile;
 
-            var profile = state.Profile;
-
-            if (profile.EnableOutroLights)
-            {
-                if (state.OutroLightsTriggered)
-                {
-                    // Credits: the outro already raised the lights; pause and resume leave them alone until stop.
-                    return;
-                }
-
-                var positionTicks = e.PlaybackPositionTicks ?? 0;
-                if (SessionPolicy.IsInOutro(state.OutroSegments, positionTicks))
-                {
-                    state.OutroLightsTriggered = true;
-                    _logger.LogInformation("[{ProfileName}] Outro segment detected at {Position:F1}s - triggering stop lights on {ClientName}",
-                        profile.Name, positionTicks / (double)TimeSpan.TicksPerSecond, e.ClientName);
-                    var outroBridge = ResolveBridge(config, profile);
-                    if (outroBridge != null)
-                    {
-                        await _executor.ExecuteAsync(LightAction.Stop, outroBridge, profile, CancellationToken.None);
-                    }
-                    return;
-                }
-            }
-
-            // Detect pause/unpause
-            var currentState = e.IsPaused ? "Paused" : "Playing";
-            if (state.PlaybackState == currentState)
-            {
-                return;
-            }
-
-            // Skip pause action during the grace period after playback started
-            if (e.IsPaused && profile.PauseGracePeriodSeconds > 0)
-            {
-                var elapsed = _clock.GetUtcNow() - state.StartedAt;
-                if (elapsed.TotalSeconds < profile.PauseGracePeriodSeconds)
-                {
-                    _logger.LogInformation("[{ProfileName}] Pause ignored — within grace period ({ElapsedSeconds}s < {GracePeriod}s) on {ClientName}",
-                        profile.Name, (int)elapsed.TotalSeconds, profile.PauseGracePeriodSeconds, e.ClientName);
-                    return;
-                }
-            }
-
-            _logger.LogInformation("Playback state changed to {State} on {ClientName} (Device: {DeviceId}, IP: {RemoteEndpoint}) - Using profile: {ProfileName}",
-                currentState, e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, profile.Name);
-            state.PlaybackState = currentState;
+            _logger.LogInformation("Session ended on {ClientName} (Device: {DeviceId}, IP: {RemoteEndpoint}) - restoring lights using profile: {ProfileName}",
+                session.Client, session.DeviceId, session.RemoteEndPoint, profile.Name);
 
             var bridge = ResolveBridge(config, profile);
-            if (bridge == null)
+            if (bridge == null) return;
+
+            await EnqueueAsync(entry.Queue, session.Id, LightAction.Stop, bridge, profile);
+        }
+
+        private Task EnqueueAsync(SessionCommandQueue queue, string sessionId, LightAction action, HueBridge bridge, LightControlProfile profile)
+        {
+            return queue.Enqueue(async ct =>
             {
-                _logger.LogWarning("No bridge found for profile {ProfileName} (BridgeId: {BridgeId})", profile.Name, profile.BridgeId);
-                return;
-            }
-            await _executor.ExecuteAsync(e.IsPaused ? LightAction.Pause : LightAction.Play, bridge, profile, CancellationToken.None);
+                try
+                {
+                    await _executor.ExecuteAsync(action, bridge, profile, ct);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    _logger.LogDebug("Light command {Action} superseded for session {SessionId}", action, sessionId);
+                }
+            });
         }
 
         /// <summary>
@@ -260,7 +336,7 @@ namespace JellyfinHuePlugin.Managers
                 return Array.Empty<TickRange>();
             }
         }
-        
+
         // Matching itself is pure (ProfileMatcher); this wraps it with the Debug
         // diagnostics that TROUBLESHOOTING.md points users at.
         private LightControlProfile? TryMatchProfile(string? clientName, string? deviceId, string? remoteEndpoint, bool isMovie, bool isEpisode, PluginConfiguration config)
@@ -294,14 +370,19 @@ namespace JellyfinHuePlugin.Managers
             return result.Profile;
         }
 
+        /// <summary>Resolves the profile's bridge, warning once when there is none. Every send path uses this.</summary>
         private HueBridge? ResolveBridge(PluginConfiguration config, LightControlProfile profile)
         {
-            if (string.IsNullOrWhiteSpace(profile.BridgeId))
+            var bridge = string.IsNullOrWhiteSpace(profile.BridgeId)
+                ? (config.Bridges.Count == 1 ? config.Bridges[0] : null)
+                : config.Bridges.FirstOrDefault(b => b.Id == profile.BridgeId);
+
+            if (bridge == null)
             {
-                return config.Bridges.Count == 1 ? config.Bridges[0] : null;
+                _logger.LogWarning("No bridge found for profile {ProfileName} (BridgeId: {BridgeId})", profile.Name, profile.BridgeId);
             }
 
-            return config.Bridges.FirstOrDefault(b => b.Id == profile.BridgeId);
+            return bridge;
         }
 
         public void Dispose()
@@ -309,6 +390,16 @@ namespace JellyfinHuePlugin.Managers
             _sessionManager.PlaybackStart -= OnPlaybackStart;
             _sessionManager.PlaybackStopped -= OnPlaybackStopped;
             _sessionManager.PlaybackProgress -= OnPlaybackProgress;
+            _sessionManager.SessionEnded -= OnSessionEnded;
+
+            // Cancel everything in flight and forget the sessions. Nothing is sent to any bridge;
+            // the next stop restores the lights through a fresh profile match.
+            foreach (var entry in _sessions.Values)
+            {
+                entry.Queue.Cancel();
+            }
+
+            _sessions.Clear();
         }
     }
 }

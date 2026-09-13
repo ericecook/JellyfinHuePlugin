@@ -18,6 +18,10 @@ using Xunit;
 
 namespace JellyfinHuePlugin.Tests.Managers
 {
+    /// <summary>
+    /// Event wiring only: raises the ISessionManager events through Moq and waits for the
+    /// async void handlers with WhenIdleAsync. Behaviour lives in PlaybackSessionManagerStateTests.
+    /// </summary>
     public class PlaybackSessionManagerHandlerTests : IDisposable
     {
         private readonly Mock<ISessionManager> _mockSessionManager;
@@ -114,8 +118,8 @@ namespace JellyfinHuePlugin.Tests.Managers
             // Act — raise the event
             _mockSessionManager.Raise(s => s.PlaybackStart += null, args);
 
-            // Allow async handler to complete
-            await Task.Delay(200);
+            // Wait for the async void handler and its light command
+            await _manager.WhenIdleAsync();
 
             // Assert
             _mockHueService.Verify(h => h.SetGroupStateAsync(
@@ -141,7 +145,7 @@ namespace JellyfinHuePlugin.Tests.Managers
 
             // Act
             _mockSessionManager.Raise(s => s.PlaybackStart += null, args);
-            await Task.Delay(200);
+            await _manager.WhenIdleAsync();
 
             // Assert
             _mockHueService.Verify(h => h.ActivateSceneAsync(
@@ -166,7 +170,7 @@ namespace JellyfinHuePlugin.Tests.Managers
 
             // Act
             _mockSessionManager.Raise(s => s.PlaybackStart += null, args);
-            await Task.Delay(200);
+            await _manager.WhenIdleAsync();
 
             // Assert
             _mockHueService.Verify(h => h.SetGroupStateAsync(
@@ -189,7 +193,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             };
 
             _mockSessionManager.Raise(s => s.PlaybackStart += null, startArgs);
-            await Task.Delay(200);
+            await _manager.WhenIdleAsync();
 
             // Act — stop playback
             var stopArgs = new PlaybackStopEventArgs
@@ -201,9 +205,32 @@ namespace JellyfinHuePlugin.Tests.Managers
             };
 
             _mockSessionManager.Raise(s => s.PlaybackStopped += null, stopArgs);
-            await Task.Delay(200);
+            await _manager.WhenIdleAsync();
 
             // Assert
+            _mockHueService.Verify(h => h.SetGroupStateAsync(
+                "192.168.1.50", "testuser", "1",
+                It.Is<HueLightState>(s => s.On == true && s.Bri == 254),
+                It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task SessionEnded_Raised_RestoresLights()
+        {
+            var session = CreateSession();
+            var startArgs = new PlaybackProgressEventArgs
+            {
+                ClientName = "TestClient",
+                DeviceId = "device1",
+                Session = session,
+                Item = new MediaBrowser.Controller.Entities.Movies.Movie()
+            };
+            _mockSessionManager.Raise(s => s.PlaybackStart += null, startArgs);
+            await _manager.WhenIdleAsync();
+
+            _mockSessionManager.Raise(s => s.SessionEnded += null, new SessionEventArgs { SessionInfo = session });
+            await _manager.WhenIdleAsync();
+
             _mockHueService.Verify(h => h.SetGroupStateAsync(
                 "192.168.1.50", "testuser", "1",
                 It.Is<HueLightState>(s => s.On == true && s.Bri == 254),
@@ -224,7 +251,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             };
 
             _mockSessionManager.Raise(s => s.PlaybackStart += null, startArgs);
-            await Task.Delay(200);
+            await _manager.WhenIdleAsync();
 
             // Act — send progress with IsPaused=true
             var progressArgs = new PlaybackProgressEventArgs
@@ -237,7 +264,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             };
 
             _mockSessionManager.Raise(s => s.PlaybackProgress += null, progressArgs);
-            await Task.Delay(200);
+            await _manager.WhenIdleAsync();
 
             // Assert — should set pause brightness
             _mockHueService.Verify(h => h.SetGroupStateAsync(
@@ -260,7 +287,7 @@ namespace JellyfinHuePlugin.Tests.Managers
 
             // Act — should not throw
             _mockSessionManager.Raise(s => s.PlaybackStart += null, args);
-            await Task.Delay(200);
+            await _manager.WhenIdleAsync();
 
             // Assert — no calls made
             _mockHueService.Verify(h => h.SetGroupStateAsync(
@@ -286,7 +313,7 @@ namespace JellyfinHuePlugin.Tests.Managers
 
             // Act
             _mockSessionManager.Raise(s => s.PlaybackStart += null, args);
-            await Task.Delay(200);
+            await _manager.WhenIdleAsync();
 
             // Assert
             _mockHueService.Verify(h => h.SetGroupStateAsync(
@@ -312,7 +339,7 @@ namespace JellyfinHuePlugin.Tests.Managers
 
             // Act
             _mockSessionManager.Raise(s => s.PlaybackStart += null, args);
-            await Task.Delay(200);
+            await _manager.WhenIdleAsync();
 
             // Assert
             _mockHueService.Verify(h => h.SetGroupStateAsync(
