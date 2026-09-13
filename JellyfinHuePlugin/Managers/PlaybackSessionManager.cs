@@ -19,9 +19,6 @@ using JellyfinHuePlugin.Services;
 
 namespace JellyfinHuePlugin.Managers
 {
-    /// <summary>Inclusive tick range of a media segment.</summary>
-    internal readonly record struct TickRange(long StartTicks, long EndTicks);
-
     public class PlaybackSessionManager : IDisposable
     {
         private readonly ISessionManager _sessionManager;
@@ -193,7 +190,7 @@ namespace JellyfinHuePlugin.Managers
                 }
 
                 var positionTicks = e.PlaybackPositionTicks ?? 0;
-                if (IsInOutro(state.OutroSegments, positionTicks))
+                if (SessionPolicy.IsInOutro(state.OutroSegments, positionTicks))
                 {
                     state.OutroLightsTriggered = true;
                     _logger.LogInformation("[{ProfileName}] Outro segment detected at {Position:F1}s - triggering stop lights on {ClientName}",
@@ -237,20 +234,6 @@ namespace JellyfinHuePlugin.Managers
                 return;
             }
             await _executor.ExecuteAsync(e.IsPaused ? LightAction.Pause : LightAction.Play, bridge, profile, CancellationToken.None);
-        }
-
-        /// <summary>True when the position lies inside any segment (bounds inclusive).</summary>
-        internal static bool IsInOutro(IReadOnlyList<TickRange> segments, long positionTicks)
-        {
-            foreach (var segment in segments)
-            {
-                if (positionTicks >= segment.StartTicks && positionTicks <= segment.EndTicks)
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         /// <summary>
@@ -327,12 +310,5 @@ namespace JellyfinHuePlugin.Managers
             _sessionManager.PlaybackStopped -= OnPlaybackStopped;
             _sessionManager.PlaybackProgress -= OnPlaybackProgress;
         }
-    }
-
-    public enum PlaybackState
-    {
-        Playing,
-        Paused,
-        Stopped
     }
 }

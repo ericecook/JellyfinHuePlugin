@@ -371,22 +371,5 @@ namespace JellyfinHuePlugin.Tests.Managers
             VerifyBrightness(254, Times.Exactly(2)); // idempotent by design
         }
 
-        [Theory]
-        [InlineData(99, false)]
-        [InlineData(100, true)]
-        [InlineData(110, true)]
-        [InlineData(111, false)]
-        public void IsInOutro_BoundariesInclusive(long positionTicks, bool expected)
-        {
-            var segments = new[] { new TickRange(100, 110) };
-
-            PlaybackSessionManager.IsInOutro(segments, positionTicks).Should().Be(expected);
-        }
-
-        [Fact]
-        public void IsInOutro_EmptyList_IsFalse()
-        {
-            PlaybackSessionManager.IsInOutro(Array.Empty<TickRange>(), 100).Should().BeFalse();
-        }
     }
 }
