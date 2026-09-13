@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using FluentAssertions;
 using JellyfinHuePlugin.Configuration;
 using JellyfinHuePlugin.Services;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -16,7 +17,17 @@ namespace JellyfinHuePlugin.Tests.Services
     {
         private static readonly string RoomUuid = "3883f8bf-30a3-445b-ac06-b047d50599df";
 
+        private sealed class CapturingLogger : ILogger
+        {
+            public List<string> Lines { get; } = new();
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel logLevel) => true;
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+                => Lines.Add(formatter(state, exception));
+        }
+
         private readonly Mock<HueService> _hue;
+        private readonly CapturingLogger _log = new();
         private readonly HueResourceCatalog _catalog;
         private readonly HueBridge _bridge = new() { Id = "bridge1", Name = "Test Bridge", IpAddress = "192.168.1.50", Username = "key", BridgeId = "001788fffe123456" };
 
@@ -38,7 +49,7 @@ namespace JellyfinHuePlugin.Tests.Services
             _hue = new Mock<HueService>(new NullLogger<HueService>()) { CallBase = false };
             _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(Groups);
             _hue.Setup(h => h.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(Scenes);
-            _catalog = new HueResourceCatalog(_hue.Object, NullLogger.Instance);
+            _catalog = new HueResourceCatalog(_hue.Object, _log);
         }
 
         private void VerifyGroupFetches(Times times) =>
@@ -107,6 +118,42 @@ namespace JellyfinHuePlugin.Tests.Services
             var id = await _catalog.ResolveGroupedLightAsync(_bridge, "1", CancellationToken.None);
 
             id.Should().BeNull();
+        }
+
+        [Fact]
+        public async Task Resolve_TargetMissingFromAReachableBridge_KeepsTheReselectAdvice()
+        {
+            var id = await _catalog.ResolveGroupedLightAsync(_bridge, "9", CancellationToken.None);
+
+            id.Should().BeNull();
+            _log.Lines.Should().ContainSingle()
+                .Which.Should().Be("Profile target group '9' not found on bridge Test Bridge; re-select it on the plugin page");
+        }
+
+        [Fact]
+        public async Task Resolve_WhenTheGroupFetchFails_SaysTheBridgeIsUnreachableAndDoesNotSayReselect()
+        {
+            _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlyList<HueGroupResource>?)null);
+
+            var id = await _catalog.ResolveGroupedLightAsync(_bridge, "1", CancellationToken.None);
+
+            id.Should().BeNull();
+            var line = _log.Lines.Should().ContainSingle().Subject;
+            line.Should().Contain("Could not reach bridge Test Bridge");
+            line.Should().NotContain("re-select", "an unreachable bridge is not something re-selecting the target fixes");
+        }
+
+        [Fact]
+        public async Task ResolveScene_WhenTheSceneFetchFails_SaysTheBridgeIsUnreachable()
+        {
+            _hue.Setup(h => h.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlyList<HueSceneResource>?)null);
+
+            var id = await _catalog.ResolveSceneAsync(_bridge, "abc123", CancellationToken.None);
+
+            id.Should().BeNull();
+            var line = _log.Lines.Should().ContainSingle().Subject;
+            line.Should().Contain("Could not reach bridge Test Bridge");
+            line.Should().NotContain("re-select");
         }
 
         [Fact]

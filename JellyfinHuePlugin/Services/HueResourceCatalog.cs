@@ -86,11 +86,16 @@ namespace JellyfinHuePlugin.Services
             _logger = logger;
         }
 
+        // What a load produced, and - when it produced nothing - whether the bridge itself was
+        // the problem. "Could not reach the bridge" and "the target is not on this bridge" need
+        // opposite advice, so the two must not collapse into a bare null.
+        private readonly record struct LoadResult(Snapshot? Snapshot, bool FetchFailed);
+
         public virtual async Task<IReadOnlyList<HueGroupResource>?> GetGroupsAsync(HueBridge bridge, CancellationToken cancellationToken)
-            => (await LoadAsync(bridge, refresh: false, cancellationToken))?.Groups;
+            => (await LoadAsync(bridge, refresh: false, cancellationToken)).Snapshot?.Groups;
 
         public virtual async Task<IReadOnlyList<HueSceneResource>?> GetScenesAsync(HueBridge bridge, CancellationToken cancellationToken)
-            => (await LoadAsync(bridge, refresh: false, cancellationToken))?.Scenes;
+            => (await LoadAsync(bridge, refresh: false, cancellationToken)).Snapshot?.Scenes;
 
         /// <summary>
         /// "0" (or empty) → the bridge home's grouped light; a UUID → itself; a v1 number N → the
@@ -104,11 +109,10 @@ namespace JellyfinHuePlugin.Services
                 return targetGroupId;
             }
 
-            var resolved = await ResolveAsync(bridge, snapshot => FindGroupedLight(snapshot, targetGroupId), cancellationToken);
+            var (resolved, fetchFailed) = await ResolveAsync(bridge, snapshot => FindGroupedLight(snapshot, targetGroupId), cancellationToken);
             if (resolved == null)
             {
-                _logger.LogWarning("Profile target {Field} '{Value}' not found on bridge {BridgeName}; re-select it on the plugin page",
-                    "group", targetGroupId, bridge.Name);
+                LogUnresolved("group", targetGroupId, bridge, fetchFailed);
             }
 
             return resolved;
@@ -122,11 +126,10 @@ namespace JellyfinHuePlugin.Services
                 return sceneId;
             }
 
-            var resolved = await ResolveAsync(bridge, snapshot => snapshot.Scenes.FirstOrDefault(s => s.IdV1 == "/scenes/" + sceneId)?.Id, cancellationToken);
+            var (resolved, fetchFailed) = await ResolveAsync(bridge, snapshot => snapshot.Scenes.FirstOrDefault(s => s.IdV1 == "/scenes/" + sceneId)?.Id, cancellationToken);
             if (resolved == null)
             {
-                _logger.LogWarning("Profile target {Field} '{Value}' not found on bridge {BridgeName}; re-select it on the plugin page",
-                    "scene", sceneId, bridge.Name);
+                LogUnresolved("scene", sceneId, bridge, fetchFailed);
             }
 
             return resolved;
@@ -154,32 +157,47 @@ namespace JellyfinHuePlugin.Services
             return snapshot.Groups.FirstOrDefault(g => g.IdV1 == "/groups/" + targetGroupId)?.GroupedLightId;
         }
 
-        private async Task<string?> ResolveAsync(HueBridge bridge, Func<Snapshot, string?> find, CancellationToken cancellationToken)
+        /// <summary>A target that could not be resolved, told apart from a bridge that could not be
+        /// asked: only the former is something the user can fix by re-selecting on the plugin page.</summary>
+        private void LogUnresolved(string field, string value, HueBridge bridge, bool fetchFailed)
         {
-            var snapshot = await LoadAsync(bridge, refresh: false, cancellationToken);
-            if (snapshot == null)
+            if (fetchFailed)
             {
-                return null;
+                _logger.LogWarning("Could not reach bridge {BridgeName} to resolve profile target {Field} '{Value}'; the bridge may be offline or its API key no longer valid",
+                    bridge.Name, field, value);
+                return;
             }
 
-            var found = find(snapshot);
+            _logger.LogWarning("Profile target {Field} '{Value}' not found on bridge {BridgeName}; re-select it on the plugin page",
+                field, value, bridge.Name);
+        }
+
+        private async Task<(string? Resolved, bool FetchFailed)> ResolveAsync(HueBridge bridge, Func<Snapshot, string?> find, CancellationToken cancellationToken)
+        {
+            var load = await LoadAsync(bridge, refresh: false, cancellationToken);
+            if (load.Snapshot == null)
+            {
+                return (null, load.FetchFailed);
+            }
+
+            var found = find(load.Snapshot);
             if (found != null)
             {
-                return found;
+                return (found, false);
             }
 
             // The bridge may have changed since the cache was built: refresh once.
-            snapshot = await LoadAsync(bridge, refresh: true, cancellationToken);
-            return snapshot == null ? null : find(snapshot);
+            load = await LoadAsync(bridge, refresh: true, cancellationToken);
+            return load.Snapshot == null ? (null, load.FetchFailed) : (find(load.Snapshot), false);
         }
 
-        private async Task<Snapshot?> LoadAsync(HueBridge bridge, bool refresh, CancellationToken cancellationToken)
+        private async Task<LoadResult> LoadAsync(HueBridge bridge, bool refresh, CancellationToken cancellationToken)
         {
             var entry = _entries.GetOrAdd(bridge.Id, _ => new Entry());
             var (snapshot, generation) = entry.ReadState();
             if (!refresh && snapshot is { } cached)
             {
-                return cached;
+                return new LoadResult(cached, false);
             }
 
             await entry.Gate.WaitAsync(cancellationToken);
@@ -193,24 +211,24 @@ namespace JellyfinHuePlugin.Services
                 // under concurrency.
                 if (currentSnapshot is { } peerRefreshed && currentGeneration != generation)
                 {
-                    return peerRefreshed;
+                    return new LoadResult(peerRefreshed, false);
                 }
 
                 if (!refresh && currentSnapshot is { } loadedMeanwhile)
                 {
-                    return loadedMeanwhile;
+                    return new LoadResult(loadedMeanwhile, false);
                 }
 
                 var groups = await _hueService.GetGroupsAsync(bridge, cancellationToken);
                 if (groups == null)
                 {
-                    return null;
+                    return new LoadResult(null, true);
                 }
 
                 var scenes = await _hueService.GetScenesAsync(bridge, cancellationToken);
                 if (scenes == null)
                 {
-                    return null;
+                    return new LoadResult(null, true);
                 }
 
                 var groupsById = groups.ToDictionary(g => g.Id, StringComparer.Ordinal);
@@ -222,13 +240,13 @@ namespace JellyfinHuePlugin.Services
 
                 if (entry.TryStore(freshSnapshot, currentGeneration))
                 {
-                    return freshSnapshot;
+                    return new LoadResult(freshSnapshot, false);
                 }
 
                 // An Invalidate landed while the bridge calls above were in flight: this result is
                 // stale by definition. Report whatever is current instead of serving data that was
-                // explicitly discarded.
-                return entry.ReadState().Snapshot;
+                // explicitly discarded. The fetch itself worked, so this is never a bridge failure.
+                return new LoadResult(entry.ReadState().Snapshot, false);
             }
             finally
             {
