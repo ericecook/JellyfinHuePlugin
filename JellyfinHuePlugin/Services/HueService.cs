@@ -260,15 +260,16 @@ namespace JellyfinHuePlugin.Services
 
         /// <summary>
         /// A content-free summary of a JSON value for logging: its kind, the original text length,
-        /// and either its top-level property names (object) or element count (array). Used only on
-        /// the authentication path, where the response can carry a freshly issued application key --
-        /// no value from the document itself is ever included.
+        /// and either its top-level property names (object, sanitized -- see
+        /// <see cref="DescribeProperties"/>) or element count (array). Used only on the
+        /// authentication path, where the response can carry a freshly issued application key -- no
+        /// value from the document itself is ever included.
         /// </summary>
         private static string DescribeShape(JsonElement element, int contentLength)
         {
             var detail = element.ValueKind switch
             {
-                JsonValueKind.Object => "properties: [" + string.Join(", ", element.EnumerateObject().Select(p => p.Name)) + "]",
+                JsonValueKind.Object => DescribeProperties(element),
                 JsonValueKind.Array => $"{element.GetArrayLength()} element(s)",
                 _ => null
             };
@@ -276,6 +277,28 @@ namespace JellyfinHuePlugin.Services
             return detail == null
                 ? $"{element.ValueKind}, {contentLength} chars"
                 : $"{element.ValueKind}, {contentLength} chars, {detail}";
+        }
+
+        /// <summary>
+        /// Property names are attacker-chosen text on this path, not content we control -- sanitize
+        /// to a safe character set (ASCII letters, digits, '.', '_', '-'; everything else becomes
+        /// '_') and cap both the length of each name and how many are listed, so a hostile responder
+        /// cannot forge log lines (e.g. with embedded newlines) or blow up the log with a huge object.
+        /// </summary>
+        private static string DescribeProperties(JsonElement element)
+        {
+            const int maxNames = 10;
+            const int maxNameLength = 32;
+
+            var names = element.EnumerateObject().Select(p => p.Name).ToList();
+            var shown = names.Take(maxNames).Select(name =>
+            {
+                var truncated = name.Length > maxNameLength ? name[..maxNameLength] : name;
+                return new string(truncated.Select(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-' or '.' ? c : '_').ToArray());
+            });
+            var more = names.Count > maxNames ? $", +{names.Count - maxNames} more" : string.Empty;
+
+            return "properties: [" + string.Join(", ", shown) + "]" + more;
         }
 
         /// <summary>
@@ -464,7 +487,9 @@ namespace JellyfinHuePlugin.Services
                     return null;
                 }
 
-                _logger.LogWarning("Unexpected bridge response for {Operation}: {Shape}", "authenticate", DescribeShape(doc.RootElement, content.Length));
+                // Describe element [0] itself, not the whole array: that's the one that was
+                // actually rejected, and the fact worth putting in a bug report.
+                _logger.LogWarning("Unexpected bridge response for {Operation}: {Shape}", "authenticate", DescribeShape(first, content.Length));
                 return null;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
