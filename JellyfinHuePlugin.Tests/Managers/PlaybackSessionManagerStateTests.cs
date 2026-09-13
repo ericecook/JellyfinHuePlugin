@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
+using Jellyfin.Database.Implementations.Enums;
 using JellyfinHuePlugin.Configuration;
 using JellyfinHuePlugin.Managers;
 using JellyfinHuePlugin.Services;
@@ -12,6 +13,8 @@ using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaSegments;
 using MediaBrowser.Controller.Session;
+using MediaBrowser.Model.Configuration;
+using MediaBrowser.Model.MediaSegments;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -114,6 +117,24 @@ namespace JellyfinHuePlugin.Tests.Managers
         private void VerifyTotalGroupCalls(Times times) =>
             _hue.Verify(h => h.SetGroupStateAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
                 It.IsAny<HueLightState>(), It.IsAny<CancellationToken>()), times);
+
+        private void GivenOutroSegment(long startSeconds, long endSeconds) =>
+            _segments
+                .Setup(s => s.GetSegmentsAsync(It.IsAny<BaseItem>(), It.IsAny<IEnumerable<MediaSegmentType>>(),
+                    It.IsAny<LibraryOptions>(), It.IsAny<bool>()))
+                .ReturnsAsync(new[]
+                {
+                    new MediaSegmentDto
+                    {
+                        Type = MediaSegmentType.Outro,
+                        StartTicks = startSeconds * TimeSpan.TicksPerSecond,
+                        EndTicks = endSeconds * TimeSpan.TicksPerSecond
+                    }
+                });
+
+        private void VerifySegmentQueries(Times times) =>
+            _segments.Verify(s => s.GetSegmentsAsync(It.IsAny<BaseItem>(), It.IsAny<IEnumerable<MediaSegmentType>>(),
+                It.IsAny<LibraryOptions>(), It.IsAny<bool>()), times);
 
         [Fact]
         public void ClassifyItem_RecognisesMovieAndEpisodeOnly()
@@ -228,6 +249,101 @@ namespace JellyfinHuePlugin.Tests.Managers
             await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: true, positionSeconds: 5));
 
             VerifyBrightness(100, Times.Once());
+        }
+
+        [Fact]
+        public async Task Start_LoadsOutroSegmentsOnce()
+        {
+            _config.Profiles[0].EnableOutroLights = true;
+            GivenOutroSegment(100, 110);
+            var session = Session();
+
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), positionSeconds: 50));
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), positionSeconds: 105));
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), positionSeconds: 108));
+
+            VerifySegmentQueries(Times.Once());
+            VerifyBrightness(254, Times.Once());
+        }
+
+        [Fact]
+        public async Task Start_OutroDisabled_DoesNotQuerySegments()
+        {
+            GivenOutroSegment(100, 110);
+            var session = Session();
+
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), positionSeconds: 105));
+
+            VerifySegmentQueries(Times.Never());
+            VerifyBrightness(254, Times.Never());
+        }
+
+        [Fact]
+        public async Task Start_SegmentQueryThrows_StillControlsLights()
+        {
+            _config.Profiles[0].EnableOutroLights = true;
+            _segments
+                .Setup(s => s.GetSegmentsAsync(It.IsAny<BaseItem>(), It.IsAny<IEnumerable<MediaSegmentType>>(),
+                    It.IsAny<LibraryOptions>(), It.IsAny<bool>()))
+                .ThrowsAsync(new InvalidOperationException("database unavailable"));
+            var session = Session();
+
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), positionSeconds: 105));
+
+            VerifyBrightness(20, Times.Once());
+            VerifyBrightness(254, Times.Never());
+        }
+
+        [Fact]
+        public async Task Progress_AfterOutro_ResumeDoesNotDim()
+        {
+            _config.Profiles[0].EnableOutroLights = true;
+            GivenOutroSegment(100, 110);
+            var session = Session();
+
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), positionSeconds: 105));
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: true, positionSeconds: 106));
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: false, positionSeconds: 107));
+
+            VerifyBrightness(254, Times.Once());
+            VerifyBrightness(100, Times.Never());
+            VerifyTotalGroupCalls(Times.Exactly(2)); // play, then the outro's stop
+        }
+
+        [Fact]
+        public async Task Stop_AfterOutro_StillSendsStopState()
+        {
+            _config.Profiles[0].EnableOutroLights = true;
+            GivenOutroSegment(100, 110);
+            var session = Session();
+
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), positionSeconds: 105));
+            await _manager.OnPlaybackStoppedAsync(Stop(session, new Movie()));
+
+            VerifyBrightness(254, Times.Exactly(2)); // idempotent by design
+        }
+
+        [Theory]
+        [InlineData(99, false)]
+        [InlineData(100, true)]
+        [InlineData(110, true)]
+        [InlineData(111, false)]
+        public void IsInOutro_BoundariesInclusive(long positionTicks, bool expected)
+        {
+            var segments = new[] { new TickRange(100, 110) };
+
+            PlaybackSessionManager.IsInOutro(segments, positionTicks).Should().Be(expected);
+        }
+
+        [Fact]
+        public void IsInOutro_EmptyList_IsFalse()
+        {
+            PlaybackSessionManager.IsInOutro(Array.Empty<TickRange>(), 100).Should().BeFalse();
         }
     }
 }

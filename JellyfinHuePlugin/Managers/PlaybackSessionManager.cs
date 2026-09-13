@@ -19,6 +19,9 @@ using JellyfinHuePlugin.Services;
 
 namespace JellyfinHuePlugin.Managers
 {
+    /// <summary>Inclusive tick range of a media segment.</summary>
+    internal readonly record struct TickRange(long StartTicks, long EndTicks);
+
     public class PlaybackSessionManager : IDisposable
     {
         private readonly ISessionManager _sessionManager;
@@ -35,6 +38,7 @@ namespace JellyfinHuePlugin.Managers
         {
             public required LightControlProfile Profile { get; init; }
             public required DateTimeOffset StartedAt { get; init; }
+            public required IReadOnlyList<TickRange> OutroSegments { get; init; }
             public string PlaybackState { get; set; } = "Playing";
             public bool OutroLightsTriggered { get; set; }
         }
@@ -93,10 +97,15 @@ namespace JellyfinHuePlugin.Managers
             _logger.LogInformation("Playback started on {ClientName} (Device: {DeviceId}, IP: {RemoteEndpoint}, Type: {MediaType}) - Using profile: {ProfileName}",
                 e.ClientName, e.DeviceId, e.Session.RemoteEndPoint, mediaType, profile.Name);
 
+            var outroSegments = profile.EnableOutroLights
+                ? await LoadOutroSegmentsAsync(e.Item)
+                : Array.Empty<TickRange>();
+
             _sessions[e.Session.Id] = new SessionState
             {
                 Profile = profile,
                 StartedAt = _clock.GetUtcNow(),
+                OutroSegments = outroSegments,
                 PlaybackState = "Playing"
             };
 
@@ -168,14 +177,20 @@ namespace JellyfinHuePlugin.Managers
             var config = _getConfig();
             var profile = state.Profile;
 
-            // Check for outro segment if enabled and not already triggered
-            if (profile.EnableOutroLights && !state.OutroLightsTriggered)
+            if (profile.EnableOutroLights)
             {
-                if (await IsInOutroSegmentAsync(e))
+                if (state.OutroLightsTriggered)
                 {
-                    _logger.LogInformation("[{ProfileName}] Outro segment detected - triggering stop lights on {ClientName}",
-                        profile.Name, e.ClientName);
+                    // Credits: the outro already raised the lights; pause and resume leave them alone until stop.
+                    return;
+                }
+
+                var positionTicks = e.PlaybackPositionTicks ?? 0;
+                if (IsInOutro(state.OutroSegments, positionTicks))
+                {
                     state.OutroLightsTriggered = true;
+                    _logger.LogInformation("[{ProfileName}] Outro segment detected at {Position:F1}s - triggering stop lights on {ClientName}",
+                        profile.Name, positionTicks / (double)TimeSpan.TicksPerSecond, e.ClientName);
                     var outroBridge = ResolveBridge(config, profile);
                     if (outroBridge != null)
                     {
@@ -218,38 +233,43 @@ namespace JellyfinHuePlugin.Managers
             await HandlePlaybackStateAsync(newState, bridge, profile);
         }
 
-        private async Task<bool> IsInOutroSegmentAsync(PlaybackProgressEventArgs e)
+        /// <summary>True when the position lies inside any segment (bounds inclusive).</summary>
+        internal static bool IsInOutro(IReadOnlyList<TickRange> segments, long positionTicks)
         {
-            var item = e.Item;
-            if (item == null)
+            foreach (var segment in segments)
             {
-                return false;
+                if (positionTicks >= segment.StartTicks && positionTicks <= segment.EndTicks)
+                {
+                    return true;
+                }
             }
 
-            var positionTicks = e.PlaybackPositionTicks ?? 0;
+            return false;
+        }
+
+        /// <summary>
+        /// Outro segments for the item, fetched once per playback. A null item or a failed
+        /// query yields an empty list; the failure is logged once.
+        /// </summary>
+        private async Task<IReadOnlyList<TickRange>> LoadOutroSegmentsAsync(BaseItem? item)
+        {
+            if (item == null)
+            {
+                return Array.Empty<TickRange>();
+            }
 
             try
             {
                 var libraryOptions = _libraryManager.GetLibraryOptions(item);
                 var segments = await _segmentManager.GetSegmentsAsync(item,
                     new[] { MediaSegmentType.Outro }, libraryOptions, filterByProvider: false);
-
-                foreach (var segment in segments)
-                {
-                    if (positionTicks >= segment.StartTicks && positionTicks <= segment.EndTicks)
-                    {
-                        _logger.LogInformation("Outro segment detected at position {Position}s (segment: {Start}s - {End}s)",
-                            positionTicks / 10000000.0, segment.StartTicks / 10000000.0, segment.EndTicks / 10000000.0);
-                        return true;
-                    }
-                }
+                return segments.Select(s => new TickRange(s.StartTicks, s.EndTicks)).ToList();
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Outro detection: Error querying media segments");
+                return Array.Empty<TickRange>();
             }
-
-            return false;
         }
         
         // Matching itself is pure (ProfileMatcher); this wraps it with the Debug
