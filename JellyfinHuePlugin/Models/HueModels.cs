@@ -25,7 +25,8 @@ namespace JellyfinHuePlugin.Services
     {
         public string GroupName { get; init; } = string.Empty;
 
-        /// <summary>The config page reads scenes[id].Group for its dropdown label.</summary>
+        /// <summary>Kept for the public JSON shape: the response has carried both names since
+        /// before the page moved to GroupName, and removing it would be a breaking change.</summary>
         public string Group => GroupName;
     }
 
