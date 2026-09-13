@@ -107,6 +107,9 @@ namespace JellyfinHuePlugin.Managers
             }
         }
 
+        /// <summary>Number of tracked session entries. Test hook only.</summary>
+        internal int SessionCount => _sessions.Count;
+
         /// <summary>Completes when every handler started by a raised event has finished. Tests only.</summary>
         internal async Task WhenIdleAsync()
         {
@@ -304,12 +307,13 @@ namespace JellyfinHuePlugin.Managers
                 session.Client, session.DeviceId, session.RemoteEndPoint, profile.Name);
 
             var bridge = ResolveBridge(config, profile);
-            if (bridge == null) return;
+            if (bridge != null)
+            {
+                await EnqueueAsync(entry.Queue, session.Id, LightAction.Stop, bridge, profile);
+            }
 
-            await EnqueueAsync(entry.Queue, session.Id, LightAction.Stop, bridge, profile);
-
-            // Remove the entry now that the stop has run, unless a start reclaimed it while
-            // the stop was in flight.
+            // Remove the entry now that the stop has run (or there was no bridge to send to),
+            // unless a start reclaimed it while we were sending.
             lock (entry.Gate)
             {
                 if (entry.State == null)

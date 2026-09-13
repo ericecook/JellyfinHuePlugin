@@ -38,7 +38,16 @@ namespace JellyfinHuePlugin.Managers
 
             // Cancel outside the gate: Cancel() can run continuations synchronously, and those
             // continuations (e.g. the previous RunAsync's cleanup) may need the gate themselves.
-            previous?.Cancel();
+            // The previous command may have finished and disposed its source between the
+            // capture above and this call; a disposed source means there is nothing to cancel.
+            try
+            {
+                previous?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+
             return tail;
         }
 

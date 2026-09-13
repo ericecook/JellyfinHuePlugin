@@ -476,6 +476,19 @@ namespace JellyfinHuePlugin.Tests.Managers
         }
 
         [Fact]
+        public async Task SessionEnded_MissingBridge_StillRemovesEntry()
+        {
+            var session = Session();
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+
+            _config.Profiles[0].BridgeId = "no-such-bridge";
+            await _manager.OnSessionEndedAsync(Ended(session));
+
+            _manager.SessionCount.Should().Be(0);
+            VerifyBrightness(254, Times.Never());
+        }
+
+        [Fact]
         public async Task StopThenStart_SameSession_ShareOneQueue()
         {
             var stopEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
