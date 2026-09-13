@@ -26,25 +26,25 @@ namespace JellyfinHuePlugin.Api
         private readonly HueService _hueService;
         private readonly HueResourceCatalog _catalog;
         private readonly ConfigurationMigrator _migrator;
+        private readonly IHueConfiguration _configuration;
 
-        public HueController(ILogger<HueController> logger)
+        public HueController(
+            ILogger<HueController> logger,
+            HueService hueService,
+            HueResourceCatalog catalog,
+            ConfigurationMigrator migrator,
+            IHueConfiguration configuration)
         {
             _logger = logger;
-
-            if (Plugin.Instance == null)
-            {
-                throw new InvalidOperationException("Plugin instance not initialized");
-            }
-
-            _hueService = Plugin.Instance.HueService;
-            _catalog = Plugin.Instance.Catalog;
-            _migrator = Plugin.Instance.Migrator;
+            _hueService = hueService;
+            _catalog = catalog;
+            _migrator = migrator;
+            _configuration = configuration;
         }
 
         private HueBridge? GetBridge(string? bridgeId)
         {
-            var config = Plugin.Instance?.Configuration;
-            if (config == null) return null;
+            var config = _configuration.Current;
 
             if (!string.IsNullOrWhiteSpace(bridgeId))
             {
@@ -68,11 +68,7 @@ namespace JellyfinHuePlugin.Api
         [HttpGet("bridges")]
         public ActionResult<List<BridgeInfo>> GetBridges()
         {
-            var config = Plugin.Instance?.Configuration;
-            if (config == null)
-            {
-                return StatusCode(500, "Plugin not initialized");
-            }
+            var config = _configuration.Current;
 
             var bridges = config.Bridges.Select(b => new BridgeInfo
             {
@@ -88,11 +84,7 @@ namespace JellyfinHuePlugin.Api
         [HttpPost("bridges")]
         public ActionResult<BridgeInfo> AddBridge([FromBody][Required] AddBridgeRequest request)
         {
-            var config = Plugin.Instance?.Configuration;
-            if (config == null)
-            {
-                return StatusCode(500, "Plugin not initialized");
-            }
+            var config = _configuration.Current;
 
             var bridge = new HueBridge
             {
@@ -100,7 +92,7 @@ namespace JellyfinHuePlugin.Api
                 Name = request.Name
             };
             config.Bridges.Add(bridge);
-            Plugin.Instance?.SaveConfiguration();
+            _configuration.Save();
 
             _logger.LogInformation("Added bridge {BridgeName} at {IpAddress}", bridge.Name, bridge.IpAddress);
 
@@ -116,11 +108,7 @@ namespace JellyfinHuePlugin.Api
         [HttpDelete("bridges/{bridgeId}")]
         public ActionResult DeleteBridge(string bridgeId)
         {
-            var config = Plugin.Instance?.Configuration;
-            if (config == null)
-            {
-                return StatusCode(500, "Plugin not initialized");
-            }
+            var config = _configuration.Current;
 
             var bridge = config.Bridges.FirstOrDefault(b => b.Id == bridgeId);
             if (bridge == null)
@@ -133,7 +121,7 @@ namespace JellyfinHuePlugin.Api
             // address gets a fresh key anyway - but nothing should keep serving a deleted bridge's
             // rooms and scenes until the next Jellyfin restart.
             _catalog.Invalidate(bridge);
-            Plugin.Instance?.SaveConfiguration();
+            _configuration.Save();
 
             _logger.LogInformation("Deleted bridge {BridgeName} ({BridgeId})", bridge.Name, bridgeId);
 
@@ -148,16 +136,12 @@ namespace JellyfinHuePlugin.Api
         [HttpPost("migrate")]
         public async Task<ActionResult<MigrationReport>> Migrate(CancellationToken cancellationToken)
         {
-            var config = Plugin.Instance?.Configuration;
-            if (config == null)
-            {
-                return StatusCode(500, "Plugin not initialized");
-            }
+            var config = _configuration.Current;
 
             var report = await _migrator.MigrateAsync(config, cancellationToken);
             if (report.Changed)
             {
-                Plugin.Instance?.SaveConfiguration();
+                _configuration.Save();
             }
 
             var rewritten = report.Profiles.Sum(p => p.Rewritten.Count);
@@ -182,53 +166,49 @@ namespace JellyfinHuePlugin.Api
             if (outcome != null)
             {
                 var username = outcome.Username;
-                var config = Plugin.Instance?.Configuration;
-                if (config != null)
+                var config = _configuration.Current;
+
+                HueBridge? bridge = null;
+
+                // Find existing bridge by ID or IP
+                if (!string.IsNullOrWhiteSpace(request.BridgeId))
                 {
-                    HueBridge? bridge = null;
-
-                    // Find existing bridge by ID or IP
-                    if (!string.IsNullOrWhiteSpace(request.BridgeId))
-                    {
-                        bridge = config.Bridges.FirstOrDefault(b => b.Id == request.BridgeId);
-                    }
-
-                    bridge ??= config.Bridges.FirstOrDefault(b => b.IpAddress == request.BridgeIp);
-
-                    if (bridge == null)
-                    {
-                        // Create new bridge entry
-                        bridge = new HueBridge
-                        {
-                            IpAddress = request.BridgeIp,
-                            Name = request.BridgeName ?? "Bridge"
-                        };
-                        config.Bridges.Add(bridge);
-                    }
-                    else if (!string.Equals(bridge.IpAddress, request.BridgeIp, StringComparison.OrdinalIgnoreCase)
-                        || !string.Equals(bridge.Username, username, StringComparison.Ordinal))
-                    {
-                        // This entry now describes a different bridge, or a different application
-                        // key on it. HueBridge.HardwareId is the 16-hex id the TLS certificate is
-                        // pinned to (not the configuration GUID in HueBridge.Id): left alone it
-                        // would keep pinning the previous bridge and fail every request on a
-                        // subject mismatch, so clear it - the assignment below re-learns it from
-                        // this authentication. The cached rooms and scenes describe the old bridge
-                        // just as much, so drop those too.
-                        _logger.LogInformation("Bridge {BridgeName} changed address or application key; clearing its pinned bridge id and cached resources", bridge.Name);
-                        bridge.HardwareId = string.Empty;
-                        _catalog.Invalidate(bridge);
-                    }
-
-                    bridge.Username = username;
-                    bridge.HardwareId = outcome.HardwareId;
-                    bridge.IpAddress = request.BridgeIp;
-                    Plugin.Instance?.SaveConfiguration();
-
-                    return Ok(new AuthenticationResult { Success = true, Username = username, Id = bridge.Id, HardwareId = outcome.HardwareId });
+                    bridge = config.Bridges.FirstOrDefault(b => b.Id == request.BridgeId);
                 }
 
-                return Ok(new AuthenticationResult { Success = true, Username = username, HardwareId = outcome.HardwareId });
+                bridge ??= config.Bridges.FirstOrDefault(b => b.IpAddress == request.BridgeIp);
+
+                if (bridge == null)
+                {
+                    // Create new bridge entry
+                    bridge = new HueBridge
+                    {
+                        IpAddress = request.BridgeIp,
+                        Name = request.BridgeName ?? "Bridge"
+                    };
+                    config.Bridges.Add(bridge);
+                }
+                else if (!string.Equals(bridge.IpAddress, request.BridgeIp, StringComparison.OrdinalIgnoreCase)
+                    || !string.Equals(bridge.Username, username, StringComparison.Ordinal))
+                {
+                    // This entry now describes a different bridge, or a different application
+                    // key on it. HueBridge.HardwareId is the 16-hex id the TLS certificate is
+                    // pinned to (not the configuration GUID in HueBridge.Id): left alone it
+                    // would keep pinning the previous bridge and fail every request on a
+                    // subject mismatch, so clear it - the assignment below re-learns it from
+                    // this authentication. The cached rooms and scenes describe the old bridge
+                    // just as much, so drop those too.
+                    _logger.LogInformation("Bridge {BridgeName} changed address or application key; clearing its pinned bridge id and cached resources", bridge.Name);
+                    bridge.HardwareId = string.Empty;
+                    _catalog.Invalidate(bridge);
+                }
+
+                bridge.Username = username;
+                bridge.HardwareId = outcome.HardwareId;
+                bridge.IpAddress = request.BridgeIp;
+                _configuration.Save();
+
+                return Ok(new AuthenticationResult { Success = true, Username = username, Id = bridge.Id, HardwareId = outcome.HardwareId });
             }
 
             return Ok(new AuthenticationResult
