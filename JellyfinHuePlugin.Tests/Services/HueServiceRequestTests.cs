@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
@@ -40,6 +41,24 @@ namespace JellyfinHuePlugin.Tests.Services
                 {
                     Content = new StringContent(_responseBody, System.Text.Encoding.UTF8, "application/json")
                 };
+            }
+        }
+
+        // Simulates the token already being cancelled by the time the request reaches HttpClient
+        // (e.g. the queue superseded the command mid-call).
+        private sealed class CancellingHandler : HttpMessageHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw new TaskCanceledException();
+                }
+
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("[]", System.Text.Encoding.UTF8, "application/json")
+                });
             }
         }
 
@@ -156,6 +175,30 @@ namespace JellyfinHuePlugin.Tests.Services
             var ok = await service.SetGroupStateAsync("192.168.1.2", "bad", "0", new HueLightState { On = true });
 
             ok.Should().BeFalse();
+        }
+
+        [Fact]
+        public async Task SetGroupStateAsync_CancelledToken_Propagates()
+        {
+            var service = new HueService(NullLogger<HueService>.Instance, new CancellingHandler());
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            Func<Task> act = () => service.SetGroupStateAsync("192.168.1.2", "user", "0", new HueLightState { On = true }, cts.Token);
+
+            await act.Should().ThrowAsync<OperationCanceledException>();
+        }
+
+        [Fact]
+        public async Task ActivateSceneAsync_CancelledToken_Propagates()
+        {
+            var service = new HueService(NullLogger<HueService>.Instance, new CancellingHandler());
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            Func<Task> act = () => service.ActivateSceneAsync("192.168.1.2", "user", "0", "scene1", null, cts.Token);
+
+            await act.Should().ThrowAsync<OperationCanceledException>();
         }
     }
 }

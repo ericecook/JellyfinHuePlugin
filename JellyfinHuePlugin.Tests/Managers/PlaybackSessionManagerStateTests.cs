@@ -500,6 +500,58 @@ namespace JellyfinHuePlugin.Tests.Managers
         }
 
         [Fact]
+        public async Task StopWithoutEntry_ThenStart_ShareOneQueue()
+        {
+            var stopEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _hue.Setup(h => h.SetGroupStateAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                    It.Is<HueLightState>(s => s.Bri == 254), It.IsAny<CancellationToken>()))
+                .Callback(() => stopEntered.TrySetResult())
+                .Returns(() => release.Task); // ignores the token: simulates a bridge call that cannot be interrupted
+            var session = Session();
+
+            var stop = _manager.OnPlaybackStoppedAsync(Stop(session, new Movie()));
+            await stopEntered.Task;
+            var start = _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+
+            VerifyBrightness(20, Times.Never()); // start waits behind the blocked stop, sharing its queue
+            release.SetResult(true);
+            await Task.WhenAll(stop, start);
+
+            VerifyBrightness(20, Times.Once());
+        }
+
+        [Fact]
+        public async Task SessionEnded_ThenStart_SameId_ShareOneQueue()
+        {
+            var session = Session();
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+
+            var stopEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _hue.Setup(h => h.SetGroupStateAsync(
+                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                    It.Is<HueLightState>(s => s.Bri == 254), It.IsAny<CancellationToken>()))
+                .Callback(() => stopEntered.TrySetResult())
+                .Returns(() => release.Task); // ignores the token: simulates a bridge call that cannot be interrupted
+
+            var ended = _manager.OnSessionEndedAsync(Ended(session));
+            await stopEntered.Task;
+            var start2 = _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+
+            VerifyBrightness(20, Times.Once()); // only the first start; start2 waits behind the blocked session-ended stop
+            release.SetResult(true);
+            await Task.WhenAll(ended, start2);
+
+            VerifyBrightness(20, Times.Exactly(2));
+
+            // The entry survived the session-ended removal because start2 reclaimed it.
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: true));
+            VerifyBrightness(100, Times.Once());
+        }
+
+        [Fact]
         public async Task Dispose_CancelsInFlightAndSendsNothing()
         {
             GivenTurnOffWithLongTransition();
@@ -514,6 +566,25 @@ namespace JellyfinHuePlugin.Tests.Managers
 
             await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: true));
             VerifyBrightness(100, Times.Never());
+        }
+
+        [Fact]
+        public async Task Dispose_DuringOutroSegmentLoad_SendsNothing()
+        {
+            _config.Profiles[0].EnableOutroLights = true;
+            var tcs = new TaskCompletionSource<IEnumerable<MediaSegmentDto>>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _segments
+                .Setup(s => s.GetSegmentsAsync(It.IsAny<BaseItem>(), It.IsAny<IEnumerable<MediaSegmentType>>(),
+                    It.IsAny<LibraryOptions>(), It.IsAny<bool>()))
+                .Returns(tcs.Task);
+            var session = Session();
+
+            var start = _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+            _manager.Dispose();
+            tcs.SetResult(Array.Empty<MediaSegmentDto>());
+            await start;
+
+            VerifyTotalGroupCalls(Times.Never());
         }
 
         [Fact]

@@ -22,17 +22,24 @@ namespace JellyfinHuePlugin.Managers
         /// </summary>
         public Task Enqueue(Func<CancellationToken, Task> command)
         {
+            CancellationTokenSource? previous;
+            Task tail;
             lock (_gate)
             {
-                _current?.Cancel();
+                previous = _current;
                 var source = new CancellationTokenSource();
                 _current = source;
                 // ContinueWith runs the command off this thread, so nothing executes under the gate.
                 _tail = _tail
                     .ContinueWith(_ => RunAsync(command, source), CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default)
                     .Unwrap();
-                return _tail;
+                tail = _tail;
             }
+
+            // Cancel outside the gate: Cancel() can run continuations synchronously, and those
+            // continuations (e.g. the previous RunAsync's cleanup) may need the gate themselves.
+            previous?.Cancel();
+            return tail;
         }
 
         /// <summary>Cancels the running command and any command not yet started.</summary>

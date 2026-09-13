@@ -31,6 +31,18 @@ namespace JellyfinHuePlugin.Tests.Managers
             new(paused, positionSeconds * TimeSpan.TicksPerSecond, pluginEnabled, StartedAt.AddSeconds(elapsedSeconds));
 
         [Fact]
+        public void PluginDisabled_BeatsOutro()
+        {
+            var state = Snapshot(Profile(outro: true));
+
+            var result = SessionPolicy.OnProgress(state, Input(positionSeconds: 105, pluginEnabled: false));
+
+            result.Decision.Should().Be(ProgressDecision.PluginDisabled);
+            result.State.OutroLightsTriggered.Should().BeFalse();
+            ReferenceEquals(result.State, state).Should().BeTrue();
+        }
+
+        [Fact]
         public void PluginDisabled_NoActionAndSameInstance()
         {
             var state = Snapshot(Profile());

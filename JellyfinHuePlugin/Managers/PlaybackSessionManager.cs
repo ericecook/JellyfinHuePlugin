@@ -34,11 +34,13 @@ namespace JellyfinHuePlugin.Managers
         private readonly ILibraryManager _libraryManager;
         private readonly TimeProvider _clock;
 
-        /// <summary>One entry per Jellyfin session id, kept until the session ends or the plugin is disposed.</summary>
+        /// <summary>One entry per Jellyfin session id, kept until its stop finishes with nothing to resume, or the plugin is disposed.</summary>
         private readonly ConcurrentDictionary<string, SessionEntry> _sessions = new();
 
         /// <summary>Handlers started by raised events, so tests can wait for them without sleeping.</summary>
         private readonly ConcurrentDictionary<Task, byte> _inFlightHandlers = new();
+
+        private volatile bool _disposed;
 
         private sealed class SessionEntry
         {
@@ -110,6 +112,7 @@ namespace JellyfinHuePlugin.Managers
         {
             while (!_inFlightHandlers.IsEmpty)
             {
+                await Task.Yield();
                 try
                 {
                     await Task.WhenAll(_inFlightHandlers.Keys);
@@ -153,6 +156,8 @@ namespace JellyfinHuePlugin.Managers
             var outroSegments = profile.EnableOutroLights
                 ? await LoadOutroSegmentsAsync(e.Item)
                 : Array.Empty<TickRange>();
+
+            if (_disposed) return;
 
             var entry = _sessions.GetOrAdd(e.Session.Id, _ => new SessionEntry());
             lock (entry.Gate)
@@ -227,16 +232,14 @@ namespace JellyfinHuePlugin.Managers
 
             var config = _getConfig();
 
-            // The entry stays in the map so a start that follows shares its queue.
-            _sessions.TryGetValue(e.Session.Id, out var entry);
-            SessionSnapshot? snapshot = null;
-            if (entry != null)
+            // The entry stays in the map (created here if it doesn't exist yet) so a start
+            // that follows always shares its queue with this stop.
+            var entry = _sessions.GetOrAdd(e.Session.Id, _ => new SessionEntry());
+            SessionSnapshot? snapshot;
+            lock (entry.Gate)
             {
-                lock (entry.Gate)
-                {
-                    snapshot = entry.State;
-                    entry.State = null;
-                }
+                snapshot = entry.State;
+                entry.State = null;
             }
 
             var profile = snapshot?.Profile;
@@ -259,7 +262,7 @@ namespace JellyfinHuePlugin.Managers
             var bridge = ResolveBridge(config, profile);
             if (bridge == null) return;
 
-            await EnqueueAsync(entry?.Queue ?? new SessionCommandQueue(), e.Session.Id, LightAction.Stop, bridge, profile);
+            await EnqueueAsync(entry.Queue, e.Session.Id, LightAction.Stop, bridge, profile);
         }
 
         internal async Task OnSessionEndedAsync(SessionEventArgs e)
@@ -267,7 +270,7 @@ namespace JellyfinHuePlugin.Managers
             var session = e.SessionInfo;
             if (session == null) return;
 
-            if (!_sessions.TryRemove(session.Id, out var entry))
+            if (!_sessions.TryGetValue(session.Id, out var entry))
             {
                 return;
             }
@@ -281,7 +284,16 @@ namespace JellyfinHuePlugin.Managers
 
             if (snapshot == null)
             {
-                // Already stopped; the stop restored the lights.
+                // Already stopped; the stop restored the lights. Remove the entry unless a
+                // start reclaimed it since the lock above was released.
+                lock (entry.Gate)
+                {
+                    if (entry.State == null)
+                    {
+                        _sessions.TryRemove(new KeyValuePair<string, SessionEntry>(session.Id, entry));
+                    }
+                }
+
                 return;
             }
 
@@ -295,12 +307,24 @@ namespace JellyfinHuePlugin.Managers
             if (bridge == null) return;
 
             await EnqueueAsync(entry.Queue, session.Id, LightAction.Stop, bridge, profile);
+
+            // Remove the entry now that the stop has run, unless a start reclaimed it while
+            // the stop was in flight.
+            lock (entry.Gate)
+            {
+                if (entry.State == null)
+                {
+                    _sessions.TryRemove(new KeyValuePair<string, SessionEntry>(session.Id, entry));
+                }
+            }
         }
 
         private Task EnqueueAsync(SessionCommandQueue queue, string sessionId, LightAction action, HueBridge bridge, LightControlProfile profile)
         {
             return queue.Enqueue(async ct =>
             {
+                if (_disposed) return;
+
                 try
                 {
                     await _executor.ExecuteAsync(action, bridge, profile, ct);
@@ -387,6 +411,8 @@ namespace JellyfinHuePlugin.Managers
 
         public void Dispose()
         {
+            _disposed = true;
+
             _sessionManager.PlaybackStart -= OnPlaybackStart;
             _sessionManager.PlaybackStopped -= OnPlaybackStopped;
             _sessionManager.PlaybackProgress -= OnPlaybackProgress;

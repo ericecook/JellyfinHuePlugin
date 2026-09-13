@@ -407,6 +407,10 @@ namespace JellyfinHuePlugin.Services
 
                 return await ReadBridgeResultAsync(response, $"scene {sceneId} on group {groupId}", cancellationToken);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error activating scene {SceneId}", sceneId);
@@ -427,6 +431,10 @@ namespace JellyfinHuePlugin.Services
                     cancellationToken));
 
                 return await ReadBridgeResultAsync(response, $"group {groupId} state", cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
