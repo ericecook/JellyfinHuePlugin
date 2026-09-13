@@ -59,9 +59,9 @@ namespace JellyfinHuePlugin.Tests.Configuration
             profile.PauseSceneId.Should().BeEmpty();
             profile.StopSceneId.Should().BeEmpty();
             profile.TurnOffLightsOnPlay.Should().BeFalse();
-            profile.PlayBrightness.Should().Be(20);
-            profile.PauseBrightness.Should().Be(100);
-            profile.StopBrightness.Should().Be(254);
+            profile.PlayBrightness.Should().Be(8);
+            profile.PauseBrightness.Should().Be(39);
+            profile.StopBrightness.Should().Be(100);
             profile.EnableOutroLights.Should().BeFalse(); // Default: Outro detection disabled
         }
 
@@ -83,8 +83,8 @@ namespace JellyfinHuePlugin.Tests.Configuration
 
         [Theory]
         [InlineData(0)]
-        [InlineData(127)]
-        [InlineData(254)]
+        [InlineData(50)]
+        [InlineData(100)]
         public void Profile_BrightnessValues_ShouldAcceptValidRange(int brightness)
         {
             // Arrange
@@ -355,6 +355,101 @@ namespace JellyfinHuePlugin.Tests.Configuration
             p.PlayTransitionDuration.Should().Be(10);
             p.EnablePauseTransition.Should().BeFalse();
             p.PauseTransitionDuration.Should().Be(4);
+        }
+
+        [Theory]
+        [InlineData(0, 0)]
+        [InlineData(1, 0)]
+        [InlineData(10, 4)]
+        [InlineData(20, 8)]
+        [InlineData(80, 31)]
+        [InlineData(100, 39)]
+        [InlineData(127, 50)]
+        [InlineData(200, 79)]
+        [InlineData(254, 100)]
+        [InlineData(300, 100)]
+        public void ToPercent_ScalesAndClamps(int v1, int expected)
+        {
+            PluginConfiguration.ToPercent(v1).Should().Be(expected);
+        }
+
+        [Fact]
+        public void MigrateBrightnessToPercent_ConvertsEveryProfileOnce()
+        {
+            var config = new PluginConfiguration();
+            config.Profiles.Add(new LightControlProfile { PlayBrightness = 20, PauseBrightness = 100, StopBrightness = 254 });
+            config.Profiles.Add(new LightControlProfile { PlayBrightness = 0, PauseBrightness = 127, StopBrightness = 200 });
+
+            config.MigrateBrightnessToPercent().Should().BeTrue();
+
+            config.SchemaVersion.Should().Be(2);
+            config.Profiles[0].PlayBrightness.Should().Be(8);
+            config.Profiles[0].PauseBrightness.Should().Be(39);
+            config.Profiles[0].StopBrightness.Should().Be(100);
+            config.Profiles[1].PlayBrightness.Should().Be(0);
+            config.Profiles[1].PauseBrightness.Should().Be(50);
+            config.Profiles[1].StopBrightness.Should().Be(79);
+
+            config.MigrateBrightnessToPercent().Should().BeFalse();
+            config.Profiles[0].PlayBrightness.Should().Be(8); // not scaled twice
+        }
+
+        [Fact]
+        public void MigrateBrightnessToPercent_FreshConfiguration_StampsTheVersionOnce()
+        {
+            var config = new PluginConfiguration();
+
+            config.SchemaVersion.Should().Be(0);
+            config.MigrateBrightnessToPercent().Should().BeTrue();
+            config.SchemaVersion.Should().Be(2);
+            config.MigrateBrightnessToPercent().Should().BeFalse();
+        }
+
+        [Fact]
+        public void XmlDeserialization_WithoutSchemaVersion_ReadsAsZero()
+        {
+            const string xml = @"<?xml version=""1.0"" encoding=""utf-8""?>
+<PluginConfiguration xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xmlns:xsd=""http://www.w3.org/2001/XMLSchema"">
+  <Bridges />
+  <Profiles>
+    <LightControlProfile>
+      <Name>Old</Name>
+      <PlayBrightness>20</PlayBrightness>
+      <PauseBrightness>100</PauseBrightness>
+      <StopBrightness>254</StopBrightness>
+    </LightControlProfile>
+  </Profiles>
+  <EnablePlugin>true</EnablePlugin>
+</PluginConfiguration>";
+            var serializer = new System.Xml.Serialization.XmlSerializer(typeof(PluginConfiguration));
+            using var reader = new System.IO.StringReader(xml);
+
+            var config = (PluginConfiguration)serializer.Deserialize(reader)!;
+
+            config.SchemaVersion.Should().Be(0);
+            config.MigrateBrightnessToPercent().Should().BeTrue();
+            config.Profiles[0].StopBrightness.Should().Be(100);
+        }
+
+        [Fact]
+        public void XmlRoundTrip_KeepsSchemaVersion()
+        {
+            var config = new PluginConfiguration { SchemaVersion = 2 };
+            var serializer = new System.Xml.Serialization.XmlSerializer(typeof(PluginConfiguration));
+            using var writer = new System.IO.StringWriter();
+            serializer.Serialize(writer, config);
+            using var reader = new System.IO.StringReader(writer.ToString());
+
+            var back = (PluginConfiguration)serializer.Deserialize(reader)!;
+
+            back.SchemaVersion.Should().Be(2);
+            back.MigrateBrightnessToPercent().Should().BeFalse();
+        }
+
+        [Fact]
+        public void HueBridge_BridgeId_DefaultsToEmpty()
+        {
+            new HueBridge().BridgeId.Should().BeEmpty();
         }
     }
 }

@@ -1,4 +1,5 @@
 using MediaBrowser.Model.Plugins;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
@@ -43,11 +44,12 @@ namespace JellyfinHuePlugin.Configuration
         public string PauseSceneId { get; set; } = string.Empty;
         public string StopSceneId { get; set; } = string.Empty;
 
-        // Brightness
+        // Brightness, percent (0–100). Configurations written before schema version 2 used 0–254
+        // and are converted once by PluginConfiguration.MigrateBrightnessToPercent().
         public bool TurnOffLightsOnPlay { get; set; } = false;
-        public int PlayBrightness { get; set; } = 20;
-        public int PauseBrightness { get; set; } = 100;
-        public int StopBrightness { get; set; } = 254;
+        public int PlayBrightness { get; set; } = 8;
+        public int PauseBrightness { get; set; } = 39;
+        public int StopBrightness { get; set; } = 100;
 
         // Per-state transition settings (in deciseconds, 0.1s increments)
         public bool EnablePlayTransition { get; set; } = false;
@@ -93,6 +95,41 @@ namespace JellyfinHuePlugin.Configuration
         public List<LightControlProfile> Profiles { get; set; } = new List<LightControlProfile>();
 
         public bool EnablePlugin { get; set; } = true;
+
+        /// <summary>
+        /// Version of the stored shape. 0 is everything written before percent brightness; a
+        /// deserialised file without the element reads as 0, which is what triggers the
+        /// one-time conversion. Fresh configurations also start at 0 and are stamped on first load.
+        /// </summary>
+        public int SchemaVersion { get; set; } = 0;
+
+        public const int CurrentSchemaVersion = 2;
+
+        /// <summary>
+        /// Converts every profile's brightness from the v1 0–254 scale to percent, once, and
+        /// stamps the schema version. Returns true when something was written, including the
+        /// first load of a fresh configuration.
+        /// </summary>
+        public bool MigrateBrightnessToPercent()
+        {
+            if (SchemaVersion >= CurrentSchemaVersion)
+            {
+                return false;
+            }
+
+            foreach (var profile in Profiles)
+            {
+                profile.PlayBrightness = ToPercent(profile.PlayBrightness);
+                profile.PauseBrightness = ToPercent(profile.PauseBrightness);
+                profile.StopBrightness = ToPercent(profile.StopBrightness);
+            }
+
+            SchemaVersion = CurrentSchemaVersion;
+            return true;
+        }
+
+        internal static int ToPercent(int v1Brightness)
+            => Math.Clamp((int)Math.Round(v1Brightness * 100.0 / 254.0, MidpointRounding.AwayFromZero), 0, 100);
 
         // Legacy single-bridge fields — absorbed on XML deserialization, never written
         // back and never exposed over the JSON config API.

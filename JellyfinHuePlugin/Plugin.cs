@@ -48,6 +48,13 @@ namespace JellyfinHuePlugin
                 SaveConfiguration();
             }
 
+            // One-time conversion of brightness from 0-254 to percent (schema version 2)
+            if (Configuration.MigrateBrightnessToPercent())
+            {
+                _logger.LogInformation("Converted profile brightness to percent (schema version 2)");
+                SaveConfiguration();
+            }
+
             // Initialize playback manager
             InitializePlaybackManager(loggerFactory);
         }
