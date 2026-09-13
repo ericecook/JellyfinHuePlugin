@@ -288,28 +288,7 @@ namespace JellyfinHuePlugin.Services
         }
         
         // Normalize bridge IP to remove any protocol and ensure it's just IP:port
-        internal static string NormalizeBridgeIp(string bridgeIp)
-        {
-            if (string.IsNullOrWhiteSpace(bridgeIp))
-            {
-                return bridgeIp;
-            }
-            
-            // Remove http:// or https://
-            bridgeIp = bridgeIp.Replace("https://", "").Replace("http://", "");
-            
-            // Remove trailing slash
-            bridgeIp = bridgeIp.TrimEnd('/');
-            
-            // Remove any path components (e.g., /api)
-            var slashIndex = bridgeIp.IndexOf('/');
-            if (slashIndex > 0)
-            {
-                bridgeIp = bridgeIp.Substring(0, slashIndex);
-            }
-            
-            return bridgeIp;
-        }
+        internal static string NormalizeBridgeIp(string bridgeIp) => BridgeUri.StripSchemeAndPath(bridgeIp);
         
         // Test connection to bridge - returns the raw response for diagnostics
         public async Task<string> TestBridgeConnectionAsync(string bridgeIp, CancellationToken cancellationToken = default)
