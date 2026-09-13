@@ -270,7 +270,8 @@
 
                     <div id="configSection" class="hue-section-card" style="display:none;">
                         <h2>Light Control Profiles</h2>
-                        
+                        <div id="migrationNotice" class="fieldDescription" style="display:none; margin: 0 0 15px; padding: 8px 12px; border-left: 4px solid #4caf50;"></div>
+
                         <div class="fieldDescription" style="margin-bottom: 20px;">
                             Create multiple profiles to control different lights for different playback clients. 
                             Profiles are checked in order - the first matching profile will be used.
@@ -983,10 +984,25 @@
                     }, 50);
                 },
 
+                migrationReport: null,
+
                 loadConfiguration: function () {
                     Dashboard.showLoadingMsg();
 
-                    ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function (config) {
+                    // Rewrite stored v1 ids and learn bridge ids *before* reading the configuration,
+                    // so a later save from this page can never write stale ids back over the rewrite.
+                    // A failed migrate call is not fatal: the page then shows the configuration as stored.
+                    ApiClient.ajax({
+                        type: 'POST',
+                        url: ApiClient.getUrl('api/hueplugin/migrate'),
+                        dataType: 'json'
+                    }).catch(function (error) {
+                        console.warn('Migration call failed; loading configuration as stored', error);
+                        return null;
+                    }).then(function (report) {
+                        HuePluginConfig.migrationReport = report;
+                        return ApiClient.getPluginConfiguration(HuePluginConfig.pluginId);
+                    }).then(function (config) {
                         console.log('Loading configuration:', config);
 
                         try {
@@ -997,6 +1013,7 @@
                             // Load profiles
                             HuePluginConfig.profiles = config.Profiles || [];
                             HuePluginConfig.renderProfiles();
+                            HuePluginConfig.renderMigrationNotice();
 
                             // Show config section if any bridge is authenticated
                             var hasAuthBridge = HuePluginConfig.bridges.some(function(b) {
@@ -1005,9 +1022,6 @@
 
                             if (hasAuthBridge) {
                                 document.querySelector('#configSection').style.display = 'block';
-
-                            } else {
-
                             }
 
                             Dashboard.hideLoadingMsg();
@@ -1021,6 +1035,33 @@
                         Dashboard.hideLoadingMsg();
                         Dashboard.alert('Failed to load plugin configuration. Check the server logs for details.');
                     });
+                },
+
+                // One line per thing the migrate call did or could not do. Hidden when it did nothing.
+                renderMigrationNotice: function () {
+                    var el = document.querySelector('#migrationNotice');
+                    if (!el) return;
+                    var report = HuePluginConfig.migrationReport;
+                    if (!report) { el.style.display = 'none'; return; }
+
+                    var rewritten = 0, unresolved = 0;
+                    (report.Profiles || []).forEach(function (p) {
+                        rewritten += (p.Rewritten || []).length;
+                        unresolved += (p.Unresolved || []).length;
+                    });
+                    var unreachable = (report.Bridges || []).filter(function (b) { return b.Status === 'unreachable'; });
+
+                    var lines = [];
+                    if (rewritten > 0) lines.push('Updated ' + rewritten + ' profile target(s) to Hue API v2 ids.');
+                    if (unresolved > 0) lines.push(unresolved + ' profile target(s) were not found on their bridge. Open the profile and re-select them.');
+                    unreachable.forEach(function (b) {
+                        lines.push('Bridge ' + HuePluginConfig.escapeHtml(b.Name || 'Bridge') + ' could not be reached; its profiles were not checked.');
+                    });
+
+                    if (lines.length === 0) { el.style.display = 'none'; return; }
+                    el.style.borderLeftColor = (unresolved > 0 || unreachable.length > 0) ? '#ff9800' : '#4caf50';
+                    el.innerHTML = lines.map(function (l) { return '<div>' + l + '</div>'; }).join('');
+                    el.style.display = 'block';
                 },
 
                 // Render bridge cards
@@ -1044,6 +1085,7 @@
                         html += '<div style="flex: 1;">';
                         html += '<h3 style="margin: 0;">' + HuePluginConfig.escapeHtml(bridge.Name || 'Bridge') + '</h3>';
                         html += '<div style="font-size: 0.88em; opacity: 0.6; margin-top: 4px;">' + HuePluginConfig.escapeHtml(bridge.IpAddress) + '</div>';
+                        html += '<div id="bridgeInfo-' + index + '" style="font-size: 0.85em; opacity: 0.6; margin-top: 2px;"></div>';
                         html += '<div id="bridgeStatus-' + index + '" style="display: inline-flex; align-items: center; gap: 6px; margin-top: 6px;">';
                         html += '<span class="bridge-status-dot" style="width: 8px; height: 8px; border-radius: 50%; background: ' + statusColor + '; display: inline-block;"></span>';
                         html += '<span class="bridge-status-text" style="font-size: 0.85em; color: ' + statusColor + ';">' + statusText + '</span>';
@@ -1069,14 +1111,14 @@
                             contentType: 'application/json',
                             dataType: 'json'
                         }).then(function(result) {
-                            HuePluginConfig.updateBridgeStatus(index, result.Success, result.Success ? 'Connected' : (result.Error || 'Auth failed'));
+                            HuePluginConfig.updateBridgeStatus(index, result.Success, result.Success ? 'Connected' : (result.Error || 'Auth failed'), result);
                         }).catch(function() {
                             HuePluginConfig.updateBridgeStatus(index, false, 'Connection error');
                         });
                     });
                 },
 
-                updateBridgeStatus: function(index, success, text) {
+                updateBridgeStatus: function(index, success, text, result) {
                     if (HuePluginConfig.bridges[index]) {
                         HuePluginConfig.bridges[index]._verified = success;
                     }
@@ -1087,6 +1129,12 @@
                     var textEl = el.querySelector('.bridge-status-text');
                     textEl.style.color = color;
                     textEl.textContent = text;
+
+                    // Facts from /api/0/config, present whenever the bridge answered at all.
+                    var info = document.querySelector('#bridgeInfo-' + index);
+                    if (info && result && result.HardwareId) {
+                        info.textContent = result.HardwareId + ' · ' + (result.ModelId || '?') + ' · software ' + (result.SoftwareVersion || '?');
+                    }
                 },
 
                 // Edit a bridge by index
@@ -1903,14 +1951,29 @@
                     ApiClient.getJSON(ApiClient.getUrl(url)).then(function (groups) {
                         var select = document.querySelector('#profileTargetGroupId');
                         select.innerHTML = '<option value="0">All Lights</option>';
-                        
+
+                        // Keyed by grouped_light id (the value a profile stores); Type is room or zone.
+                        var byType = { room: [], zone: [] };
                         for (var id in groups) {
-                            var option = document.createElement('option');
-                            option.value = id;
-                            option.text = groups[id].Name;
-                            select.appendChild(option);
+                            var group = groups[id];
+                            if (byType[group.Type]) byType[group.Type].push({ id: id, name: group.Name });
                         }
-                        
+
+                        [['room', 'Rooms'], ['zone', 'Zones']].forEach(function (kind) {
+                            var items = byType[kind[0]];
+                            if (items.length === 0) return;
+                            items.sort(function (a, b) { return a.name.localeCompare(b.name); });
+                            var optgroup = document.createElement('optgroup');
+                            optgroup.label = kind[1];
+                            items.forEach(function (item) {
+                                var option = document.createElement('option');
+                                option.value = item.id;
+                                option.text = item.name;
+                                optgroup.appendChild(option);
+                            });
+                            select.appendChild(optgroup);
+                        });
+
                         // Set the saved value after populating
                         HuePluginConfig.setSelectValuePreservingUnknown(select, savedValue);
                     }).catch(function(err) {
