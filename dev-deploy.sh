@@ -7,12 +7,17 @@ PROJECT="JellyfinHuePlugin/JellyfinHuePlugin.csproj"
 echo "Building plugin..."
 dotnet publish "$PROJECT" -c Release -o ./dev-output
 
+# Stop before copying: replacing the DLL under a running server makes its shutdown log a
+# BadImageFormatException from the plugin's dispose path.
+echo "Stopping Jellyfin..."
+docker compose stop jellyfin
+
 echo "Deploying to $PLUGIN_DIR..."
 sudo mkdir -p "$PLUGIN_DIR"
 sudo cp dev-output/* "$PLUGIN_DIR/"
 
-echo "Restarting Jellyfin..."
-docker compose restart jellyfin
+echo "Starting Jellyfin..."
+docker compose start jellyfin
 
 echo ""
 echo "Deployed! Access at http://localhost:8096"

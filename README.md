@@ -86,6 +86,8 @@ Put more specific profiles first (device ID > client name > no filter).
 
 Version 4 talks only Hue's CLIP v2 API. On the first start, profile brightness values are converted once from the old 0–254 scale to percent. On the first visit to the plugin page, stored room and scene ids are rewritten to v2 ids; anything that no longer exists on the bridge is shown as **Unresolved** in the profile editor and must be re-selected. Scenes now light the room or zone they belong to rather than the profile's light group.
 
+4.0 is the only version that converts 3.x settings (brightness scale and stored ids); upgrade through 4.0 before moving to a later release. Editing a bridge's address or key on the plugin page clears its certificate pin; authenticate again afterwards.
+
 ### Testing against a non-Signify bridge
 
 For test rigs only: set the environment variable `JELLYFIN_HUE_EXTRA_ROOT_PEM` to the path of one extra root certificate (PEM) and the plugin trusts bridge certificates chaining to it as well as to Signify's root. The certificate's subject CN must still be the bridge id.
@@ -112,12 +114,13 @@ All endpoints require an authenticated Jellyfin **administrator** account (the s
 ## Architecture
 
 ```
-Plugin.cs                                 Entry point and lifecycle
+Plugin.cs                                 Identity, configuration file, page-save hook
+PluginServiceRegistrator.cs               Composition root (Jellyfin DI + hosted service)
 ├── Services/HueService.cs                CLIP v2 client with certificate pinning
 ├── Services/HueResourceCatalog.cs        Rooms, zones and scenes per bridge; resolves v1 ids
 ├── Services/MdnsBridgeDiscovery.cs       Local discovery (_hue._tcp)
-├── Services/ConfigurationMigrator.cs     One-time rewrite of stored v1 ids
-├── Managers/PlaybackSessionManager.cs    Playback events and light orchestration
+├── Services/ConfigurationMigrator.cs     One-time rewrite of stored v1 ids (4.0 only)
+├── Managers/PlaybackSessionManager.cs    Hosted service: playback events and light orchestration
 ├── Configuration/PluginConfiguration.cs  Settings models
 ├── Configuration/configPage.html         Web configuration UI
 ├── Api/HueController.cs                  REST API for the config UI
