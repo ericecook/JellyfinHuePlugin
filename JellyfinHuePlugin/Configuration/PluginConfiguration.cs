@@ -12,6 +12,9 @@ namespace JellyfinHuePlugin.Configuration
         public string Name { get; set; } = string.Empty;
         public string IpAddress { get; set; } = string.Empty;
         public string Username { get; set; } = string.Empty;
+
+        /// <summary>The bridge's own id (16 hex characters, lower case), the subject of its TLS certificate. Empty until learned.</summary>
+        public string BridgeId { get; set; } = string.Empty;
     }
 
     public class LightControlProfile

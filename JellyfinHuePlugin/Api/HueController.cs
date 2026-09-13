@@ -146,10 +146,11 @@ namespace JellyfinHuePlugin.Api
         {
             _logger.LogInformation("API: Attempting authentication with bridge {BridgeIp}", request.BridgeIp);
 
-            var username = await _hueService.AuthenticateAsync(request.BridgeIp, cancellationToken: cancellationToken);
+            var outcome = await _hueService.AuthenticateAsync(request.BridgeIp, cancellationToken);
 
-            if (username != null)
+            if (outcome != null)
             {
+                var username = outcome.Username;
                 var config = Plugin.Instance?.Configuration;
                 if (config != null)
                 {
@@ -175,6 +176,7 @@ namespace JellyfinHuePlugin.Api
                     }
 
                     bridge.Username = username;
+                    bridge.BridgeId = outcome.BridgeId;
                     bridge.IpAddress = request.BridgeIp;
                     Plugin.Instance?.SaveConfiguration();
 
@@ -187,7 +189,7 @@ namespace JellyfinHuePlugin.Api
             return Ok(new AuthenticationResult
             {
                 Success = false,
-                Error = "Link button not pressed. Press the button on your Hue bridge and try again."
+                Error = "Authentication failed. Press the link button on the bridge and try again; the Jellyfin log names the reason (link button, unsupported bridge software, or certificate)."
             });
         }
 
