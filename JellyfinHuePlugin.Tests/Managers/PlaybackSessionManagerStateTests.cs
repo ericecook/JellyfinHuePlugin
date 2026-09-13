@@ -51,7 +51,7 @@ namespace JellyfinHuePlugin.Tests.Managers
         {
             _hue = new Mock<HueService>(new NullLogger<HueService>()) { CallBase = false };
             _hue.Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()))
-                .Callback<HueBridge, string, GroupedLightState, CancellationToken>((_, _, s, _) => _sentBrightness.Add(s.On == false ? -1 : (int?)s.Brightness))
+                .Callback<HueBridge, string, GroupedLightState, CancellationToken>((_, _, s, _) => _sentBrightness.Add((int?)s.Brightness))
                 .ReturnsAsync(true);
             _hue.Setup(h => h.RecallSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(true);
@@ -126,11 +126,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             _hue.Verify(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(),
                 It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()), times);
 
-        private void VerifyOff(Times times) =>
-            _hue.Verify(h => h.SetGroupedLightAsync(It.Is<HueBridge>(b => b.Id == "bridge1"), "gl-1",
-                It.Is<GroupedLightState>(s => s.On == false), It.IsAny<CancellationToken>()), times);
-
-        /// <summary>Blocks the next call that sends the given brightness until the returned release completes.</summary>
+        /// <summary>Blocks every call that sends the given brightness, for the rest of the test, until the returned release completes.</summary>
         private (Task Entered, TaskCompletionSource<bool> Release) GateBrightness(int brightness)
         {
             var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

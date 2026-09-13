@@ -246,19 +246,27 @@ namespace JellyfinHuePlugin.Managers
             // that follows always shares its queue with this stop.
             var entry = _sessions.GetOrAdd(e.Session.Id, _ => new SessionEntry());
             var stoppedItem = ItemIdOf(e.Item);
-            SessionSnapshot? snapshot;
+            SessionSnapshot? snapshot = null;
+            Guid? ignoredForCurrentItem = null;
             lock (entry.Gate)
             {
                 // Jellyfin raises each event on its own task, so an auto-play stop for the previous
                 // item can arrive after the next item's start. That stop must not touch the new item.
                 if (entry.State is { ItemId: Guid current } && stoppedItem is Guid stopped && current != stopped)
                 {
-                    _logger.LogDebug("Ignoring stop for item {StoppedItem}: session {SessionId} is playing {CurrentItem}", stopped, e.Session.Id, current);
-                    return;
+                    ignoredForCurrentItem = current;
                 }
+                else
+                {
+                    snapshot = entry.State;
+                    entry.State = null;
+                }
+            }
 
-                snapshot = entry.State;
-                entry.State = null;
+            if (ignoredForCurrentItem is Guid ignoredFor)
+            {
+                _logger.LogDebug("Ignoring stop for item {StoppedItem}: session {SessionId} is playing {CurrentItem}", stoppedItem, e.Session.Id, ignoredFor);
+                return;
             }
 
             var profile = snapshot?.Profile;
