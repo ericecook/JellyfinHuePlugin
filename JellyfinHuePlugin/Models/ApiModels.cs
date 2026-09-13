@@ -65,6 +65,8 @@ namespace JellyfinHuePlugin.Api
         public string? GroupId { get; set; }
         public string? SceneId { get; set; }
         public int Brightness { get; set; } = 100;
+        /// <summary>Turn the group off instead of setting a brightness, as a turn-off play state does.</summary>
+        public bool TurnOff { get; set; }
     }
 
     public class TestConnectionRequest

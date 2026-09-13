@@ -338,9 +338,10 @@ namespace JellyfinHuePlugin.Api
                     return StatusCode(500, "Target group not found on the bridge; re-select it");
                 }
 
-                success = await _hueService.SetGroupedLightAsync(bridge, groupedLightId,
-                    new GroupedLightState { On = true, Brightness = Math.Clamp(request.Brightness, 0, 100), DurationMs = 1000 },
-                    cancellationToken);
+                var state = request.TurnOff
+                    ? new GroupedLightState { On = false, DurationMs = 1000 }
+                    : new GroupedLightState { On = true, Brightness = Math.Clamp(request.Brightness, 0, 100), DurationMs = 1000 };
+                success = await _hueService.SetGroupedLightAsync(bridge, groupedLightId, state, cancellationToken);
             }
 
             if (success)

@@ -595,7 +595,7 @@
 
                 // Helper: Get brightness description
                 getBrightnessDescription: function(value) {
-                    if (value === 0) return 'OFF (responsive)';
+                    if (value === 0) return 'Minimum';
                     if (value < 20) return 'Very Dim';
                     if (value < 40) return 'Dim';
                     if (value < 60) return 'Medium';
@@ -688,12 +688,13 @@
                     Dashboard.showLoadingMsg();
                     
                     var groupId = profile.TargetGroupId || '0';
-                    var brightness = profile.TurnOffLightsOnPlay ? 0 : (profile.PlayBrightness !== undefined ? profile.PlayBrightness : 8);
+                    var turnOff = !!profile.TurnOffLightsOnPlay;
+                    var brightness = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 8;
 
                     ApiClient.ajax({
                         type: 'POST',
                         url: ApiClient.getUrl('api/hueplugin/test'),
-                        data: JSON.stringify({ BridgeId: profile.BridgeId || '', GroupId: groupId, Brightness: brightness }),
+                        data: JSON.stringify({ BridgeId: profile.BridgeId || '', GroupId: groupId, Brightness: brightness, TurnOff: turnOff }),
                         contentType: 'application/json'
                     }).then(function() {
                         Dashboard.hideLoadingMsg();
