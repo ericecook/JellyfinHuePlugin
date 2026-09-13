@@ -191,7 +191,7 @@ namespace JellyfinHuePlugin.Services
                 return null;
             }
 
-            var bridgeId = await ResolveBridgeIdAsync(host, bridge.BridgeId, cancellationToken);
+            var bridgeId = await ResolveBridgeIdAsync(host, bridge.HardwareId, cancellationToken);
             return bridgeId == null ? null : (host, bridgeId);
         }
 
@@ -219,8 +219,8 @@ namespace JellyfinHuePlugin.Services
                 return null;
             }
 
-            _bridgeIdsByHost[host] = info.BridgeId;
-            return info.BridgeId;
+            _bridgeIdsByHost[host] = info.HardwareId;
+            return info.HardwareId;
         }
 
         private static string? GetString(JsonElement element, params string[] path)
@@ -440,12 +440,12 @@ namespace JellyfinHuePlugin.Services
 
             try
             {
-                _logger.LogInformation("Attempting to authenticate with bridge {BridgeId} at {Host}", info.BridgeId, host);
+                _logger.LogInformation("Attempting to authenticate with bridge {HardwareId} at {Host}", info.HardwareId, host);
 
                 var uri = BridgeUri.Build(host, "api");
                 var body = new { devicetype = DeviceType, generateclientkey = false };
                 var response = await SendWithRetryAsync(() => _httpClient.SendAsync(
-                    NewRequest(HttpMethod.Post, uri, null, info.BridgeId, body), cancellationToken), cancellationToken);
+                    NewRequest(HttpMethod.Post, uri, null, info.HardwareId, body), cancellationToken), cancellationToken);
                 var content = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 if (content.TrimStart().StartsWith('<'))
@@ -469,9 +469,9 @@ namespace JellyfinHuePlugin.Services
                 var username = GetString(first, "success", "username");
                 if (!string.IsNullOrEmpty(username))
                 {
-                    _bridgeIdsByHost[host] = info.BridgeId;
-                    _logger.LogInformation("Successfully authenticated with bridge {BridgeId}", info.BridgeId);
-                    return new AuthenticationOutcome(username, info.BridgeId);
+                    _bridgeIdsByHost[host] = info.HardwareId;
+                    _logger.LogInformation("Successfully authenticated with bridge {HardwareId}", info.HardwareId);
+                    return new AuthenticationOutcome(username, info.HardwareId);
                 }
 
                 if (first.TryGetProperty("error", out var error))
@@ -757,7 +757,7 @@ namespace JellyfinHuePlugin.Services
                 return "Error: the bridge did not answer /api/0/config with a bridge id. See the Jellyfin log for the reason.";
             }
 
-            return $"Bridge {info.BridgeId} (model {info.ModelId}, software {info.SoftwareVersion}, API {info.ApiVersion}) — "
+            return $"Bridge {info.HardwareId} (model {info.ModelId}, software {info.SoftwareVersion}, API {info.ApiVersion}) — "
                 + (info.SupportsV2 ? "supports API v2." : $"does NOT support API v2; bridge software {MinimumV2SoftwareVersion} or newer is required.");
         }
 

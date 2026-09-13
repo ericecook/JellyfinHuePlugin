@@ -14,8 +14,16 @@ namespace JellyfinHuePlugin.Configuration
         public string IpAddress { get; set; } = string.Empty;
         public string Username { get; set; } = string.Empty;
 
-        /// <summary>The bridge's own id (16 hex characters, lower case), the subject of its TLS certificate. Empty until learned.</summary>
-        public string BridgeId { get; set; } = string.Empty;
+        /// <summary>
+        /// The bridge's own id, as reported by Hue's <c>bridgeid</c> field from
+        /// <c>GET /api/0/config</c>: 16 lower-case hex characters, and the subject Common Name
+        /// of its TLS certificate. Not to be confused with <see cref="Id"/>, the GUID this
+        /// plugin generates to identify a configured bridge entry. Empty until learned.
+        /// Serialized under the legacy element name "BridgeId" so existing stored
+        /// configurations keep deserializing after this property was renamed.
+        /// </summary>
+        [XmlElement("BridgeId")]
+        public string HardwareId { get; set; } = string.Empty;
     }
 
     public class LightControlProfile

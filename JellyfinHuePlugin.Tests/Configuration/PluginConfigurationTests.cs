@@ -447,9 +447,35 @@ namespace JellyfinHuePlugin.Tests.Configuration
         }
 
         [Fact]
-        public void HueBridge_BridgeId_DefaultsToEmpty()
+        public void HueBridge_HardwareId_DefaultsToEmpty()
         {
-            new HueBridge().BridgeId.Should().BeEmpty();
+            new HueBridge().HardwareId.Should().BeEmpty();
+        }
+
+        [Fact]
+        public void HueBridge_XmlDeserialization_OldBridgeIdElement_ReadsIntoHardwareId()
+        {
+            // HueBridge.HardwareId was renamed from BridgeId; [XmlElement("BridgeId")] keeps the
+            // on-disk element name so a configuration written before the rename still loads
+            // instead of silently dropping the bridge's pinned hardware id.
+            var oldXml = @"<?xml version=""1.0"" encoding=""utf-8""?>
+<PluginConfiguration xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xmlns:xsd=""http://www.w3.org/2001/XMLSchema"">
+  <Bridges>
+    <HueBridge>
+      <Id>bridge1</Id>
+      <Name>Living Room</Name>
+      <IpAddress>192.168.1.50</IpAddress>
+      <Username>abc123</Username>
+      <BridgeId>001788fffe123456</BridgeId>
+    </HueBridge>
+  </Bridges>
+</PluginConfiguration>";
+
+            var serializer = new XmlSerializer(typeof(PluginConfiguration));
+            using var reader = new StringReader(oldXml);
+            var config = (PluginConfiguration)serializer.Deserialize(reader)!;
+
+            config.Bridges.Should().ContainSingle().Which.HardwareId.Should().Be("001788fffe123456");
         }
     }
 }

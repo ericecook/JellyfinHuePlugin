@@ -9,13 +9,13 @@ namespace JellyfinHuePlugin.Services
     }
 
     /// <summary>Unauthenticated bridge facts from GET /api/0/config.</summary>
-    public sealed record HueBridgeInfo(string BridgeId, string SoftwareVersion, string ApiVersion, string ModelId)
+    public sealed record HueBridgeInfo(string HardwareId, string SoftwareVersion, string ApiVersion, string ModelId)
     {
         /// <summary>CLIP v2 needs bridge software 1948086000 or newer; the round v1 bridge never qualifies.</summary>
         public bool SupportsV2 => long.TryParse(SoftwareVersion, out var version) && version >= HueService.MinimumV2SoftwareVersion;
     }
 
-    public sealed record AuthenticationOutcome(string Username, string BridgeId);
+    public sealed record AuthenticationOutcome(string Username, string HardwareId);
 
     /// <summary>A room, zone or the bridge home, with the grouped_light service that controls it.</summary>
     public sealed record HueGroupResource(string Id, string GroupedLightId, string Name, string Type, string? IdV1);

@@ -22,7 +22,7 @@ namespace JellyfinHuePlugin.Tests.Services
         private readonly Mock<HueResourceCatalog> _catalog;
         private readonly List<GroupedLightState> _sent = new();
         private readonly LightCommandExecutor _executor;
-        private readonly HueBridge _bridge = new() { Id = "bridge1", Name = "Test Bridge", IpAddress = "192.168.1.50", Username = "testuser", BridgeId = "001788fffe123456" };
+        private readonly HueBridge _bridge = new() { Id = "bridge1", Name = "Test Bridge", IpAddress = "192.168.1.50", Username = "testuser", HardwareId = "001788fffe123456" };
 
         public LightCommandExecutorTests()
         {

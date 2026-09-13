@@ -70,7 +70,7 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         private static HueBridge Bridge(string bridgeId = BridgeId, string ip = "192.168.1.50", string key = Key) =>
-            new() { Id = "bridge1", Name = "Test Bridge", IpAddress = ip, Username = key, BridgeId = bridgeId };
+            new() { Id = "bridge1", Name = "Test Bridge", IpAddress = ip, Username = key, HardwareId = bridgeId };
 
         private static JsonElement Json(string? body) => JsonDocument.Parse(body ?? "null").RootElement;
 
@@ -80,7 +80,7 @@ namespace JellyfinHuePlugin.Tests.Services
             var info = await _service.GetBridgeInfoAsync("https://192.168.1.50/");
 
             info.Should().NotBeNull();
-            info!.BridgeId.Should().Be(BridgeId);
+            info!.HardwareId.Should().Be(BridgeId);
             info.SoftwareVersion.Should().Be("1968004000");
             info.ModelId.Should().Be("BSB002");
             info.SupportsV2.Should().BeTrue();
@@ -117,7 +117,7 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
-        public async Task Authenticate_Success_ReturnsKeyAndBridgeId_PinsTheId_NeverLogsTheKey()
+        public async Task Authenticate_Success_ReturnsKeyAndHardwareId_PinsTheId_NeverLogsTheKey()
         {
             _handler.Responses["/api"] = (HttpStatusCode.OK, $@"[{{""success"":{{""username"":""{Key}""}}}}]");
 
@@ -248,7 +248,7 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
-        public async Task SetGroupedLight_ConfiguredBridgeId_SkipsTheConfigCall()
+        public async Task SetGroupedLight_ConfiguredHardwareId_SkipsTheConfigCall()
         {
             _handler.Responses["/clip/v2/resource/grouped_light/gl-1"] = (HttpStatusCode.OK, Empty);
 
@@ -258,7 +258,7 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
-        public async Task SetGroupedLight_EmptyBridgeId_LearnsItOnceAndPins()
+        public async Task SetGroupedLight_EmptyHardwareId_LearnsItOnceAndPins()
         {
             _handler.Responses["/clip/v2/resource/grouped_light/gl-1"] = (HttpStatusCode.OK, Empty);
 
@@ -270,7 +270,7 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
-        public async Task SetGroupedLight_EmptyBridgeId_UnsupportedBridge_SendsNothingToClip()
+        public async Task SetGroupedLight_EmptyHardwareId_UnsupportedBridge_SendsNothingToClip()
         {
             _handler.Responses["/api/0/config"] = (HttpStatusCode.OK, $@"{{""swversion"":""1940000000"",""bridgeid"":""{BridgeId}""}}");
 

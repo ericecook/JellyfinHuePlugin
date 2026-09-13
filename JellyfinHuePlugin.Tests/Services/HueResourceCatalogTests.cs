@@ -29,7 +29,7 @@ namespace JellyfinHuePlugin.Tests.Services
         private readonly Mock<HueService> _hue;
         private readonly CapturingLogger _log = new();
         private readonly HueResourceCatalog _catalog;
-        private readonly HueBridge _bridge = new() { Id = "bridge1", Name = "Test Bridge", IpAddress = "192.168.1.50", Username = "key", BridgeId = "001788fffe123456" };
+        private readonly HueBridge _bridge = new() { Id = "bridge1", Name = "Test Bridge", IpAddress = "192.168.1.50", Username = "key", HardwareId = "001788fffe123456" };
 
         private static readonly IReadOnlyList<HueGroupResource> Groups = new[]
         {
@@ -301,7 +301,7 @@ namespace JellyfinHuePlugin.Tests.Services
                 Name = _bridge.Name,
                 IpAddress = _bridge.IpAddress,
                 Username = _bridge.Username,
-                BridgeId = _bridge.BridgeId
+                HardwareId = _bridge.HardwareId
             };
             _catalog.Invalidate(sameBridge);
 

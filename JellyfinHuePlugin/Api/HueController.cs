@@ -177,19 +177,19 @@ namespace JellyfinHuePlugin.Api
                         || !string.Equals(bridge.Username, username, StringComparison.Ordinal))
                     {
                         // This entry now describes a different bridge, or a different application
-                        // key on it. HueBridge.BridgeId is the 16-hex id the TLS certificate is
+                        // key on it. HueBridge.HardwareId is the 16-hex id the TLS certificate is
                         // pinned to (not the configuration GUID in HueBridge.Id): left alone it
                         // would keep pinning the previous bridge and fail every request on a
                         // subject mismatch, so clear it - the assignment below re-learns it from
                         // this authentication. The cached rooms and scenes describe the old bridge
                         // just as much, so drop those too.
                         _logger.LogInformation("Bridge {BridgeName} changed address or application key; clearing its pinned bridge id and cached resources", bridge.Name);
-                        bridge.BridgeId = string.Empty;
+                        bridge.HardwareId = string.Empty;
                         _catalog.Invalidate(bridge);
                     }
 
                     bridge.Username = username;
-                    bridge.BridgeId = outcome.BridgeId;
+                    bridge.HardwareId = outcome.HardwareId;
                     bridge.IpAddress = request.BridgeIp;
                     Plugin.Instance?.SaveConfiguration();
 
