@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using JellyfinHuePlugin.Services;
 
@@ -84,5 +85,43 @@ namespace JellyfinHuePlugin.Api
     {
         public bool Success { get; set; }
         public string? Error { get; set; }
+    }
+
+    public static class MigrationStatus
+    {
+        public const string Ok = "ok";
+        public const string Unauthenticated = "unauthenticated";
+        public const string Unreachable = "unreachable";
+        public const string Skipped = "skipped";
+    }
+
+    /// <summary>What POST api/hueplugin/migrate did. The page turns it into a banner.</summary>
+    public class MigrationReport
+    {
+        /// <summary>True when the configuration was modified and must be saved.</summary>
+        public bool Changed { get; set; }
+        public List<BridgeMigration> Bridges { get; set; } = new();
+        public List<ProfileMigration> Profiles { get; set; } = new();
+    }
+
+    public class BridgeMigration
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        /// <summary>One of MigrationStatus.Ok, Unauthenticated, Unreachable.</summary>
+        public string Status { get; set; } = MigrationStatus.Ok;
+        public bool HardwareIdLearned { get; set; }
+    }
+
+    public class ProfileMigration
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        /// <summary>MigrationStatus.Ok when its bridge was checked, Skipped otherwise.</summary>
+        public string Status { get; set; } = MigrationStatus.Ok;
+        /// <summary>Field names rewritten to v2 ids: TargetGroupId, PlaySceneId, PauseSceneId, StopSceneId.</summary>
+        public List<string> Rewritten { get; set; } = new();
+        /// <summary>Field names whose stored id matched nothing on the bridge; the stored value was left alone.</summary>
+        public List<string> Unresolved { get; set; } = new();
     }
 }

@@ -389,6 +389,38 @@ namespace JellyfinHuePlugin.Tests.Services
 
             VerifyGroupFetches(Times.Exactly(2));
         }
+
+        [Fact]
+        public async Task InvalidateAll_ForcesAFetchOnNextUseForEveryBridge()
+        {
+            var other = new HueBridge { Id = "bridge2", Name = "Other", IpAddress = "192.168.1.51", Username = "key2", HardwareId = "001788fffe654321" };
+            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+            await _catalog.GetGroupsAsync(other, CancellationToken.None);
+
+            _catalog.InvalidateAll();
+
+            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+            await _catalog.GetGroupsAsync(other, CancellationToken.None);
+            VerifyGroupFetches(Times.Exactly(4));
+        }
+
+        [Fact]
+        public async Task InvalidateAll_DuringInFlightRefresh_IsNotSilentlyUndone()
+        {
+            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+
+            var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).Returns(gate.Task);
+
+            var resolve = _catalog.ResolveGroupedLightAsync(_bridge, "9", CancellationToken.None);
+            _catalog.InvalidateAll();
+            gate.SetResult(Groups);
+            await resolve;
+
+            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+
+            VerifyGroupFetches(Times.Exactly(3)); // seed + in-flight refresh + forced-by-invalidate refetch
+        }
     }
 
     /// <summary>

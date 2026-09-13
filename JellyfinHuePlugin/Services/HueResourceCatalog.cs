@@ -156,6 +156,15 @@ namespace JellyfinHuePlugin.Services
             }
         }
 
+        /// <summary>Drops every bridge's cached resources; the next call on each fetches again. Same non-blocking contract as Invalidate.</summary>
+        public virtual void InvalidateAll()
+        {
+            foreach (var entry in _entries.Values)
+            {
+                entry.Invalidate();
+            }
+        }
+
         /// <summary>
         /// The cache key for a bridge's entry. The configuration id alone is not the identity the
         /// cached rooms and scenes depend on - editing a bridge's address (or its application key)
