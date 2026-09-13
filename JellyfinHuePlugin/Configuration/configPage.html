@@ -1289,7 +1289,7 @@
                                 // returns the existing Id for a re-added bridge, so merge rather than push.
                                 document.querySelector('#newBridgeUsername').value = result.Username;
                                 var savedBridge = HuePluginConfig.upsertBridge({
-                                    Id: result.BridgeId,
+                                    Id: result.Id,
                                     Name: bridgeName,
                                     IpAddress: bridgeIp,
                                     Username: result.Username

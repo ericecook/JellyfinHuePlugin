@@ -20,6 +20,7 @@ namespace JellyfinHuePlugin
         private readonly ILogger<Plugin> _logger;
         private readonly HueService _hueService;
         private readonly HueResourceCatalog _catalog;
+        private readonly ConfigurationMigrator _migrator;
         private readonly IMediaSegmentManager _segmentManager;
         private readonly ILibraryManager _libraryManager;
         private PlaybackSessionManager? _playbackManager;
@@ -40,6 +41,7 @@ namespace JellyfinHuePlugin
             _logger = loggerFactory.CreateLogger<Plugin>();
             _hueService = new HueService(loggerFactory.CreateLogger<HueService>());
             _catalog = new HueResourceCatalog(_hueService, loggerFactory.CreateLogger<HueResourceCatalog>());
+            _migrator = new ConfigurationMigrator(_hueService, _catalog, loggerFactory.CreateLogger<ConfigurationMigrator>());
 
             Instance = this;
 
@@ -94,6 +96,8 @@ namespace JellyfinHuePlugin
         public HueService HueService => _hueService;
 
         public HueResourceCatalog Catalog => _catalog;
+
+        public ConfigurationMigrator Migrator => _migrator;
 
         public IEnumerable<PluginPageInfo> GetPages()
         {

@@ -25,6 +25,7 @@ namespace JellyfinHuePlugin.Api
         private readonly ILogger<HueController> _logger;
         private readonly HueService _hueService;
         private readonly HueResourceCatalog _catalog;
+        private readonly ConfigurationMigrator _migrator;
 
         public HueController(ILogger<HueController> logger)
         {
@@ -37,6 +38,7 @@ namespace JellyfinHuePlugin.Api
 
             _hueService = Plugin.Instance.HueService;
             _catalog = Plugin.Instance.Catalog;
+            _migrator = Plugin.Instance.Migrator;
         }
 
         private HueBridge? GetBridge(string? bridgeId)
@@ -138,6 +140,36 @@ namespace JellyfinHuePlugin.Api
             return Ok();
         }
 
+        /// <summary>
+        /// Rewrites stored v1 group and scene ids to v2 ids, learns missing bridge ids and refreshes
+        /// the resource cache. The page calls it before reading the configuration, so nothing it
+        /// later saves can carry a stale id.
+        /// </summary>
+        [HttpPost("migrate")]
+        public async Task<ActionResult<MigrationReport>> Migrate(CancellationToken cancellationToken)
+        {
+            var config = Plugin.Instance?.Configuration;
+            if (config == null)
+            {
+                return StatusCode(500, "Plugin not initialized");
+            }
+
+            var report = await _migrator.MigrateAsync(config, cancellationToken);
+            if (report.Changed)
+            {
+                Plugin.Instance?.SaveConfiguration();
+            }
+
+            var rewritten = report.Profiles.Sum(p => p.Rewritten.Count);
+            var unresolved = report.Profiles.Sum(p => p.Unresolved.Count);
+            if (rewritten > 0 || unresolved > 0)
+            {
+                _logger.LogInformation("Migration rewrote {Rewritten} profile target(s); {Unresolved} unresolved", rewritten, unresolved);
+            }
+
+            return Ok(report);
+        }
+
         [HttpPost("authenticate")]
         public async Task<ActionResult<AuthenticationResult>> Authenticate(
             [FromBody][Required] AuthenticationRequest request,
@@ -193,10 +225,10 @@ namespace JellyfinHuePlugin.Api
                     bridge.IpAddress = request.BridgeIp;
                     Plugin.Instance?.SaveConfiguration();
 
-                    return Ok(new AuthenticationResult { Success = true, Username = username, BridgeId = bridge.Id });
+                    return Ok(new AuthenticationResult { Success = true, Username = username, Id = bridge.Id, HardwareId = outcome.HardwareId });
                 }
 
-                return Ok(new AuthenticationResult { Success = true, Username = username });
+                return Ok(new AuthenticationResult { Success = true, Username = username, HardwareId = outcome.HardwareId });
             }
 
             return Ok(new AuthenticationResult
@@ -340,14 +372,38 @@ namespace JellyfinHuePlugin.Api
 
             try
             {
-                var probe = new HueBridge { Name = "verify", IpAddress = request.BridgeIp, Username = request.Username };
+                var info = await _hueService.GetBridgeInfoAsync(request.BridgeIp, cancellationToken);
+                if (info == null)
+                {
+                    return Ok(new VerifyConnectionResult { Success = false, Error = "The bridge did not answer /api/0/config. Check the address; the Jellyfin log names the reason." });
+                }
+
+                var result = new VerifyConnectionResult
+                {
+                    HardwareId = info.HardwareId,
+                    ModelId = info.ModelId,
+                    SoftwareVersion = info.SoftwareVersion,
+                    ApiVersion = info.ApiVersion,
+                    SupportsV2 = info.SupportsV2
+                };
+
+                if (!info.SupportsV2)
+                {
+                    result.Error = $"Bridge software {info.SoftwareVersion} does not support API v2; {HueService.MinimumV2SoftwareVersion} or newer is required.";
+                    return Ok(result);
+                }
+
+                // Pin the probe to the id just learned, exactly as a configured bridge would be.
+                var probe = new HueBridge { Name = "verify", IpAddress = request.BridgeIp, Username = request.Username, HardwareId = info.HardwareId };
                 var lights = await _hueService.GetLightsAsync(probe, cancellationToken);
                 if (lights != null)
                 {
-                    return Ok(new VerifyConnectionResult { Success = true });
+                    result.Success = true;
+                    return Ok(result);
                 }
 
-                return Ok(new VerifyConnectionResult { Success = false, Error = "Bridge returned no data. The API key may be invalid." });
+                result.Error = "Bridge returned no data. The API key may be invalid.";
+                return Ok(result);
             }
             catch (Exception ex)
             {

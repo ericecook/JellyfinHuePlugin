@@ -36,7 +36,10 @@ namespace JellyfinHuePlugin.Api
     {
         public bool Success { get; set; }
         public string? Username { get; set; }
-        public string? BridgeId { get; set; }
+        /// <summary>The configuration entry's GUID (HueBridge.Id), which the page uses to link profiles.</summary>
+        public string? Id { get; set; }
+        /// <summary>The bridge's own 16-hex id (HueBridge.HardwareId), the TLS certificate subject.</summary>
+        public string? HardwareId { get; set; }
         public string? Error { get; set; }
     }
 
@@ -85,6 +88,12 @@ namespace JellyfinHuePlugin.Api
     {
         public bool Success { get; set; }
         public string? Error { get; set; }
+        /// <summary>Filled whenever the bridge answered /api/0/config, even when Success is false.</summary>
+        public string? HardwareId { get; set; }
+        public string? ModelId { get; set; }
+        public string? SoftwareVersion { get; set; }
+        public string? ApiVersion { get; set; }
+        public bool SupportsV2 { get; set; }
     }
 
     public static class MigrationStatus
