@@ -386,6 +386,7 @@ namespace JellyfinHuePlugin.Tests.Services
             await FluentActions.Awaiting(() => _service.GetLightsAsync(bridge, cts.Token)).Should().ThrowAsync<OperationCanceledException>();
             await FluentActions.Awaiting(() => _service.SetGroupedLightAsync(bridge, "gl-1", new GroupedLightState { On = true }, cts.Token)).Should().ThrowAsync<OperationCanceledException>();
             await FluentActions.Awaiting(() => _service.RecallSceneAsync(bridge, "sc-1", null, cts.Token)).Should().ThrowAsync<OperationCanceledException>();
+            await FluentActions.Awaiting(() => _service.DiscoverBridgesAsync(cts.Token)).Should().ThrowAsync<OperationCanceledException>();
         }
     }
 }

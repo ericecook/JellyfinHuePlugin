@@ -712,7 +712,7 @@ namespace JellyfinHuePlugin.Services
         }
 
         // Discover Hue bridges on the network using N-UPnP
-        public async Task<List<HueBridgeDiscovery>> DiscoverBridgesAsync(CancellationToken cancellationToken = default)
+        public virtual async Task<List<HueBridgeDiscovery>> DiscoverBridgesAsync(CancellationToken cancellationToken = default)
         {
             try
             {
@@ -736,6 +736,10 @@ namespace JellyfinHuePlugin.Services
                 
                 _logger.LogInformation("Found {Count} Hue bridge(s)", bridges?.Count ?? 0);
                 return bridges ?? new List<HueBridgeDiscovery>();
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {

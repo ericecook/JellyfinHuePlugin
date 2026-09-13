@@ -127,6 +127,10 @@ namespace JellyfinHuePlugin.Api
             }
 
             config.Bridges.Remove(bridge);
+            // The entry is keyed by the configuration GUID, so a bridge later re-added at the same
+            // address gets a fresh key anyway - but nothing should keep serving a deleted bridge's
+            // rooms and scenes until the next Jellyfin restart.
+            _catalog.Invalidate(bridge);
             Plugin.Instance?.SaveConfiguration();
 
             _logger.LogInformation("Deleted bridge {BridgeName} ({BridgeId})", bridge.Name, bridgeId);
@@ -168,6 +172,20 @@ namespace JellyfinHuePlugin.Api
                             Name = request.BridgeName ?? "Bridge"
                         };
                         config.Bridges.Add(bridge);
+                    }
+                    else if (!string.Equals(bridge.IpAddress, request.BridgeIp, StringComparison.OrdinalIgnoreCase)
+                        || !string.Equals(bridge.Username, username, StringComparison.Ordinal))
+                    {
+                        // This entry now describes a different bridge, or a different application
+                        // key on it. HueBridge.BridgeId is the 16-hex id the TLS certificate is
+                        // pinned to (not the configuration GUID in HueBridge.Id): left alone it
+                        // would keep pinning the previous bridge and fail every request on a
+                        // subject mismatch, so clear it - the assignment below re-learns it from
+                        // this authentication. The cached rooms and scenes describe the old bridge
+                        // just as much, so drop those too.
+                        _logger.LogInformation("Bridge {BridgeName} changed address or application key; clearing its pinned bridge id and cached resources", bridge.Name);
+                        bridge.BridgeId = string.Empty;
+                        _catalog.Invalidate(bridge);
                     }
 
                     bridge.Username = username;
