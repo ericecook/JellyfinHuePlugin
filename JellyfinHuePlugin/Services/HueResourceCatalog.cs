@@ -86,10 +86,12 @@ namespace JellyfinHuePlugin.Services
             _logger = logger;
         }
 
-        // What a load produced, and - when it produced nothing - whether the bridge itself was
-        // the problem. "Could not reach the bridge" and "the target is not on this bridge" need
-        // opposite advice, so the two must not collapse into a bare null.
-        private readonly record struct LoadResult(Snapshot? Snapshot, bool FetchFailed);
+        // What a load produced, and - when it produced nothing - why. Three cases, not two:
+        // the bridge fetch itself failed; the fetch succeeded but a concurrent Invalidate
+        // discarded the result before it could be stored; or (the residual case, once those two
+        // are ruled out) the target genuinely is not on the bridge. Each needs different advice,
+        // so none of the three may collapse into either of the others.
+        private readonly record struct LoadResult(Snapshot? Snapshot, bool FetchFailed, bool Invalidated);
 
         public virtual async Task<IReadOnlyList<HueGroupResource>?> GetGroupsAsync(HueBridge bridge, CancellationToken cancellationToken)
             => (await LoadAsync(bridge, refresh: false, cancellationToken)).Snapshot?.Groups;
@@ -109,10 +111,10 @@ namespace JellyfinHuePlugin.Services
                 return targetGroupId;
             }
 
-            var (resolved, fetchFailed) = await ResolveAsync(bridge, snapshot => FindGroupedLight(snapshot, targetGroupId, bridge), cancellationToken);
+            var (resolved, fetchFailed, invalidated) = await ResolveAsync(bridge, snapshot => FindGroupedLight(snapshot, targetGroupId, bridge), cancellationToken);
             if (resolved == null)
             {
-                LogUnresolved("group", targetGroupId, bridge, fetchFailed);
+                LogUnresolved("group", targetGroupId, bridge, fetchFailed, invalidated);
             }
 
             return resolved;
@@ -127,13 +129,13 @@ namespace JellyfinHuePlugin.Services
             }
 
             var idV1 = "/scenes/" + sceneId;
-            var (resolved, fetchFailed) = await ResolveAsync(
+            var (resolved, fetchFailed, invalidated) = await ResolveAsync(
                 bridge,
                 snapshot => FirstByIdV1OrWarn(snapshot.Scenes, idV1, s => s.IdV1, s => $"{s.Name} ({s.Id})", bridge, "scene")?.Id,
                 cancellationToken);
             if (resolved == null)
             {
-                LogUnresolved("scene", sceneId, bridge, fetchFailed);
+                LogUnresolved("scene", sceneId, bridge, fetchFailed, invalidated);
             }
 
             return resolved;
@@ -210,8 +212,10 @@ namespace JellyfinHuePlugin.Services
         }
 
         /// <summary>A target that could not be resolved, told apart from a bridge that could not be
-        /// asked: only the former is something the user can fix by re-selecting on the plugin page.</summary>
-        private void LogUnresolved(string field, string value, HueBridge bridge, bool fetchFailed)
+        /// asked and from a resolve that lost a race with a concurrent Invalidate: only the
+        /// genuinely-missing case is something the user can fix by re-selecting on the plugin
+        /// page.</summary>
+        private void LogUnresolved(string field, string value, HueBridge bridge, bool fetchFailed, bool invalidated)
         {
             if (fetchFailed)
             {
@@ -220,27 +224,37 @@ namespace JellyfinHuePlugin.Services
                 return;
             }
 
+            if (invalidated)
+            {
+                // Self-healing: the cache was cleared mid-refresh, so the very next resolve
+                // starts from a clean cache and tries again. Nothing is wrong with the target,
+                // so this is not a warning.
+                _logger.LogDebug("Cache for bridge {BridgeName} was invalidated while resolving profile target {Field} '{Value}'; the next resolve will retry",
+                    bridge.Name, field, value);
+                return;
+            }
+
             _logger.LogWarning("Profile target {Field} '{Value}' not found on bridge {BridgeName}; re-select it on the plugin page",
                 field, value, bridge.Name);
         }
 
-        private async Task<(string? Resolved, bool FetchFailed)> ResolveAsync(HueBridge bridge, Func<Snapshot, string?> find, CancellationToken cancellationToken)
+        private async Task<(string? Resolved, bool FetchFailed, bool Invalidated)> ResolveAsync(HueBridge bridge, Func<Snapshot, string?> find, CancellationToken cancellationToken)
         {
             var load = await LoadAsync(bridge, refresh: false, cancellationToken);
             if (load.Snapshot == null)
             {
-                return (null, load.FetchFailed);
+                return (null, load.FetchFailed, load.Invalidated);
             }
 
             var found = find(load.Snapshot);
             if (found != null)
             {
-                return (found, false);
+                return (found, false, false);
             }
 
             // The bridge may have changed since the cache was built: refresh once.
             load = await LoadAsync(bridge, refresh: true, cancellationToken);
-            return load.Snapshot == null ? (null, load.FetchFailed) : (find(load.Snapshot), false);
+            return load.Snapshot == null ? (null, load.FetchFailed, load.Invalidated) : (find(load.Snapshot), false, false);
         }
 
         private async Task<LoadResult> LoadAsync(HueBridge bridge, bool refresh, CancellationToken cancellationToken)
@@ -249,7 +263,7 @@ namespace JellyfinHuePlugin.Services
             var (snapshot, generation) = entry.ReadState();
             if (!refresh && snapshot is { } cached)
             {
-                return new LoadResult(cached, false);
+                return new LoadResult(cached, false, false);
             }
 
             await entry.Gate.WaitAsync(cancellationToken);
@@ -263,24 +277,24 @@ namespace JellyfinHuePlugin.Services
                 // under concurrency.
                 if (currentSnapshot is { } peerRefreshed && currentGeneration != generation)
                 {
-                    return new LoadResult(peerRefreshed, false);
+                    return new LoadResult(peerRefreshed, false, false);
                 }
 
                 if (!refresh && currentSnapshot is { } loadedMeanwhile)
                 {
-                    return new LoadResult(loadedMeanwhile, false);
+                    return new LoadResult(loadedMeanwhile, false, false);
                 }
 
                 var groups = await _hueService.GetGroupsAsync(bridge, cancellationToken);
                 if (groups == null)
                 {
-                    return new LoadResult(null, true);
+                    return new LoadResult(null, true, false);
                 }
 
                 var scenes = await _hueService.GetScenesAsync(bridge, cancellationToken);
                 if (scenes == null)
                 {
-                    return new LoadResult(null, true);
+                    return new LoadResult(null, true, false);
                 }
 
                 var groupsById = groups.ToDictionary(g => g.Id, StringComparer.Ordinal);
@@ -292,13 +306,16 @@ namespace JellyfinHuePlugin.Services
 
                 if (entry.TryStore(freshSnapshot, currentGeneration))
                 {
-                    return new LoadResult(freshSnapshot, false);
+                    return new LoadResult(freshSnapshot, false, false);
                 }
 
-                // An Invalidate landed while the bridge calls above were in flight: this result is
-                // stale by definition. Report whatever is current instead of serving data that was
-                // explicitly discarded. The fetch itself worked, so this is never a bridge failure.
-                return new LoadResult(entry.ReadState().Snapshot, false);
+                // An Invalidate landed while the bridge calls above were in flight (the gate we
+                // are still holding rules out any other cause of TryStore's refusal), so this
+                // fetch's result is stale by definition and was deliberately discarded - the
+                // snapshot Invalidate leaves behind is always null. This is neither a bridge
+                // failure nor a missing target: the next resolve sees the cleared cache and
+                // retries on its own.
+                return new LoadResult(entry.ReadState().Snapshot, false, true);
             }
             finally
             {

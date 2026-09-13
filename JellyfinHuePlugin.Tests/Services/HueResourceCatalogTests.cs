@@ -270,6 +270,34 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
+        public async Task Resolve_WhenInvalidateLandsDuringTheInFlightFetch_LogsDebugInsteadOfReselect()
+        {
+            // Seed the cache so the "9" lookup below takes the miss -> refresh path rather than
+            // the very first cold load.
+            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+
+            var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).Returns(gate.Task);
+
+            // "9" isn't in Groups, so this refreshes once and blocks on the gated fetch.
+            var resolve = _catalog.ResolveGroupedLightAsync(_bridge, "9", CancellationToken.None);
+
+            // Invalidate lands while that refresh is still in flight: the fetch's eventual
+            // result is discarded, and the resolve must not blame "9" for that.
+            _catalog.Invalidate(_bridge);
+
+            gate.SetResult(Groups);
+            var id = await resolve;
+
+            id.Should().BeNull();
+            _log.Entries.Should().ContainSingle();
+            var entry = _log.Entries[0];
+            entry.Level.Should().Be(LogLevel.Debug, "nothing is wrong - the cache clear is transient and the next resolve retries on its own");
+            entry.Message.Should().NotContain("re-select", "the target '9' was never actually looked up against real bridge data");
+            entry.Message.Should().Contain("Test Bridge");
+        }
+
+        [Fact]
         public async Task Invalidate_WhileAPeerRefreshIsQueuedOnTheGate_QueuedCallStillFetches()
         {
             // Seed the cache so "9" and "10" below both take the miss -> refresh path.
