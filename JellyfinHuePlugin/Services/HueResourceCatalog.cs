@@ -299,7 +299,7 @@ namespace JellyfinHuePlugin.Services
 
                 var groupsById = groups.ToDictionary(g => g.Id, StringComparer.Ordinal);
                 var enriched = scenes
-                    .Select(s => groupsById.TryGetValue(s.GroupId, out var g) ? s with { GroupName = g.Name, GroupedLightId = g.GroupedLightId } : s)
+                    .Select(s => groupsById.TryGetValue(s.GroupId, out var g) ? s with { GroupName = g.Name } : s)
                     .ToList();
 
                 var freshSnapshot = new Snapshot(groups, enriched);

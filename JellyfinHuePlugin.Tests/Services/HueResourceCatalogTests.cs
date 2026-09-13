@@ -329,13 +329,12 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
-        public async Task GetScenes_AreEnrichedWithGroupNameAndGroupedLight()
+        public async Task GetScenes_AreEnrichedWithGroupName()
         {
             var scenes = await _catalog.GetScenesAsync(_bridge, CancellationToken.None);
 
             scenes.Should().NotBeNull();
             scenes![0].GroupName.Should().Be("Theater");
-            scenes[0].GroupedLightId.Should().Be("gl-1");
             scenes[0].Group.Should().Be("Theater");
             scenes[1].GroupName.Should().Be("Downstairs");
         }

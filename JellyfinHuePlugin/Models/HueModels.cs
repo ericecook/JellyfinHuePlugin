@@ -20,11 +20,10 @@ namespace JellyfinHuePlugin.Services
     /// <summary>A room, zone or the bridge home, with the grouped_light service that controls it.</summary>
     public sealed record HueGroupResource(string Id, string GroupedLightId, string Name, string Type, string? IdV1);
 
-    /// <summary>A scene. GroupId is the room or zone it belongs to; the catalog fills GroupName and GroupedLightId.</summary>
+    /// <summary>A scene. GroupId is the room or zone it belongs to; the catalog fills GroupName.</summary>
     public sealed record HueSceneResource(string Id, string Name, string GroupId, string? IdV1)
     {
         public string GroupName { get; init; } = string.Empty;
-        public string GroupedLightId { get; init; } = string.Empty;
 
         /// <summary>The config page reads scenes[id].Group for its dropdown label.</summary>
         public string Group => GroupName;
