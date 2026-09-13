@@ -453,6 +453,7 @@ namespace JellyfinHuePlugin.Tests.Managers
         [InlineData("[2001:db8::1]:5000", "2001:db8::1")]
         [InlineData("2001:DB8:0:0:0:0:0:1", "2001:db8::1")]
         [InlineData("::ffff:192.168.1.5", "192.168.1.5")]
+        [InlineData("fe80::1%2", "fe80::1%2")]
         [InlineData(" 192.168.1.100 ", "192.168.1.100")]
         [InlineData("not-an-ip", "not-an-ip")]
         [InlineData("", "")]

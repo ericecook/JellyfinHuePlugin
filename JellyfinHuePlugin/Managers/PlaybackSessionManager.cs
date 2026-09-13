@@ -175,6 +175,13 @@ namespace JellyfinHuePlugin.Managers
             }
 
             var config = _getConfig();
+            if (!config.EnablePlugin)
+            {
+                // The kill switch applies to sessions already playing: no pause, resume or
+                // outro commands once the plugin is disabled. Stop still restores the lights.
+                return;
+            }
+
             var profile = state.Profile;
 
             if (profile.EnableOutroLights)

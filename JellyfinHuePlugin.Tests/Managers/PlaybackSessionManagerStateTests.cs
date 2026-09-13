@@ -212,6 +212,30 @@ namespace JellyfinHuePlugin.Tests.Managers
         }
 
         [Fact]
+        public async Task Progress_PluginDisabledMidPlayback_SendsNothing()
+        {
+            var session = Session();
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+
+            _config.EnablePlugin = false;
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: true));
+
+            VerifyTotalGroupCalls(Times.Once()); // only the play call from start
+        }
+
+        [Fact]
+        public async Task Stop_PluginDisabledMidPlayback_StillRestoresLights()
+        {
+            var session = Session();
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+
+            _config.EnablePlugin = false;
+            await _manager.OnPlaybackStoppedAsync(Stop(session, new Movie()));
+
+            VerifyBrightness(254, Times.Once());
+        }
+
+        [Fact]
         public async Task Progress_PauseWithinGracePeriod_IsIgnoredAndResumeIsNoOp()
         {
             _config.Profiles[0].PauseGracePeriodSeconds = 30;
@@ -249,6 +273,25 @@ namespace JellyfinHuePlugin.Tests.Managers
             await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: true, positionSeconds: 5));
 
             VerifyBrightness(100, Times.Once());
+        }
+
+        [Fact]
+        public async Task Progress_PauseHeldPastGracePeriod_BrightensWhenWindowCloses()
+        {
+            _config.Profiles[0].PauseGracePeriodSeconds = 30;
+            var session = Session();
+            await _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
+
+            _clock.Advance(TimeSpan.FromSeconds(10));
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: true));
+            VerifyBrightness(100, Times.Never());
+
+            _clock.Advance(TimeSpan.FromSeconds(21));
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: true));
+            VerifyBrightness(100, Times.Once());
+
+            await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: false));
+            VerifyBrightness(20, Times.Exactly(2)); // play at start, play again on resume
         }
 
         [Fact]
