@@ -1192,6 +1192,9 @@
                         }).then(function(result) {
                             if (result.Success) {
                                 bridge.Username = result.Username;
+                                // The server just re-pinned this bridge; carry the new id so the
+                                // save below cannot post the previous one back over it.
+                                bridge.HardwareId = result.HardwareId || '';
                                 if (btn) { btn.disabled = false; btn.querySelector('span').textContent = 'Re-auth'; }
                                 HuePluginConfig.renderBridges();
                                 document.querySelector('#configSection').style.display = 'block';
@@ -1341,7 +1344,8 @@
                                     Id: result.Id,
                                     Name: bridgeName,
                                     IpAddress: bridgeIp,
-                                    Username: result.Username
+                                    Username: result.Username,
+                                    HardwareId: result.HardwareId || ''
                                 });
                                 HuePluginConfig.renderBridges();
                                 document.querySelector('#configSection').style.display = 'block';
@@ -1412,7 +1416,8 @@
                                 Id: bridgeId,
                                 Name: bridgeName,
                                 IpAddress: bridgeIp,
-                                Username: username
+                                Username: username,
+                                HardwareId: result.HardwareId || ''
                             });
                             HuePluginConfig.renderBridges();
                             document.querySelector('#configSection').style.display = 'block';
@@ -2049,6 +2054,9 @@
                         }
                         existing.IpAddress = bridge.IpAddress;
                         existing.Username = bridge.Username;
+                        if (bridge.HardwareId !== undefined) {
+                            existing.HardwareId = bridge.HardwareId;
+                        }
                         return existing;
                     }
                     HuePluginConfig.bridges.push(bridge);
