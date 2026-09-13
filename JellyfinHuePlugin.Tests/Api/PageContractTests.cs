@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Text.Json;
 using FluentAssertions;
 using JellyfinHuePlugin.Api;
 using JellyfinHuePlugin.Services;
@@ -36,6 +37,38 @@ namespace JellyfinHuePlugin.Tests.Api
 
             names.Should().BeSubsetOf(actual, because: "configPage.html reads these from {0}", dto.Name);
         }
+
+        [Theory]
+        [MemberData(nameof(Contract))]
+        public void TheSerializedJsonCarriesThoseNames(Type dto, string[] names)
+        {
+            // Reflection alone would miss a [JsonPropertyName] renaming the wire name; the page
+            // reads the JSON, so the JSON is what is pinned. Same defaults the controller uses.
+            var json = JsonSerializer.Serialize(Instantiate(dto), dto);
+
+            using var document = JsonDocument.Parse(json);
+            var actual = document.RootElement.EnumerateObject().Select(p => p.Name).ToHashSet(StringComparer.Ordinal);
+
+            names.Should().BeSubsetOf(actual, because: "configPage.html reads these from {0}'s JSON", dto.Name);
+        }
+
+        /// <summary>A default instance: parameterless where there is one, otherwise dummy arguments.</summary>
+        private static object Instantiate(Type type)
+        {
+            var parameterless = type.GetConstructor(Type.EmptyTypes);
+            if (parameterless != null)
+            {
+                return parameterless.Invoke(null);
+            }
+
+            var constructor = type.GetConstructors().OrderByDescending(c => c.GetParameters().Length).First();
+            var arguments = constructor.GetParameters()
+                .Select(p => p.ParameterType == typeof(string) ? "x" : DefaultOf(p.ParameterType))
+                .ToArray();
+            return constructor.Invoke(arguments);
+        }
+
+        private static object? DefaultOf(Type type) => type.IsValueType ? Activator.CreateInstance(type) : null;
 
         [Fact]
         public void GroupsAreKeyedByGroupedLightId()
