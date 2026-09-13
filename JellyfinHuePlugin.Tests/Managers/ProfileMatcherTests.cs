@@ -169,6 +169,44 @@ namespace JellyfinHuePlugin.Tests.Managers
             Find(config, "Roku", "device1", "192.168.1.100:8096").Should().NotBeNull();
         }
 
+        [Fact]
+        public void ProfileMatching_Ipv6Client_MatchesIpv6Target()
+        {
+            var config = ConfigWith(new LightControlProfile { Name = "IP Filter", TargetIpAddress = "2001:db8::1" });
+
+            Find(config, "Roku", "device1", "2001:db8::1").Should().NotBeNull();
+        }
+
+        [Fact]
+        public void ProfileMatching_Ipv6Target_MatchesRegardlessOfSpelling()
+        {
+            var config = ConfigWith(new LightControlProfile { Name = "IP Filter", TargetIpAddress = "2001:DB8:0:0:0:0:0:1" });
+
+            Find(config, "Roku", "device1", "[2001:db8::1]:5000").Should().NotBeNull();
+        }
+
+        [Fact]
+        public void ProfileMatching_Ipv4MappedClient_MatchesIpv4Target()
+        {
+            var config = ConfigWith(new LightControlProfile { Name = "IP Filter", TargetIpAddress = "192.168.1.5" });
+
+            Find(config, "Roku", "device1", "::ffff:192.168.1.5").Should().NotBeNull();
+        }
+
+        [Fact]
+        public void ProfileMatching_Ipv6Mismatch_ReportsCanonicalClientAddress()
+        {
+            var config = ConfigWith(new LightControlProfile { Name = "IP Filter", TargetIpAddress = "2001:db8::1" });
+
+            var result = ProfileMatcher.FindMatchingProfile(config, Req("Roku", "device1", "[2001:db8::2]:5000"));
+
+            result.Status.Should().Be(MatchStatus.NoMatch);
+            var rejection = result.Rejections.Should().ContainSingle().Subject;
+            rejection.Filter.Should().Be(RejectionFilter.IpAddress);
+            rejection.Actual.Should().Be("2001:db8::2");
+            rejection.Expected.Should().Be("2001:db8::1");
+        }
+
         #endregion
 
         #region Combined Filter Tests (AND Logic)
@@ -256,6 +294,8 @@ namespace JellyfinHuePlugin.Tests.Managers
             var rejection = result.Rejections.Should().ContainSingle().Subject;
             rejection.ProfileName.Should().Be("Off");
             rejection.Filter.Should().Be(RejectionFilter.Disabled);
+            rejection.Actual.Should().Be("Enabled=false");
+            rejection.Expected.Should().Be("Enabled=true");
         }
 
         [Fact]
@@ -404,14 +444,20 @@ namespace JellyfinHuePlugin.Tests.Managers
 
         #endregion
 
-        #region ExtractIpAddress (moved from HueServiceTests)
+        #region ExtractIpAddress
 
         [Theory]
         [InlineData("192.168.1.100", "192.168.1.100")]
         [InlineData("192.168.1.100:12345", "192.168.1.100")]
+        [InlineData("2001:db8::1", "2001:db8::1")]
+        [InlineData("[2001:db8::1]:5000", "2001:db8::1")]
+        [InlineData("2001:DB8:0:0:0:0:0:1", "2001:db8::1")]
+        [InlineData("::ffff:192.168.1.5", "192.168.1.5")]
+        [InlineData(" 192.168.1.100 ", "192.168.1.100")]
+        [InlineData("not-an-ip", "not-an-ip")]
         [InlineData("", "")]
         [InlineData("   ", "")]
-        public void ExtractIpAddress_ShouldRemovePort(string input, string expected)
+        public void ExtractIpAddress_ReturnsCanonicalAddress(string input, string expected)
         {
             ProfileMatcher.ExtractIpAddress(input).Should().Be(expected);
         }

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using JellyfinHuePlugin.Configuration;
 
 namespace JellyfinHuePlugin.Managers
@@ -50,7 +51,7 @@ namespace JellyfinHuePlugin.Managers
             {
                 if (!profile.Enabled)
                 {
-                    rejections.Add(new Rejection(profile.Name, RejectionFilter.Disabled, "disabled", "enabled"));
+                    rejections.Add(new Rejection(profile.Name, RejectionFilter.Disabled, "Enabled=false", "Enabled=true"));
                     continue;
                 }
 
@@ -61,7 +62,7 @@ namespace JellyfinHuePlugin.Managers
                     continue;
                 }
 
-                var rejection = ProfileMatches(profile, request);
+                var rejection = FirstFailingFilter(profile, request);
                 if (rejection != null)
                 {
                     rejections.Add(rejection);
@@ -91,7 +92,7 @@ namespace JellyfinHuePlugin.Managers
         }
 
         /// <summary>Returns null when the profile's client filters accept the request, otherwise the first failing filter.</summary>
-        internal static Rejection? ProfileMatches(LightControlProfile profile, MatchRequest request)
+        internal static Rejection? FirstFailingFilter(LightControlProfile profile, MatchRequest request)
         {
             bool hasClientFilter = !string.IsNullOrWhiteSpace(profile.TargetClientName);
             bool hasDeviceFilter = profile.TargetDeviceIds is { Count: > 0 };
@@ -103,11 +104,13 @@ namespace JellyfinHuePlugin.Managers
                 return null;
             }
 
-            // IP address (most specific)
+            // IP address (most specific). Both sides go through ExtractIpAddress so a
+            // target typed as 2001:DB8:0:0:0:0:0:1 matches a client at 2001:db8::1.
             if (hasIpFilter)
             {
                 var clientIp = ExtractIpAddress(request.RemoteEndpoint);
-                if (!clientIp.Equals(profile.TargetIpAddress, StringComparison.OrdinalIgnoreCase))
+                var targetIp = ExtractIpAddress(profile.TargetIpAddress);
+                if (!clientIp.Equals(targetIp, StringComparison.OrdinalIgnoreCase))
                 {
                     return new Rejection(profile.Name, RejectionFilter.IpAddress, clientIp, profile.TargetIpAddress);
                 }
@@ -136,23 +139,30 @@ namespace JellyfinHuePlugin.Managers
         }
 
         /// <summary>
-        /// Remote endpoint is usually "IP:PORT" or just "IP". Truncates at the first colon,
-        /// which is wrong for IPv6; fixing that is a later, separately tested change.
+        /// Canonical address of an endpoint string: bare IPv4, IPv4:port, bare IPv6 or
+        /// [IPv6]:port. IPv4-mapped IPv6 is unwrapped. Anything that does not parse is
+        /// returned trimmed and unchanged so a rejection can still show it.
         /// </summary>
-        internal static string ExtractIpAddress(string remoteEndpoint)
+        internal static string ExtractIpAddress(string endpoint)
         {
-            if (string.IsNullOrWhiteSpace(remoteEndpoint))
+            if (string.IsNullOrWhiteSpace(endpoint))
             {
                 return string.Empty;
             }
 
-            var colonIndex = remoteEndpoint.IndexOf(':');
-            if (colonIndex > 0)
+            var trimmed = endpoint.Trim();
+            if (!IPEndPoint.TryParse(trimmed, out var parsed))
             {
-                return remoteEndpoint.Substring(0, colonIndex);
+                return trimmed;
             }
 
-            return remoteEndpoint;
+            var address = parsed.Address;
+            if (address.IsIPv4MappedToIPv6)
+            {
+                address = address.MapToIPv4();
+            }
+
+            return address.ToString();
         }
 
         private static string DescribeMediaType(bool isMovie, bool isEpisode)
