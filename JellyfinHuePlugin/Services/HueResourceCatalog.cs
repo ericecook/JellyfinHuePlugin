@@ -141,11 +141,26 @@ namespace JellyfinHuePlugin.Services
             // Never takes Gate: a caller that just wants to drop the cache must not block on a
             // slow bridge call. The short, await-free lock inside Entry.Invalidate is enough to
             // make this atomic with LoadAsync's own state reads and writes.
-            if (_entries.TryGetValue(bridge.Id, out var entry))
+            //
+            // Must compose the key exactly as the load path does, or invalidation silently stops
+            // finding anything: hence the shared EntryKey.
+            if (_entries.TryGetValue(EntryKey(bridge), out var entry))
             {
                 entry.Invalidate();
             }
         }
+
+        /// <summary>
+        /// The cache key for a bridge's entry. The configuration id alone is not the identity the
+        /// cached rooms and scenes depend on - editing a bridge's address (or its application key)
+        /// keeps the id but points it at a different bridge entirely - so the address and key are
+        /// part of the key too. Repointing a bridge is then a plain cache miss, and serving the
+        /// previous bridge's catalog stops being possible rather than merely needing an
+        /// invalidation someone has to remember. Each component is length-prefixed, so no two
+        /// different bridges can compose one key whatever their values happen to contain.
+        /// </summary>
+        private static string EntryKey(HueBridge bridge) =>
+            $"{bridge.Id.Length}:{bridge.Id}|{bridge.IpAddress.Length}:{bridge.IpAddress}|{bridge.Username.Length}:{bridge.Username}";
 
         private static string? FindGroupedLight(Snapshot snapshot, string targetGroupId)
         {
@@ -193,7 +208,7 @@ namespace JellyfinHuePlugin.Services
 
         private async Task<LoadResult> LoadAsync(HueBridge bridge, bool refresh, CancellationToken cancellationToken)
         {
-            var entry = _entries.GetOrAdd(bridge.Id, _ => new Entry());
+            var entry = _entries.GetOrAdd(EntryKey(bridge), _ => new Entry());
             var (snapshot, generation) = entry.ReadState();
             if (!refresh && snapshot is { } cached)
             {

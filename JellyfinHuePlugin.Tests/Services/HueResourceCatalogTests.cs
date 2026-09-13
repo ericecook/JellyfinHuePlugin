@@ -270,6 +270,47 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
+        public async Task RepointingABridge_MissesTheCacheRatherThanServingTheOldBridgesCatalog()
+        {
+            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+
+            // The admin edits the bridge: same configuration entry (same Id), different hardware.
+            _bridge.IpAddress = "192.168.1.99";
+            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+
+            VerifyGroupFetches(Times.Exactly(2));
+
+            // A new application key means a different view of the bridge as well.
+            _bridge.Username = "another-key";
+            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+
+            VerifyGroupFetches(Times.Exactly(3));
+        }
+
+        [Fact]
+        public async Task Invalidate_FindsTheEntryThroughTheSameComposedKeyTheLoadPathUsed()
+        {
+            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+
+            // A HueBridge is a configuration record, not an identity: the caller that invalidates
+            // holds its own instance, so the key has to be composed from the values, and both
+            // sites have to compose it the same way or Invalidate quietly does nothing.
+            var sameBridge = new HueBridge
+            {
+                Id = _bridge.Id,
+                Name = _bridge.Name,
+                IpAddress = _bridge.IpAddress,
+                Username = _bridge.Username,
+                BridgeId = _bridge.BridgeId
+            };
+            _catalog.Invalidate(sameBridge);
+
+            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+
+            VerifyGroupFetches(Times.Exactly(2));
+        }
+
+        [Fact]
         public async Task Invalidate_ForcesAFetchOnNextUse()
         {
             await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
