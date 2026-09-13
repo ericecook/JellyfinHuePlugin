@@ -94,48 +94,47 @@ namespace JellyfinHuePlugin.Services
         };
 
         // This client only ever sends the one unauthenticated /api/0/config request that learns a
-        // bridge's id, so there is no subject to pin yet: chain-only trust, unconditionally.
+        // bridge's id, so there is no subject to pin yet: chain-only trust, unconditionally,
+        // regardless of whatever NewRequest happened to store in the option. Routed through the
+        // same decision function as the main handler so there is exactly one place that decides
+        // whether a bridge certificate is acceptable.
         private static HttpMessageHandler CreateBridgeInfoHandler(ILogger logger, IReadOnlyList<X509Certificate2> roots) => new HttpClientHandler
         {
             AllowAutoRedirect = false,
-            ServerCertificateCustomValidationCallback = (request, certificate, _, _) =>
-            {
-                if (certificate == null)
-                {
-                    return false;
-                }
-
-                var verdict = BridgeCertificateValidator.Validate(certificate, null, roots);
-                if (verdict != BridgeCertificateValidator.Verdict.Trusted)
-                {
-                    logger.LogWarning("Bridge certificate rejected for {Host}: {Verdict} (subject {Subject})",
-                        request.RequestUri?.Host, verdict, BridgeCertificateValidator.SubjectCommonName(certificate));
-                }
-
-                return verdict == BridgeCertificateValidator.Verdict.Trusted;
-            }
+            ServerCertificateCustomValidationCallback = (request, certificate, _, errors) =>
+                ShouldAcceptBridgeCertificate(request, certificate, errors, roots, logger, chainOnly: true)
         };
 
         /// <summary>
-        /// The certificate decision for every request on the main client. Extracted out of the
-        /// HttpClientHandler lambda so it can be unit tested directly instead of only through an
-        /// actual TLS handshake (which is also why the sentinel and pooling bugs both lived here
-        /// undetected). No option at all (a non-bridge request) falls back to system trust; a
-        /// present-but-empty id is a hard failure, since the only caller that used to mean
-        /// "chain-only" has moved to <see cref="_bridgeInfoClient"/>; otherwise the chain must be
-        /// trusted and the subject must name the expected bridge.
+        /// The single certificate decision for both clients. Extracted out of the HttpClientHandler
+        /// lambda so it can be unit tested directly instead of only through an actual TLS handshake
+        /// (which is also why the sentinel and pooling bugs both lived here undetected).
+        ///
+        /// <paramref name="chainOnly"/> is false for the main client: no option at all (a non-bridge
+        /// request, e.g. cloud discovery) falls back to system trust; a present-but-empty id is a
+        /// hard failure, since every real caller on that client resolves a real id before a request
+        /// is built, so an empty one means a pinned request lost its id somewhere; otherwise the
+        /// chain must be trusted and the subject must name the expected bridge.
+        ///
+        /// <paramref name="chainOnly"/> is true for the bridge-info client, whose one call has no id
+        /// to pin yet: it ignores the option entirely (present, absent or empty, it does not matter)
+        /// and just requires a trusted chain, with no subject check.
         /// </summary>
-        internal static bool ShouldAcceptBridgeCertificate(HttpRequestMessage request, X509Certificate2? certificate, SslPolicyErrors errors, IReadOnlyList<X509Certificate2> roots, ILogger logger)
+        internal static bool ShouldAcceptBridgeCertificate(HttpRequestMessage request, X509Certificate2? certificate, SslPolicyErrors errors, IReadOnlyList<X509Certificate2> roots, ILogger logger, bool chainOnly = false)
         {
-            if (!request.Options.TryGetValue(ExpectedBridgeIdOption, out var expectedBridgeId))
+            string? expectedBridgeId = null;
+            if (!chainOnly)
             {
-                return errors == SslPolicyErrors.None;
-            }
+                if (!request.Options.TryGetValue(ExpectedBridgeIdOption, out expectedBridgeId))
+                {
+                    return errors == SslPolicyErrors.None;
+                }
 
-            if (string.IsNullOrEmpty(expectedBridgeId))
-            {
-                logger.LogWarning("Bridge request to {Host} has no expected bridge id pinned; rejecting", request.RequestUri?.Host);
-                return false;
+                if (string.IsNullOrEmpty(expectedBridgeId))
+                {
+                    logger.LogWarning("Bridge request to {Host} has no expected bridge id pinned; rejecting", request.RequestUri?.Host);
+                    return false;
+                }
             }
 
             if (certificate == null)
@@ -147,7 +146,7 @@ namespace JellyfinHuePlugin.Services
             if (verdict != BridgeCertificateValidator.Verdict.Trusted)
             {
                 logger.LogWarning("Bridge certificate rejected for {Host}: {Verdict} (subject {Subject}, expected {BridgeId})",
-                    request.RequestUri?.Host, verdict, BridgeCertificateValidator.SubjectCommonName(certificate), expectedBridgeId);
+                    request.RequestUri?.Host, verdict, BridgeCertificateValidator.SubjectCommonName(certificate), expectedBridgeId ?? "any");
             }
 
             return verdict == BridgeCertificateValidator.Verdict.Trusted;
@@ -257,6 +256,26 @@ namespace JellyfinHuePlugin.Services
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// A content-free summary of a JSON value for logging: its kind, the original text length,
+        /// and either its top-level property names (object) or element count (array). Used only on
+        /// the authentication path, where the response can carry a freshly issued application key --
+        /// no value from the document itself is ever included.
+        /// </summary>
+        private static string DescribeShape(JsonElement element, int contentLength)
+        {
+            var detail = element.ValueKind switch
+            {
+                JsonValueKind.Object => "properties: [" + string.Join(", ", element.EnumerateObject().Select(p => p.Name)) + "]",
+                JsonValueKind.Array => $"{element.GetArrayLength()} element(s)",
+                _ => null
+            };
+
+            return detail == null
+                ? $"{element.ValueKind}, {contentLength} chars"
+                : $"{element.ValueKind}, {contentLength} chars, {detail}";
         }
 
         /// <summary>
@@ -411,16 +430,18 @@ namespace JellyfinHuePlugin.Services
 
                 if (content.TrimStart().StartsWith('<'))
                 {
-                    _logger.LogError("Received HTML response instead of JSON. Bridge may not be accessible at {Host}. Response: {Response}",
-                        host, content.Substring(0, Math.Min(200, content.Length)));
+                    // No excerpt: this path can carry a freshly issued application key, and an
+                    // HTML-shaped body is exactly the kind of thing a hostile or misconfigured
+                    // responder could still wrap a real success payload inside.
+                    _logger.LogError("Received an HTML response instead of JSON from {Host} ({Length} chars); the bridge may not be accessible at that address",
+                        host, content.Length);
                     return null;
                 }
 
                 using var doc = JsonDocument.Parse(content);
                 if (doc.RootElement.ValueKind != JsonValueKind.Array || doc.RootElement.GetArrayLength() == 0)
                 {
-                    _logger.LogWarning("Unexpected bridge response for {Operation}: {Content}", "authenticate",
-                        content.Length > 500 ? content[..500] + "…" : content);
+                    _logger.LogWarning("Unexpected bridge response for {Operation}: {Shape}", "authenticate", DescribeShape(doc.RootElement, content.Length));
                     return null;
                 }
 
@@ -443,8 +464,7 @@ namespace JellyfinHuePlugin.Services
                     return null;
                 }
 
-                _logger.LogWarning("Unexpected bridge response for {Operation}: {Content}", "authenticate",
-                    content.Length > 500 ? content[..500] + "…" : content);
+                _logger.LogWarning("Unexpected bridge response for {Operation}: {Shape}", "authenticate", DescribeShape(doc.RootElement, content.Length));
                 return null;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

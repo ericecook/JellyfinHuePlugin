@@ -119,5 +119,51 @@ namespace JellyfinHuePlugin.Tests.Services
             HueService.ShouldAcceptBridgeCertificate(RequestWithOption(BridgeId), null, SslPolicyErrors.None, Roots, NullLogger.Instance)
                 .Should().BeFalse();
         }
+
+        // chainOnly: true -- the bridge-info handler's mode, routed through the same function.
+
+        [Fact]
+        public void ChainOnly_TrustedChain_AcceptsWithNoOptionAtAll()
+        {
+            HueService.ShouldAcceptBridgeCertificate(RequestWithoutOption(), _leaf, SslPolicyErrors.RemoteCertificateChainErrors, Roots, NullLogger.Instance, chainOnly: true)
+                .Should().BeTrue();
+        }
+
+        [Fact]
+        public void ChainOnly_IgnoresAPinnedIdEvenWhenPresentAndMismatched()
+        {
+            // If this id were honored, the mismatch would reject; chainOnly must ignore it entirely.
+            HueService.ShouldAcceptBridgeCertificate(RequestWithOption("001788fffe000000"), _leaf, SslPolicyErrors.None, Roots, NullLogger.Instance, chainOnly: true)
+                .Should().BeTrue();
+        }
+
+        [Fact]
+        public void ChainOnly_OptionPresentButEmpty_StillAccepts()
+        {
+            // Pins the distinction the merge must preserve: this is exactly what NewRequest stores
+            // for the one call that runs through the bridge-info handler (expectedBridgeId ?? "").
+            // Under the main handler's mode (chainOnly: false) the identical input is rejected --
+            // see OptionPresentButEmpty_Rejects above -- but chain-only mode must not treat an empty
+            // pinned id as "a pinned request lost its id", because there was never anything to pin.
+            HueService.ShouldAcceptBridgeCertificate(RequestWithOption(string.Empty), _leaf, SslPolicyErrors.None, Roots, NullLogger.Instance, chainOnly: true)
+                .Should().BeTrue();
+        }
+
+        [Fact]
+        public void ChainOnly_UntrustedChain_StillRejects()
+        {
+            using var otherRoot = MakeRoot("someone-else");
+            using var stranger = MakeLeaf(otherRoot, BridgeId);
+
+            HueService.ShouldAcceptBridgeCertificate(RequestWithoutOption(), stranger, SslPolicyErrors.None, Roots, NullLogger.Instance, chainOnly: true)
+                .Should().BeFalse();
+        }
+
+        [Fact]
+        public void ChainOnly_CertificateMissing_Rejects()
+        {
+            HueService.ShouldAcceptBridgeCertificate(RequestWithoutOption(), null, SslPolicyErrors.None, Roots, NullLogger.Instance, chainOnly: true)
+                .Should().BeFalse();
+        }
     }
 }
