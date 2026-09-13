@@ -24,8 +24,4 @@
     <ProjectReference Include="..\JellyfinHuePlugin\JellyfinHuePlugin.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <FrameworkReference Remove="Microsoft.AspNetCore.App" />
-  </ItemGroup>
-
 </Project>
