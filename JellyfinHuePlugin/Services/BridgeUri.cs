@@ -70,7 +70,7 @@ namespace JellyfinHuePlugin.Services
             return true;
         }
 
-        /// <summary>Letters, digits, dot, dash and underscore; non-empty. Covers v2 UUIDs, v1 keys and v1 ids.</summary>
+        /// <summary>Letters, digits, dot, dash and underscore; non-empty; not all dots, since Uri would collapse a dot-segment. Covers v2 UUIDs, v1 keys and v1 ids.</summary>
         internal static bool IsValidSegment(string? value)
         {
             if (string.IsNullOrEmpty(value))
@@ -84,6 +84,11 @@ namespace JellyfinHuePlugin.Services
                 {
                     return false;
                 }
+            }
+
+            if (value.All(c => c == '.'))
+            {
+                return false;
             }
 
             return true;

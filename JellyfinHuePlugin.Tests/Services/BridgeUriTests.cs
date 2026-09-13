@@ -64,6 +64,7 @@ namespace JellyfinHuePlugin.Tests.Services
         [InlineData("Qn74cB7YlKursSzMYyPL4pr5oLWxayBqhKyjFD10")]
         [InlineData("1")]
         [InlineData("abc-DEF_1.2")]
+        [InlineData("a.b")]
         public void IsValidSegment_AcceptsKeysAndIds(string value)
         {
             BridgeUri.IsValidSegment(value).Should().BeTrue();
@@ -77,6 +78,9 @@ namespace JellyfinHuePlugin.Tests.Services
         [InlineData("a?b")]
         [InlineData("../x")]
         [InlineData("key%2F")]
+        [InlineData(".")]
+        [InlineData("..")]
+        [InlineData("...")]
         public void IsValidSegment_RejectsAnythingThatCouldChangeThePath(string? value)
         {
             BridgeUri.IsValidSegment(value).Should().BeFalse();
