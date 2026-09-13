@@ -133,6 +133,52 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
+        public async Task ConcurrentResolves_OnAMiss_RefreshOnlyOnce()
+        {
+            // Seed the cache so both resolves start from a populated snapshot that misses for
+            // both target ids, forcing each into the refresh path.
+            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+
+            var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).Returns(gate.Task);
+
+            var first = _catalog.ResolveGroupedLightAsync(_bridge, "9", CancellationToken.None);
+            var second = _catalog.ResolveGroupedLightAsync(_bridge, "10", CancellationToken.None);
+            gate.SetResult(Groups);
+            var ids = await Task.WhenAll(first, second);
+
+            ids.Should().Equal(new string?[] { null, null });
+            VerifyGroupFetches(Times.Exactly(2)); // 1 seed load + 1 shared refresh, not 2 refreshes
+        }
+
+        [Fact]
+        public async Task Invalidate_DuringInFlightRefresh_IsNotSilentlyUndone()
+        {
+            // Seed the cache so the "9" lookup below takes the miss -> refresh path rather than
+            // the very first cold load.
+            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+
+            var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).Returns(gate.Task);
+
+            // "9" isn't in Groups, so this refreshes once and blocks on the gated fetch.
+            var resolve = _catalog.ResolveGroupedLightAsync(_bridge, "9", CancellationToken.None);
+
+            // Invalidate lands while that refresh is still in flight, waiting on the gate.
+            _catalog.Invalidate(_bridge);
+
+            // Let the in-flight (now stale-relative-to-the-invalidate) refresh finish.
+            gate.SetResult(Groups);
+            await resolve;
+
+            // The invalidate must stick: the next read has to hit the bridge again rather than
+            // serve the snapshot the in-flight refresh wrote after the invalidate landed.
+            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+
+            VerifyGroupFetches(Times.Exactly(3)); // seed + in-flight refresh + forced-by-invalidate refetch
+        }
+
+        [Fact]
         public async Task GetScenes_AreEnrichedWithGroupNameAndGroupedLight()
         {
             var scenes = await _catalog.GetScenesAsync(_bridge, CancellationToken.None);

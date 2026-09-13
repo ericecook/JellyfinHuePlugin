@@ -23,6 +23,12 @@ namespace JellyfinHuePlugin.Services
         {
             public readonly SemaphoreSlim Gate = new(1, 1);
             public volatile Snapshot? Snapshot;
+
+            // Bumped every time Snapshot is replaced (by a completed load) or cleared (by
+            // Invalidate). Lets a concurrent LoadAsync detect, without taking the gate, that its
+            // in-hand result is stale (Race 1) or that a refresh it's about to perform has
+            // already happened (Race 2) - see LoadAsync and Invalidate.
+            public int Generation;
         }
 
         private readonly HueService _hueService;
@@ -86,7 +92,13 @@ namespace JellyfinHuePlugin.Services
         {
             if (_entries.TryGetValue(bridge.Id, out var entry))
             {
+                // Never takes Gate: a caller that just wants to drop the cache must not block on
+                // a slow bridge call. Clear the snapshot before bumping the generation, so that
+                // any thread which observes the new generation is guaranteed to also observe the
+                // cleared snapshot (both are strong-fence writes; program order between them is
+                // preserved for all observers).
                 entry.Snapshot = null;
+                Interlocked.Increment(ref entry.Generation);
             }
         }
 
@@ -127,12 +139,21 @@ namespace JellyfinHuePlugin.Services
                 return cached;
             }
 
+            var generationAtEntry = Volatile.Read(ref entry.Generation);
             await entry.Gate.WaitAsync(cancellationToken);
             try
             {
                 if (!refresh && entry.Snapshot is { } loadedMeanwhile)
                 {
                     return loadedMeanwhile;
+                }
+
+                // Another caller already refreshed (or invalidated) since we decided we needed a
+                // refresh, while we were queued for the gate: use whatever is current instead of
+                // hitting the bridge again. Keeps "one refresh on a miss" true under concurrency.
+                if (refresh && Volatile.Read(ref entry.Generation) != generationAtEntry)
+                {
+                    return entry.Snapshot;
                 }
 
                 var groups = await _hueService.GetGroupsAsync(bridge, cancellationToken);
@@ -153,7 +174,17 @@ namespace JellyfinHuePlugin.Services
                     .ToList();
 
                 var snapshot = new Snapshot(groups, enriched);
+
+                // An Invalidate landed while the bridge calls above were in flight: this result
+                // is stale by definition. Discard it instead of writing it back, which would
+                // silently undo the invalidation.
+                if (Volatile.Read(ref entry.Generation) != generationAtEntry)
+                {
+                    return entry.Snapshot;
+                }
+
                 entry.Snapshot = snapshot;
+                Interlocked.Increment(ref entry.Generation);
                 return snapshot;
             }
             finally
