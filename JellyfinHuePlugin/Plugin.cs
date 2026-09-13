@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
 using MediaBrowser.Controller.Library;
@@ -82,6 +83,7 @@ namespace JellyfinHuePlugin
                     _segmentManager,
                     _libraryManager,
                     TimeProvider.System);
+                _playbackManager.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
 
                 _logger.LogInformation("Jellyfin Hue Plugin initialized successfully");
             }

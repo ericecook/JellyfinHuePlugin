@@ -90,6 +90,8 @@ namespace JellyfinHuePlugin.Tests.Managers
                 _mockSegmentManager.Object,
                 _mockLibraryManager.Object,
                 TimeProvider.System);
+
+            _manager.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
         }
 
         public void Dispose()

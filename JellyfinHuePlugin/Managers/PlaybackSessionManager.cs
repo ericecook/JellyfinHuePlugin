@@ -13,6 +13,7 @@ using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
 using MediaBrowser.Model.Session;
 using Jellyfin.Database.Implementations.Enums;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using JellyfinHuePlugin.Configuration;
 using JellyfinHuePlugin.Services;
@@ -24,7 +25,7 @@ namespace JellyfinHuePlugin.Managers
     /// <see cref="SessionPolicy"/>; sends go through one <see cref="SessionCommandQueue"/>
     /// per session into <see cref="LightCommandExecutor"/>.
     /// </summary>
-    public class PlaybackSessionManager : IDisposable
+    public class PlaybackSessionManager : IHostedService, IDisposable
     {
         private readonly ISessionManager _sessionManager;
         private readonly ILogger<PlaybackSessionManager> _logger;
@@ -40,7 +41,7 @@ namespace JellyfinHuePlugin.Managers
         /// <summary>Handlers started by raised events, so tests can wait for them without sleeping.</summary>
         private readonly ConcurrentDictionary<Task, byte> _inFlightHandlers = new();
 
-        private volatile bool _disposed;
+        private volatile bool _stopped;
 
         private sealed class SessionEntry
         {
@@ -66,12 +67,6 @@ namespace JellyfinHuePlugin.Managers
             _segmentManager = segmentManager;
             _libraryManager = libraryManager;
             _clock = timeProvider;
-
-            // Subscribe to session events
-            _sessionManager.PlaybackStart += OnPlaybackStart;
-            _sessionManager.PlaybackStopped += OnPlaybackStopped;
-            _sessionManager.PlaybackProgress += OnPlaybackProgress;
-            _sessionManager.SessionEnded += OnSessionEnded;
         }
 
         /// <summary>Movie/episode detection by entity type. Anything else, including null, is neither.</summary>
@@ -163,7 +158,7 @@ namespace JellyfinHuePlugin.Managers
                 ? await LoadOutroSegmentsAsync(e.Item)
                 : Array.Empty<TickRange>();
 
-            if (_disposed) return;
+            if (_stopped) return;
 
             var entry = _sessions.GetOrAdd(e.Session.Id, _ => new SessionEntry());
             lock (entry.Gate)
@@ -368,7 +363,7 @@ namespace JellyfinHuePlugin.Managers
         {
             return queue.Enqueue(async ct =>
             {
-                if (_disposed) return;
+                if (_stopped) return;
 
                 try
                 {
@@ -454,9 +449,33 @@ namespace JellyfinHuePlugin.Managers
             return bridge;
         }
 
-        public void Dispose()
+        /// <summary>Subscribes to Jellyfin's session events. Called once by the host after every plugin is loaded.</summary>
+        public Task StartAsync(CancellationToken cancellationToken)
         {
-            _disposed = true;
+            _sessionManager.PlaybackStart += OnPlaybackStart;
+            _sessionManager.PlaybackStopped += OnPlaybackStopped;
+            _sessionManager.PlaybackProgress += OnPlaybackProgress;
+            _sessionManager.SessionEnded += OnSessionEnded;
+            _logger.LogInformation("Playback listener started");
+            return Task.CompletedTask;
+        }
+
+        public Task StopAsync(CancellationToken cancellationToken)
+        {
+            Stop();
+            return Task.CompletedTask;
+        }
+
+        public void Dispose() => Stop();
+
+        private void Stop()
+        {
+            if (_stopped)
+            {
+                return;
+            }
+
+            _stopped = true;
 
             _sessionManager.PlaybackStart -= OnPlaybackStart;
             _sessionManager.PlaybackStopped -= OnPlaybackStopped;
@@ -471,6 +490,7 @@ namespace JellyfinHuePlugin.Managers
             }
 
             _sessions.Clear();
+            _logger.LogInformation("Playback listener stopped");
         }
     }
 }

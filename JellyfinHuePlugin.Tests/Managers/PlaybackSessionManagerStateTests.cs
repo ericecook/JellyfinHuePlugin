@@ -81,6 +81,8 @@ namespace JellyfinHuePlugin.Tests.Managers
                 _segments.Object,
                 _library.Object,
                 _clock);
+
+            _manager.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
         }
 
         public void Dispose() => _manager.Dispose();
