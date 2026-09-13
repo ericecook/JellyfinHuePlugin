@@ -451,7 +451,10 @@ namespace JellyfinHuePlugin.Services
                 _logger.LogInformation("Attempting to authenticate with bridge {HardwareId} at {Host}", info.HardwareId, host);
 
                 var uri = BridgeUri.Build(host, "api");
-                var body = new { devicetype = DeviceType, generateclientkey = false };
+                // No generateclientkey: bridge software 2071476020 rejects the value false
+                // ("invalid value, false, for parameter, generateclientkey", type 7), and the
+                // plugin never uses the entertainment client key. Omitting it is what 3.x sent.
+                var body = new { devicetype = DeviceType };
                 var response = await SendWithRetryAsync(() => _httpClient.SendAsync(
                     NewRequest(HttpMethod.Post, uri, null, info.HardwareId, body), cancellationToken), cancellationToken);
                 var content = await response.Content.ReadAsStringAsync(cancellationToken);

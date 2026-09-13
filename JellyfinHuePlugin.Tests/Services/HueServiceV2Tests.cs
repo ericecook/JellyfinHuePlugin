@@ -130,7 +130,7 @@ namespace JellyfinHuePlugin.Tests.Services
             post.ExpectedBridgeId.Should().Be(BridgeId);
             post.Header.Should().BeNull();
             Json(post.Body).GetProperty("devicetype").GetString().Should().Be("jellyfin_hue_plugin");
-            Json(post.Body).GetProperty("generateclientkey").GetBoolean().Should().BeFalse();
+            Json(post.Body).TryGetProperty("generateclientkey", out _).Should().BeFalse("a real bridge rejects generateclientkey=false");
             _log.Lines.Should().NotContain(l => l.Contains(Key));
             _log.Lines.Should().Contain(l => l.Contains("Successfully authenticated with bridge " + BridgeId));
         }
