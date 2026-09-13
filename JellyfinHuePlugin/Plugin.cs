@@ -21,6 +21,7 @@ namespace JellyfinHuePlugin
         private readonly HueService _hueService;
         private readonly HueResourceCatalog _catalog;
         private readonly ConfigurationMigrator _migrator;
+        private readonly IHueConfiguration _configuration;
         private readonly IMediaSegmentManager _segmentManager;
         private readonly ILibraryManager _libraryManager;
         private PlaybackSessionManager? _playbackManager;
@@ -39,11 +40,16 @@ namespace JellyfinHuePlugin
             _segmentManager = segmentManager;
             _libraryManager = libraryManager;
             _logger = loggerFactory.CreateLogger<Plugin>();
-            _hueService = new HueService(loggerFactory.CreateLogger<HueService>());
+            var mdns = new MdnsBridgeDiscovery(loggerFactory.CreateLogger<MdnsBridgeDiscovery>());
+            _hueService = new HueService(loggerFactory.CreateLogger<HueService>(), mdns);
             _catalog = new HueResourceCatalog(_hueService, loggerFactory.CreateLogger<HueResourceCatalog>());
             _migrator = new ConfigurationMigrator(_hueService, _catalog, loggerFactory.CreateLogger<ConfigurationMigrator>());
 
             Instance = this;
+
+            var configurationStore = new HueConfigurationStore();
+            configurationStore.Attach(this);
+            _configuration = configurationStore;
 
             // Migrate legacy single-bridge config to new Bridges list
             if (Configuration.MigrateLegacyConfig())
@@ -67,15 +73,16 @@ namespace JellyfinHuePlugin
         {
             try
             {
+                var executor = new LightCommandExecutor(_hueService, _catalog, loggerFactory.CreateLogger<LightCommandExecutor>());
                 _playbackManager = new PlaybackSessionManager(
                     _sessionManager,
                     loggerFactory.CreateLogger<PlaybackSessionManager>(),
-                    _hueService,
-                    _catalog,
-                    () => Configuration,
+                    executor,
+                    _configuration,
                     _segmentManager,
-                    _libraryManager);
-                    
+                    _libraryManager,
+                    TimeProvider.System);
+
                 _logger.LogInformation("Jellyfin Hue Plugin initialized successfully");
             }
             catch (Exception ex)

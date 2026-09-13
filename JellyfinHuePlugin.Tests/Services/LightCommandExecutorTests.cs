@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using FluentAssertions;
 using JellyfinHuePlugin.Configuration;
 using JellyfinHuePlugin.Services;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -18,6 +19,15 @@ namespace JellyfinHuePlugin.Tests.Services
     /// </summary>
     public class LightCommandExecutorTests
     {
+        private sealed class CapturingLogger : ILogger<LightCommandExecutor>
+        {
+            public List<string> Lines { get; } = new();
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel logLevel) => true;
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+                => Lines.Add(formatter(state, exception));
+        }
+
         private readonly Mock<HueService> _hue;
         private readonly Mock<HueResourceCatalog> _catalog;
         private readonly List<GroupedLightState> _sent = new();
@@ -26,20 +36,20 @@ namespace JellyfinHuePlugin.Tests.Services
 
         public LightCommandExecutorTests()
         {
-            _hue = new Mock<HueService>(new NullLogger<HueService>()) { CallBase = false };
+            _hue = new Mock<HueService>(new NullLogger<HueService>(), new MdnsBridgeDiscovery(NullLogger<MdnsBridgeDiscovery>.Instance)) { CallBase = false };
             _hue.Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()))
                 .Callback<HueBridge, string, GroupedLightState, CancellationToken>((_, _, s, _) => _sent.Add(s))
                 .ReturnsAsync(true);
             _hue.Setup(h => h.RecallSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(true);
 
-            _catalog = new Mock<HueResourceCatalog>(_hue.Object, NullLogger.Instance) { CallBase = false };
+            _catalog = new Mock<HueResourceCatalog>(_hue.Object, NullLogger<HueResourceCatalog>.Instance) { CallBase = false };
             _catalog.Setup(c => c.ResolveGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((HueBridge _, string target, CancellationToken _) => "gl-" + target);
             _catalog.Setup(c => c.ResolveSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((HueBridge _, string scene, CancellationToken _) => "resolved-" + scene);
 
-            _executor = new LightCommandExecutor(_hue.Object, _catalog.Object, NullLogger.Instance);
+            _executor = new LightCommandExecutor(_hue.Object, _catalog.Object, NullLogger<LightCommandExecutor>.Instance);
         }
 
         private static LightControlProfile MakeProfile() => new()
@@ -240,6 +250,18 @@ namespace JellyfinHuePlugin.Tests.Services
             var act = () => Execute(LightAction.Stop, MakeProfile(), cts.Token);
 
             await act.Should().ThrowAsync<OperationCanceledException>();
+        }
+
+        [Fact]
+        public async Task Execute_LogsCompletionWithElapsedTimeAtDebug()
+        {
+            var log = new CapturingLogger();
+            var executor = new LightCommandExecutor(_hue.Object, _catalog.Object, log);
+            var profile = MakeProfile();
+
+            await executor.ExecuteAsync(LightAction.Stop, _bridge, profile, CancellationToken.None);
+
+            log.Lines.Should().Contain(l => l.StartsWith("[" + profile.Name + "] Stop command finished in ") && l.EndsWith("ms (success: True)"));
         }
     }
 }

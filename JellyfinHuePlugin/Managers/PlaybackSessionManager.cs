@@ -29,7 +29,7 @@ namespace JellyfinHuePlugin.Managers
         private readonly ISessionManager _sessionManager;
         private readonly ILogger<PlaybackSessionManager> _logger;
         private readonly LightCommandExecutor _executor;
-        private readonly Func<PluginConfiguration> _getConfig;
+        private readonly IHueConfiguration _configuration;
         private readonly IMediaSegmentManager _segmentManager;
         private readonly ILibraryManager _libraryManager;
         private readonly TimeProvider _clock;
@@ -53,20 +53,19 @@ namespace JellyfinHuePlugin.Managers
         public PlaybackSessionManager(
             ISessionManager sessionManager,
             ILogger<PlaybackSessionManager> logger,
-            HueService hueService,
-            HueResourceCatalog catalog,
-            Func<PluginConfiguration> getConfig,
+            LightCommandExecutor executor,
+            IHueConfiguration configuration,
             IMediaSegmentManager segmentManager,
             ILibraryManager libraryManager,
-            TimeProvider? timeProvider = null)
+            TimeProvider timeProvider)
         {
             _sessionManager = sessionManager;
             _logger = logger;
-            _getConfig = getConfig;
+            _executor = executor;
+            _configuration = configuration;
             _segmentManager = segmentManager;
             _libraryManager = libraryManager;
-            _clock = timeProvider ?? TimeProvider.System;
-            _executor = new LightCommandExecutor(hueService, catalog, logger);
+            _clock = timeProvider;
 
             // Subscribe to session events
             _sessionManager.PlaybackStart += OnPlaybackStart;
@@ -135,7 +134,7 @@ namespace JellyfinHuePlugin.Managers
         {
             if (e.Session == null) return;
 
-            var config = _getConfig();
+            var config = _configuration.Current;
 
             var (isMovie, isEpisode) = ClassifyItem(e.Item);
 
@@ -190,7 +189,7 @@ namespace JellyfinHuePlugin.Managers
                 return;
             }
 
-            var config = _getConfig();
+            var config = _configuration.Current;
             var input = new ProgressInput(e.IsPaused, e.PlaybackPositionTicks ?? 0, config.EnablePlugin, _clock.GetUtcNow());
             var progressItem = ItemIdOf(e.Item);
 
@@ -258,7 +257,7 @@ namespace JellyfinHuePlugin.Managers
         {
             if (e.Session == null) return;
 
-            var config = _getConfig();
+            var config = _configuration.Current;
 
             // The entry stays in the map (created here if it doesn't exist yet) so a start
             // that follows always shares its queue with this stop.
@@ -342,7 +341,7 @@ namespace JellyfinHuePlugin.Managers
                 return;
             }
 
-            var config = _getConfig();
+            var config = _configuration.Current;
             var profile = snapshot.Profile;
 
             _logger.LogInformation("Session ended on {ClientName} (Device: {DeviceId}, IP: {RemoteEndpoint}) - restoring lights using profile: {ProfileName}",

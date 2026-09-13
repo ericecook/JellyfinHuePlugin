@@ -8,6 +8,7 @@ using Jellyfin.Database.Implementations.Enums;
 using JellyfinHuePlugin.Configuration;
 using JellyfinHuePlugin.Managers;
 using JellyfinHuePlugin.Services;
+using JellyfinHuePlugin.Tests.Support;
 using MediaBrowser.Controller.Entities;
 using MediaBrowser.Controller.Entities.Movies;
 using MediaBrowser.Controller.Entities.TV;
@@ -49,14 +50,14 @@ namespace JellyfinHuePlugin.Tests.Managers
 
         public PlaybackSessionManagerStateTests()
         {
-            _hue = new Mock<HueService>(new NullLogger<HueService>()) { CallBase = false };
+            _hue = new Mock<HueService>(new NullLogger<HueService>(), new MdnsBridgeDiscovery(NullLogger<MdnsBridgeDiscovery>.Instance)) { CallBase = false };
             _hue.Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()))
                 .Callback<HueBridge, string, GroupedLightState, CancellationToken>((_, _, s, _) => _sentBrightness.Add((int?)s.Brightness))
                 .ReturnsAsync(true);
             _hue.Setup(h => h.RecallSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(true);
 
-            _catalog = new Mock<HueResourceCatalog>(_hue.Object, NullLogger.Instance) { CallBase = false };
+            _catalog = new Mock<HueResourceCatalog>(_hue.Object, NullLogger<HueResourceCatalog>.Instance) { CallBase = false };
             _catalog.Setup(c => c.ResolveGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((HueBridge _, string target, CancellationToken _) => "gl-" + target);
             _catalog.Setup(c => c.ResolveSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -75,9 +76,8 @@ namespace JellyfinHuePlugin.Tests.Managers
             _manager = new PlaybackSessionManager(
                 _sessionManager.Object,
                 new NullLogger<PlaybackSessionManager>(),
-                _hue.Object,
-                _catalog.Object,
-                () => _config,
+                new LightCommandExecutor(_hue.Object, _catalog.Object, NullLogger<LightCommandExecutor>.Instance),
+                new FakeHueConfiguration(_config),
                 _segments.Object,
                 _library.Object,
                 _clock);

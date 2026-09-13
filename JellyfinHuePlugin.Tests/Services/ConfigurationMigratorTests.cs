@@ -26,7 +26,7 @@ namespace JellyfinHuePlugin.Tests.Services
         private const string ReadScene = "46629dbc-7c52-428f-96e8-0d752718ad09";
         private const string Key = "SECRETKEY0123456789";
 
-        private sealed class CapturingLogger : ILogger
+        private sealed class CapturingLogger : ILogger<ConfigurationMigrator>
         {
             public List<string> Lines { get; } = new();
             public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
@@ -48,11 +48,11 @@ namespace JellyfinHuePlugin.Tests.Services
 
         public ConfigurationMigratorTests()
         {
-            _hue = new Mock<HueService>(new NullLogger<HueService>()) { CallBase = false };
+            _hue = new Mock<HueService>(new NullLogger<HueService>(), new MdnsBridgeDiscovery(NullLogger<MdnsBridgeDiscovery>.Instance)) { CallBase = false };
             _hue.Setup(h => h.GetBridgeInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(new HueBridgeInfo(HardwareId, "2071476020", "1.78.0", "BSB003"));
 
-            _catalog = new Mock<HueResourceCatalog>(_hue.Object, NullLogger.Instance) { CallBase = false };
+            _catalog = new Mock<HueResourceCatalog>(_hue.Object, NullLogger<HueResourceCatalog>.Instance) { CallBase = false };
             _catalog.Setup(c => c.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(Groups);
             _catalog.Setup(c => c.ResolveGroupedLightAsync(It.IsAny<HueBridge>(), "82", It.IsAny<CancellationToken>())).ReturnsAsync(LivingRoomGroupedLight);
             _catalog.Setup(c => c.ResolveSceneAsync(It.IsAny<HueBridge>(), "rI2iQLEIlwpr4uoU", It.IsAny<CancellationToken>())).ReturnsAsync(ReadScene);

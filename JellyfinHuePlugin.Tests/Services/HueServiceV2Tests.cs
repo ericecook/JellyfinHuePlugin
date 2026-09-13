@@ -271,6 +271,30 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
+        public async Task ForgetHost_MakesTheNextUnpinnedCallReadConfigAgain()
+        {
+            _handler.Responses["/clip/v2/resource/grouped_light/gl-1"] = (HttpStatusCode.OK, Empty);
+
+            await _service.SetGroupedLightAsync(Bridge(bridgeId: ""), "gl-1", new GroupedLightState { On = true });
+            await _service.SetGroupedLightAsync(Bridge(bridgeId: ""), "gl-1", new GroupedLightState { On = true });
+            _handler.Requests.Count(r => r.Path == "/api/0/config").Should().Be(1);
+
+            _service.ForgetHost("192.168.1.50");
+            await _service.SetGroupedLightAsync(Bridge(bridgeId: ""), "gl-1", new GroupedLightState { On = true });
+
+            _handler.Requests.Count(r => r.Path == "/api/0/config").Should().Be(2);
+        }
+
+        [Fact]
+        public void ForgetHost_InvalidAddress_IsANoOp()
+        {
+            var act = () => _service.ForgetHost("not a host!");
+
+            act.Should().NotThrow();
+            _log.Lines.Should().BeEmpty();
+        }
+
+        [Fact]
         public async Task SetGroupedLight_EmptyHardwareId_UnsupportedBridge_SendsNothingToClip()
         {
             _handler.Responses["/api/0/config"] = (HttpStatusCode.OK, $@"{{""swversion"":""1940000000"",""bridgeid"":""{BridgeId}""}}");
@@ -394,7 +418,7 @@ namespace JellyfinHuePlugin.Tests.Services
 
         private static Mock<MdnsBridgeDiscovery> Mdns(params HueBridgeDiscovery[] answers)
         {
-            var mdns = new Mock<MdnsBridgeDiscovery>(NullLogger.Instance);
+            var mdns = new Mock<MdnsBridgeDiscovery>(NullLogger<MdnsBridgeDiscovery>.Instance);
             mdns.Setup(m => m.DiscoverAsync(It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()))
                 .Returns((TimeSpan _, CancellationToken ct) =>
                 {

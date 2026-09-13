@@ -67,7 +67,7 @@ namespace JellyfinHuePlugin.Services
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
 
-        public HueService(ILogger<HueService> logger)
+        public HueService(ILogger<HueService> logger, MdnsBridgeDiscovery mdns)
         {
             _logger = logger;
             var roots = BridgeCertificateValidator.LoadRoots(Environment.GetEnvironmentVariable(ExtraRootEnvironmentVariable), logger);
@@ -75,7 +75,7 @@ namespace JellyfinHuePlugin.Services
             _httpClient.Timeout = TimeSpan.FromSeconds(5);
             _bridgeInfoClient = new HttpClient(CreateBridgeInfoHandler(logger, roots));
             _bridgeInfoClient.Timeout = TimeSpan.FromSeconds(5);
-            _mdns = new MdnsBridgeDiscovery(logger);
+            _mdns = mdns;
         }
 
         // Test seam: lets tests capture requests and feed canned bridge responses. Both clients route
@@ -229,6 +229,19 @@ namespace JellyfinHuePlugin.Services
 
             _bridgeIdsByHost[host] = info.HardwareId;
             return info.HardwareId;
+        }
+
+        /// <summary>
+        /// Drops the bridge id learned for an address, so the next pinned request to it reads
+        /// /api/0/config again. Called when a bridge's address or key changes on the plugin page.
+        /// An address that does not parse is ignored. Never throws, never logs.
+        /// </summary>
+        public virtual void ForgetHost(string address)
+        {
+            if (BridgeUri.TryParseHost(address, out var host))
+            {
+                _bridgeIdsByHost.TryRemove(host, out _);
+            }
         }
 
         private static string? GetString(JsonElement element, params string[] path)

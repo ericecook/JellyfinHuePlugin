@@ -80,7 +80,7 @@ namespace JellyfinHuePlugin.Services
         private readonly ILogger _logger;
         private readonly ConcurrentDictionary<string, Entry> _entries = new();
 
-        public HueResourceCatalog(HueService hueService, ILogger logger)
+        public HueResourceCatalog(HueService hueService, ILogger<HueResourceCatalog> logger)
         {
             _hueService = hueService;
             _logger = logger;
@@ -142,7 +142,7 @@ namespace JellyfinHuePlugin.Services
         }
 
         /// <summary>Drops the cached resources for the bridge; the next call fetches again.</summary>
-        public void Invalidate(HueBridge bridge)
+        public virtual void Invalidate(HueBridge bridge)
         {
             // Never takes Gate: a caller that just wants to drop the cache must not block on a
             // slow bridge call. The short, await-free lock inside Entry.Invalidate is enough to

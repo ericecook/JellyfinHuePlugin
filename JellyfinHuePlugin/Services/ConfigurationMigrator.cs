@@ -22,7 +22,7 @@ namespace JellyfinHuePlugin.Services
         private readonly HueResourceCatalog _catalog;
         private readonly ILogger _logger;
 
-        public ConfigurationMigrator(HueService hueService, HueResourceCatalog catalog, ILogger logger)
+        public ConfigurationMigrator(HueService hueService, HueResourceCatalog catalog, ILogger<ConfigurationMigrator> logger)
         {
             _hueService = hueService;
             _catalog = catalog;

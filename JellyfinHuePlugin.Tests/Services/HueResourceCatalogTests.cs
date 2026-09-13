@@ -17,7 +17,7 @@ namespace JellyfinHuePlugin.Tests.Services
     {
         private static readonly string RoomUuid = "3883f8bf-30a3-445b-ac06-b047d50599df";
 
-        private sealed class CapturingLogger : ILogger
+        private sealed class CapturingLogger : ILogger<HueResourceCatalog>
         {
             public List<(LogLevel Level, string Message)> Entries { get; } = new();
             public IEnumerable<string> Lines => Entries.Select(e => e.Message);
@@ -47,7 +47,7 @@ namespace JellyfinHuePlugin.Tests.Services
 
         public HueResourceCatalogTests()
         {
-            _hue = new Mock<HueService>(new NullLogger<HueService>()) { CallBase = false };
+            _hue = new Mock<HueService>(new NullLogger<HueService>(), new MdnsBridgeDiscovery(NullLogger<MdnsBridgeDiscovery>.Instance)) { CallBase = false };
             _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(Groups);
             _hue.Setup(h => h.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(Scenes);
             _catalog = new HueResourceCatalog(_hue.Object, _log);

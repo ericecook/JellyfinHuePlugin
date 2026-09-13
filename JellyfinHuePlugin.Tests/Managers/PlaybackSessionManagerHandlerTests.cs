@@ -6,6 +6,7 @@ using FluentAssertions;
 using JellyfinHuePlugin.Configuration;
 using JellyfinHuePlugin.Managers;
 using JellyfinHuePlugin.Services;
+using JellyfinHuePlugin.Tests.Support;
 using MediaBrowser.Controller.Configuration;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.MediaSegments;
@@ -36,7 +37,7 @@ namespace JellyfinHuePlugin.Tests.Managers
         {
             _mockSessionManager = new Mock<ISessionManager>();
             _mockHueService = new Mock<HueService>(
-                new NullLogger<HueService>()) { CallBase = false };
+                new NullLogger<HueService>(), new MdnsBridgeDiscovery(NullLogger<MdnsBridgeDiscovery>.Instance)) { CallBase = false };
             _mockSegmentManager = new Mock<IMediaSegmentManager>();
             _mockLibraryManager = new Mock<ILibraryManager>();
 
@@ -75,7 +76,7 @@ namespace JellyfinHuePlugin.Tests.Managers
                 .Setup(h => h.RecallSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(true);
 
-            _mockCatalog = new Mock<HueResourceCatalog>(_mockHueService.Object, NullLogger.Instance) { CallBase = false };
+            _mockCatalog = new Mock<HueResourceCatalog>(_mockHueService.Object, NullLogger<HueResourceCatalog>.Instance) { CallBase = false };
             _mockCatalog.Setup(c => c.ResolveGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((HueBridge _, string target, CancellationToken _) => "gl-" + target);
             _mockCatalog.Setup(c => c.ResolveSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -84,11 +85,11 @@ namespace JellyfinHuePlugin.Tests.Managers
             _manager = new PlaybackSessionManager(
                 _mockSessionManager.Object,
                 new NullLogger<PlaybackSessionManager>(),
-                _mockHueService.Object,
-                _mockCatalog.Object,
-                () => _config,
+                new LightCommandExecutor(_mockHueService.Object, _mockCatalog.Object, NullLogger<LightCommandExecutor>.Instance),
+                new FakeHueConfiguration(_config),
                 _mockSegmentManager.Object,
-                _mockLibraryManager.Object);
+                _mockLibraryManager.Object,
+                TimeProvider.System);
         }
 
         public void Dispose()

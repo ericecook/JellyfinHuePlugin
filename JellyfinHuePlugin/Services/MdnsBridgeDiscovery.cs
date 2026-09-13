@@ -23,7 +23,7 @@ namespace JellyfinHuePlugin.Services
 
         private readonly ILogger _logger;
 
-        public MdnsBridgeDiscovery(ILogger logger)
+        public MdnsBridgeDiscovery(ILogger<MdnsBridgeDiscovery> logger)
         {
             _logger = logger;
         }
