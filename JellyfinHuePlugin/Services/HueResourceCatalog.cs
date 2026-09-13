@@ -109,7 +109,7 @@ namespace JellyfinHuePlugin.Services
                 return targetGroupId;
             }
 
-            var (resolved, fetchFailed) = await ResolveAsync(bridge, snapshot => FindGroupedLight(snapshot, targetGroupId), cancellationToken);
+            var (resolved, fetchFailed) = await ResolveAsync(bridge, snapshot => FindGroupedLight(snapshot, targetGroupId, bridge), cancellationToken);
             if (resolved == null)
             {
                 LogUnresolved("group", targetGroupId, bridge, fetchFailed);
@@ -126,7 +126,11 @@ namespace JellyfinHuePlugin.Services
                 return sceneId;
             }
 
-            var (resolved, fetchFailed) = await ResolveAsync(bridge, snapshot => snapshot.Scenes.FirstOrDefault(s => s.IdV1 == "/scenes/" + sceneId)?.Id, cancellationToken);
+            var idV1 = "/scenes/" + sceneId;
+            var (resolved, fetchFailed) = await ResolveAsync(
+                bridge,
+                snapshot => FirstByIdV1OrWarn(snapshot.Scenes, idV1, s => s.IdV1, s => $"{s.Name} ({s.Id})", bridge, "scene")?.Id,
+                cancellationToken);
             if (resolved == null)
             {
                 LogUnresolved("scene", sceneId, bridge, fetchFailed);
@@ -162,14 +166,47 @@ namespace JellyfinHuePlugin.Services
         private static string EntryKey(HueBridge bridge) =>
             $"{bridge.Id.Length}:{bridge.Id}|{bridge.IpAddress.Length}:{bridge.IpAddress}|{bridge.Username.Length}:{bridge.Username}";
 
-        private static string? FindGroupedLight(Snapshot snapshot, string targetGroupId)
+        private string? FindGroupedLight(Snapshot snapshot, string targetGroupId, HueBridge bridge)
         {
             if (string.IsNullOrWhiteSpace(targetGroupId) || targetGroupId == "0")
             {
                 return snapshot.Groups.FirstOrDefault(g => g.Type == "bridge_home")?.GroupedLightId;
             }
 
-            return snapshot.Groups.FirstOrDefault(g => g.IdV1 == "/groups/" + targetGroupId)?.GroupedLightId;
+            return FirstByIdV1OrWarn(snapshot.Groups, "/groups/" + targetGroupId, g => g.IdV1, g => $"{g.Name} ({g.Id})", bridge, "room or zone")?.GroupedLightId;
+        }
+
+        /// <summary>
+        /// FirstOrDefault by id_v1, except that when a second resource also matches - only
+        /// possible after a factory reset reuses a v1 number - it logs a warning naming both
+        /// resources and stops looking any further. The first match still wins either way;
+        /// only the operator's visibility into the ambiguity changes. Costs one pass over
+        /// <paramref name="items"/> in the common (no-duplicate) case, never two.
+        /// </summary>
+        private T? FirstByIdV1OrWarn<T>(IEnumerable<T> items, string idV1, Func<T, string?> selectIdV1, Func<T, string> describe, HueBridge bridge, string resourceKind)
+            where T : class
+        {
+            T? first = null;
+            foreach (var item in items)
+            {
+                if (selectIdV1(item) != idV1)
+                {
+                    continue;
+                }
+
+                if (first == null)
+                {
+                    first = item;
+                    continue;
+                }
+
+                _logger.LogWarning(
+                    "Bridge {BridgeName} has more than one {ResourceKind} with id_v1 {IdV1}; using {Chosen} and ignoring {Ignored}",
+                    bridge.Name, resourceKind, idV1, describe(first), describe(item));
+                break;
+            }
+
+            return first;
         }
 
         /// <summary>A target that could not be resolved, told apart from a bridge that could not be

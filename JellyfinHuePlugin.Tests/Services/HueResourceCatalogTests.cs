@@ -19,11 +19,12 @@ namespace JellyfinHuePlugin.Tests.Services
 
         private sealed class CapturingLogger : ILogger
         {
-            public List<string> Lines { get; } = new();
+            public List<(LogLevel Level, string Message)> Entries { get; } = new();
+            public IEnumerable<string> Lines => Entries.Select(e => e.Message);
             public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
             public bool IsEnabled(LogLevel logLevel) => true;
             public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-                => Lines.Add(formatter(state, exception));
+                => Entries.Add((logLevel, formatter(state, exception)));
         }
 
         private readonly Mock<HueService> _hue;
@@ -141,6 +142,48 @@ namespace JellyfinHuePlugin.Tests.Services
             var line = _log.Lines.Should().ContainSingle().Subject;
             line.Should().Contain("Could not reach bridge Test Bridge");
             line.Should().NotContain("re-select", "an unreachable bridge is not something re-selecting the target fixes");
+        }
+
+        [Fact]
+        public async Task ResolveGroupedLight_DuplicateIdV1_WarnsAndStillResolvesToTheFirstMatch()
+        {
+            // A factory reset can make the bridge hand back two rooms with the same v1 group
+            // number. Resolution must still pick the first one; only the warning is new.
+            var duplicateGroups = new[]
+            {
+                new HueGroupResource("room-a", "gl-a", "Theater", "room", "/groups/7"),
+                new HueGroupResource("room-b", "gl-b", "Theater (post-reset)", "room", "/groups/7")
+            };
+            _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(duplicateGroups);
+
+            var id = await _catalog.ResolveGroupedLightAsync(_bridge, "7", CancellationToken.None);
+
+            id.Should().Be("gl-a", "the first match must keep winning; only visibility into the ambiguity changes");
+            _log.Entries.Should().ContainSingle(e =>
+                e.Level == LogLevel.Warning &&
+                e.Message.Contains("Test Bridge") &&
+                e.Message.Contains("room-a") &&
+                e.Message.Contains("room-b"));
+        }
+
+        [Fact]
+        public async Task ResolveScene_DuplicateIdV1_WarnsAndStillResolvesToTheFirstMatch()
+        {
+            var duplicateScenes = new[]
+            {
+                new HueSceneResource("scene-a", "Movie", "room-1", "/scenes/dup"),
+                new HueSceneResource("scene-b", "Movie (post-reset)", "room-1", "/scenes/dup")
+            };
+            _hue.Setup(h => h.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(duplicateScenes);
+
+            var id = await _catalog.ResolveSceneAsync(_bridge, "dup", CancellationToken.None);
+
+            id.Should().Be("scene-a", "the first match must keep winning; only visibility into the ambiguity changes");
+            _log.Entries.Should().ContainSingle(e =>
+                e.Level == LogLevel.Warning &&
+                e.Message.Contains("Test Bridge") &&
+                e.Message.Contains("scene-a") &&
+                e.Message.Contains("scene-b"));
         }
 
         [Fact]
