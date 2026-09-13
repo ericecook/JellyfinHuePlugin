@@ -1,56 +1,39 @@
 using System;
 using System.Collections.Generic;
-using System.Threading;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
-using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.MediaSegments;
-using MediaBrowser.Controller.Session;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
 using Microsoft.Extensions.Logging;
 using JellyfinHuePlugin.Configuration;
 using JellyfinHuePlugin.Services;
-using JellyfinHuePlugin.Managers;
 
 namespace JellyfinHuePlugin
 {
-    public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages, IDisposable
+    /// <summary>
+    /// Jellyfin's handle on the plugin: identity, the configuration page, the configuration file,
+    /// and the two one-time conversions of older configurations. Every service is created by the
+    /// container (see <see cref="PluginServiceRegistrator"/>); this class only binds the
+    /// configuration store to itself and reacts to configuration saves made from the page.
+    /// </summary>
+    public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     {
-        private readonly ISessionManager _sessionManager;
-        private readonly ILogger<Plugin> _logger;
         private readonly HueService _hueService;
         private readonly HueResourceCatalog _catalog;
-        private readonly ConfigurationMigrator _migrator;
-        private readonly IHueConfiguration _configuration;
-        private readonly IMediaSegmentManager _segmentManager;
-        private readonly ILibraryManager _libraryManager;
-        private PlaybackSessionManager? _playbackManager;
-        private bool _disposed = false;
+        private readonly ILogger<Plugin> _logger;
 
         public Plugin(
             IApplicationPaths applicationPaths,
             IXmlSerializer xmlSerializer,
-            ISessionManager sessionManager,
-            IMediaSegmentManager segmentManager,
-            ILibraryManager libraryManager,
-            ILoggerFactory loggerFactory)
+            HueConfigurationStore store,
+            HueService hueService,
+            HueResourceCatalog catalog,
+            ILogger<Plugin> logger)
             : base(applicationPaths, xmlSerializer)
         {
-            _sessionManager = sessionManager;
-            _segmentManager = segmentManager;
-            _libraryManager = libraryManager;
-            _logger = loggerFactory.CreateLogger<Plugin>();
-            var mdns = new MdnsBridgeDiscovery(loggerFactory.CreateLogger<MdnsBridgeDiscovery>());
-            _hueService = new HueService(loggerFactory.CreateLogger<HueService>(), mdns);
-            _catalog = new HueResourceCatalog(_hueService, loggerFactory.CreateLogger<HueResourceCatalog>());
-            _migrator = new ConfigurationMigrator(_hueService, _catalog, loggerFactory.CreateLogger<ConfigurationMigrator>());
-
-            Instance = this;
-
-            var configurationStore = new HueConfigurationStore();
-            configurationStore.Attach(this);
-            _configuration = configurationStore;
+            _hueService = hueService;
+            _catalog = catalog;
+            _logger = logger;
 
             // Migrate legacy single-bridge config to new Bridges list
             if (Configuration.MigrateLegacyConfig())
@@ -66,32 +49,8 @@ namespace JellyfinHuePlugin
                 SaveConfiguration();
             }
 
-            // Initialize playback manager
-            InitializePlaybackManager(loggerFactory);
-        }
-
-        private void InitializePlaybackManager(ILoggerFactory loggerFactory)
-        {
-            try
-            {
-                var executor = new LightCommandExecutor(_hueService, _catalog, loggerFactory.CreateLogger<LightCommandExecutor>());
-                _playbackManager = new PlaybackSessionManager(
-                    _sessionManager,
-                    loggerFactory.CreateLogger<PlaybackSessionManager>(),
-                    executor,
-                    _configuration,
-                    _segmentManager,
-                    _libraryManager,
-                    TimeProvider.System);
-                _playbackManager.StartAsync(CancellationToken.None).GetAwaiter().GetResult();
-
-                _logger.LogInformation("Jellyfin Hue Plugin initialized successfully");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to initialize playback manager - plugin will load but may not function");
-                // Don't throw - allow plugin to load even if session manager fails
-            }
+            store.Attach(this);
+            _logger.LogInformation("Jellyfin Hue Plugin initialized successfully");
         }
 
         public override string Name => "Hue Lighting Control";
@@ -99,14 +58,6 @@ namespace JellyfinHuePlugin
         public override Guid Id => Guid.Parse("2a5f5b3e-8c9d-4f1a-9b7e-6d3c4e5f6a7b");
 
         public override string Description => "Control Philips Hue lights based on Jellyfin playback events";
-
-        public static Plugin? Instance { get; private set; }
-
-        public HueService HueService => _hueService;
-
-        public HueResourceCatalog Catalog => _catalog;
-
-        public ConfigurationMigrator Migrator => _migrator;
 
         public IEnumerable<PluginPageInfo> GetPages()
         {
@@ -120,26 +71,46 @@ namespace JellyfinHuePlugin
             };
         }
 
-        public void Dispose()
+        /// <summary>
+        /// The web client's generic configuration save lands here (the plugin's own API writes
+        /// through <see cref="BasePlugin{T}.SaveConfiguration()"/> and never does). A bridge whose
+        /// address or application key changed on the page still carries the previous bridge's
+        /// pinned id and cached rooms, so the pin is cleared before the single write and the
+        /// caches dropped after it. A failure in the change detection is logged and never blocks
+        /// the save.
+        /// </summary>
+        public override void UpdateConfiguration(BasePluginConfiguration configuration)
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        protected virtual void Dispose(bool disposing)
-        {
-            if (_disposed)
+            var incoming = (PluginConfiguration)configuration;
+            var changes = BridgeChanges.Result.None;
+            try
             {
-                return;
+                changes = BridgeChanges.Between(Configuration.Bridges, incoming.Bridges);
+                foreach (var (_, updated) in changes.Changed)
+                {
+                    _logger.LogInformation("Bridge {BridgeName} changed address or application key on the plugin page; clearing its pinned bridge id and cached resources", updated.Name);
+                    updated.HardwareId = string.Empty;
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Bridge change detection failed; configuration saved without cache invalidation");
+                changes = BridgeChanges.Result.None;
             }
 
-            if (disposing)
+            base.UpdateConfiguration(incoming);
+
+            foreach (var (old, _) in changes.Changed)
             {
-                _playbackManager?.Dispose();
-                _hueService.Dispose();
+                _catalog.Invalidate(old);
+                _hueService.ForgetHost(old.IpAddress);
             }
 
-            _disposed = true;
+            foreach (var old in changes.Removed)
+            {
+                _catalog.Invalidate(old);
+                _hueService.ForgetHost(old.IpAddress);
+            }
         }
     }
 }
