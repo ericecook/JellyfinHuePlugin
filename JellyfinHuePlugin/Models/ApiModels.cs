@@ -88,7 +88,7 @@ namespace JellyfinHuePlugin.Api
     {
         public bool Success { get; set; }
         public string? Error { get; set; }
-        /// <summary>Filled whenever the bridge answered /api/0/config, even when Success is false.</summary>
+        /// <summary>Filled whenever the bridge answered /api/0/config, even when Success is false. Learned over the chain-only client before any pinning, so these facts are trusted to chain level only; Success is the pinned verdict.</summary>
         public string? HardwareId { get; set; }
         public string? ModelId { get; set; }
         public string? SoftwareVersion { get; set; }

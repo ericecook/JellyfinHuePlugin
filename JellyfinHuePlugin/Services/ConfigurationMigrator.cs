@@ -54,12 +54,16 @@ namespace JellyfinHuePlugin.Services
                     if (string.IsNullOrWhiteSpace(bridge.HardwareId))
                     {
                         var info = await _hueService.GetBridgeInfoAsync(bridge.IpAddress, cancellationToken);
-                        if (info != null)
+                        if (info != null && info.SupportsV2)
                         {
                             bridge.HardwareId = info.HardwareId;
                             entry.HardwareIdLearned = true;
                             report.Changed = true;
                             _logger.LogInformation("Learned bridge id {HardwareId} for bridge {BridgeName}", info.HardwareId, bridge.Name);
+                        }
+                        else if (info != null && !info.SupportsV2)
+                        {
+                            _logger.LogWarning("Bridge {BridgeName} is not a supported v2 bridge (software {Version}); its id was not stored", bridge.Name, info.SoftwareVersion);
                         }
                     }
 

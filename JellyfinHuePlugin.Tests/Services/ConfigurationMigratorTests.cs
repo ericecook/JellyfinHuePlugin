@@ -170,6 +170,21 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
+        public async Task UnsupportedBridge_DoesNotStoreItsHardwareId()
+        {
+            _hue.Setup(h => h.GetBridgeInfoAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new HueBridgeInfo(HardwareId, "1948085999", "1.50.0", "BSB002"));
+            var bridge = Bridge();
+
+            var report = await _migrator.MigrateAsync(Config(bridge), CancellationToken.None);
+
+            bridge.HardwareId.Should().BeEmpty("a bridge below the v2 floor must keep failing the supported-bridge check on every request");
+            report.Bridges.Single().HardwareIdLearned.Should().BeFalse();
+            report.Changed.Should().BeFalse();
+            _log.Lines.Should().Contain("Bridge Bridge b1 is not a supported v2 bridge (software 1948085999); its id was not stored");
+        }
+
+        [Fact]
         public async Task KnownHardwareId_IsNotFetchedAgain()
         {
             var config = Config(Bridge(hardwareId: HardwareId));
