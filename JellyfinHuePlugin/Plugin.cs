@@ -76,8 +76,11 @@ namespace JellyfinHuePlugin
         /// through <see cref="BasePlugin{T}.SaveConfiguration()"/> and never does). A bridge whose
         /// address or application key changed on the page still carries the previous bridge's
         /// pinned id and cached rooms, so the pin is cleared before the single write and the
-        /// caches dropped after it. A failure in the change detection is logged and never blocks
-        /// the save.
+        /// caches dropped after it. <see cref="HueBridge.HardwareId"/> is server-owned on this
+        /// path: the page holds a copy of the bridge list loaded once and posts the whole list
+        /// back, so a pin the server learned since (a re-authentication) would be overwritten by
+        /// the page's stale one - every untouched bridge therefore keeps the live value. A
+        /// failure in the change detection is logged and never blocks the save.
         /// </summary>
         public override void UpdateConfiguration(BasePluginConfiguration configuration)
         {
@@ -91,6 +94,11 @@ namespace JellyfinHuePlugin
                     _logger.LogInformation("Bridge {BridgeName} changed address or application key on the plugin page; clearing its pinned bridge id and cached resources", updated.Name);
                     updated.HardwareId = string.Empty;
                 }
+
+                foreach (var (old, updated) in changes.Unchanged)
+                {
+                    updated.HardwareId = old.HardwareId;
+                }
             }
             catch (Exception ex)
             {
@@ -100,10 +108,13 @@ namespace JellyfinHuePlugin
 
             base.UpdateConfiguration(incoming);
 
-            foreach (var (old, _) in changes.Changed)
+            foreach (var (old, updated) in changes.Changed)
             {
                 _catalog.Invalidate(old);
+                // Both hosts: the old address keeps a learned id that is no longer this bridge's,
+                // and the new one may already carry an id learned for whatever answered there.
                 _hueService.ForgetHost(old.IpAddress);
+                _hueService.ForgetHost(updated.IpAddress);
             }
 
             foreach (var old in changes.Removed)

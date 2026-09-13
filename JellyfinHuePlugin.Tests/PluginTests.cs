@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using FluentAssertions;
 using JellyfinHuePlugin.Configuration;
 using JellyfinHuePlugin.Services;
@@ -25,6 +26,10 @@ namespace JellyfinHuePlugin.Tests
         private readonly Mock<HueResourceCatalog> _catalog;
         private readonly HueConfigurationStore _store = new();
         private readonly List<object> _written = new();
+        /// <summary>HardwareId of every bridge as it stood at each write - the object is mutated after.</summary>
+        private readonly List<string[]> _pinsAtWrite = new();
+        /// <summary>Catalog invocation count at each write, to place Invalidate after the save.</summary>
+        private readonly List<int> _catalogCallsAtWrite = new();
 
         public PluginTests()
         {
@@ -32,10 +37,19 @@ namespace JellyfinHuePlugin.Tests
             _paths.SetupGet(p => p.PluginConfigurationsPath).Returns(_dir);
             // BasePlugin<T>'s constructor also builds the plugin's data folder path from PluginsPath.
             _paths.SetupGet(p => p.PluginsPath).Returns(_dir);
-            _xml.Setup(x => x.SerializeToFile(It.IsAny<object>(), It.IsAny<string>()))
-                .Callback<object, string>((o, _) => _written.Add(o));
             _hue = new Mock<HueService>(new NullLogger<HueService>(), new MdnsBridgeDiscovery(NullLogger<MdnsBridgeDiscovery>.Instance)) { CallBase = false };
             _catalog = new Mock<HueResourceCatalog>(_hue.Object, NullLogger<HueResourceCatalog>.Instance) { CallBase = false };
+            // Snapshot inside the callback: the configuration object keeps being mutated afterwards,
+            // so what it holds when the test asserts is not what was written.
+            _xml.Setup(x => x.SerializeToFile(It.IsAny<object>(), It.IsAny<string>()))
+                .Callback<object, string>((o, _) =>
+                {
+                    _written.Add(o);
+                    _pinsAtWrite.Add(o is PluginConfiguration c
+                        ? c.Bridges.Select(b => b.HardwareId).ToArray()
+                        : Array.Empty<string>());
+                    _catalogCallsAtWrite.Add(_catalog.Invocations.Count);
+                });
         }
 
         public void Dispose()
@@ -93,10 +107,31 @@ namespace JellyfinHuePlugin.Tests
             plugin.UpdateConfiguration(incoming);
 
             _written.Should().ContainSingle().Which.Should().BeSameAs(incoming);
-            incoming.Bridges[0].HardwareId.Should().BeEmpty();
+            _pinsAtWrite.Should().ContainSingle().Which.Should().Equal(string.Empty);
+            _catalogCallsAtWrite.Should().ContainSingle().Which.Should().Be(0, "the caches are dropped only once the save succeeded");
             plugin.Configuration.Should().BeSameAs(incoming);
             _catalog.Verify(c => c.Invalidate(old), Times.Once);
+            // Both the address it left and the one it moved to: either may hold a learned id.
             _hue.Verify(h => h.ForgetHost("192.168.1.50"), Times.Once);
+            _hue.Verify(h => h.ForgetHost("192.168.1.60"), Times.Once);
+        }
+
+        [Theory]
+        [InlineData("")]
+        [InlineData("001788fffeaaaaaa")]
+        public void UpdateConfiguration_UnchangedBridge_KeepsTheLivePinWhateverThePagePosted(string postedPin)
+        {
+            // The page holds a copy of the bridge list loaded once and posts it back whole, so a
+            // pin the server learned since (a re-authentication) must not be overwritten by it.
+            var plugin = Load(Config(Bridge(hardwareId: "001788fffe123456")));
+            var incoming = Config(Bridge(hardwareId: postedPin));
+
+            plugin.UpdateConfiguration(incoming);
+
+            _pinsAtWrite.Should().ContainSingle().Which.Should().Equal("001788fffe123456");
+            incoming.Bridges[0].HardwareId.Should().Be("001788fffe123456");
+            _catalog.Verify(c => c.Invalidate(It.IsAny<HueBridge>()), Times.Never);
+            _hue.Verify(h => h.ForgetHost(It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
