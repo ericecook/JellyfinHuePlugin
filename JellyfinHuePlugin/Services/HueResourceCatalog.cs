@@ -17,18 +17,63 @@ namespace JellyfinHuePlugin.Services
     /// </summary>
     public class HueResourceCatalog
     {
-        private sealed record Snapshot(IReadOnlyList<HueGroupResource> Groups, IReadOnlyList<HueSceneResource> Scenes);
+        // Internal rather than private so the (Snapshot, Generation) synchronization contract -
+        // the exact mechanism that keeps Invalidate from racing a write - can be unit-tested
+        // directly, the same way HueService exposes ShouldAcceptBridgeCertificate for its own
+        // narrow, otherwise-untestable concurrency/security seam.
+        internal sealed record Snapshot(IReadOnlyList<HueGroupResource> Groups, IReadOnlyList<HueSceneResource> Scenes);
 
-        private sealed class Entry
+        internal sealed class Entry
         {
+            // Serializes the actual bridge fetch (at most one in flight per bridge).
             public readonly SemaphoreSlim Gate = new(1, 1);
-            public volatile Snapshot? Snapshot;
 
-            // Bumped every time Snapshot is replaced (by a completed load) or cleared (by
-            // Invalidate). Lets a concurrent LoadAsync detect, without taking the gate, that its
-            // in-hand result is stale (Race 1) or that a refresh it's about to perform has
-            // already happened (Race 2) - see LoadAsync and Invalidate.
-            public int Generation;
+            // Guards (Snapshot, Generation) as a single unit. Invalidate touches neither Gate nor
+            // an await, so only a plain lock - held briefly, never across an await - can make
+            // "check the generation, then write the snapshot" atomic against a concurrent
+            // Invalidate. Generation increments on every state change (a store and a clear both
+            // count), which is what lets LoadAsync tell "a peer already refreshed" (snapshot
+            // present, generation moved) apart from "invalidated" (snapshot absent) after
+            // reacquiring the gate.
+            private readonly object _stateLock = new();
+            private Snapshot? _snapshot;
+            private int _generation;
+
+            public (Snapshot? Snapshot, int Generation) ReadState()
+            {
+                lock (_stateLock)
+                {
+                    return (_snapshot, _generation);
+                }
+            }
+
+            public void Invalidate()
+            {
+                lock (_stateLock)
+                {
+                    _snapshot = null;
+                    _generation++;
+                }
+            }
+
+            /// <summary>Stores <paramref name="snapshot"/> unless the generation has moved past
+            /// <paramref name="expectedGeneration"/> - meaning an Invalidate, or another caller's
+            /// store, happened since this snapshot was built - in which case nothing is written.
+            /// </summary>
+            public bool TryStore(Snapshot snapshot, int expectedGeneration)
+            {
+                lock (_stateLock)
+                {
+                    if (_generation != expectedGeneration)
+                    {
+                        return false;
+                    }
+
+                    _snapshot = snapshot;
+                    _generation++;
+                    return true;
+                }
+            }
         }
 
         private readonly HueService _hueService;
@@ -90,15 +135,12 @@ namespace JellyfinHuePlugin.Services
         /// <summary>Drops the cached resources for the bridge; the next call fetches again.</summary>
         public void Invalidate(HueBridge bridge)
         {
+            // Never takes Gate: a caller that just wants to drop the cache must not block on a
+            // slow bridge call. The short, await-free lock inside Entry.Invalidate is enough to
+            // make this atomic with LoadAsync's own state reads and writes.
             if (_entries.TryGetValue(bridge.Id, out var entry))
             {
-                // Never takes Gate: a caller that just wants to drop the cache must not block on
-                // a slow bridge call. Clear the snapshot before bumping the generation, so that
-                // any thread which observes the new generation is guaranteed to also observe the
-                // cleared snapshot (both are strong-fence writes; program order between them is
-                // preserved for all observers).
-                entry.Snapshot = null;
-                Interlocked.Increment(ref entry.Generation);
+                entry.Invalidate();
             }
         }
 
@@ -134,26 +176,29 @@ namespace JellyfinHuePlugin.Services
         private async Task<Snapshot?> LoadAsync(HueBridge bridge, bool refresh, CancellationToken cancellationToken)
         {
             var entry = _entries.GetOrAdd(bridge.Id, _ => new Entry());
-            if (!refresh && entry.Snapshot is { } cached)
+            var (snapshot, generation) = entry.ReadState();
+            if (!refresh && snapshot is { } cached)
             {
                 return cached;
             }
 
-            var generationAtEntry = Volatile.Read(ref entry.Generation);
             await entry.Gate.WaitAsync(cancellationToken);
             try
             {
-                if (!refresh && entry.Snapshot is { } loadedMeanwhile)
+                var (currentSnapshot, currentGeneration) = entry.ReadState();
+
+                // A peer changed the state while we were queued for the gate, and there is data:
+                // it must have been a refresh (an Invalidate always leaves the snapshot null), so
+                // use it instead of hitting the bridge again. Keeps "one refresh on a miss" true
+                // under concurrency.
+                if (currentSnapshot is { } peerRefreshed && currentGeneration != generation)
                 {
-                    return loadedMeanwhile;
+                    return peerRefreshed;
                 }
 
-                // Another caller already refreshed (or invalidated) since we decided we needed a
-                // refresh, while we were queued for the gate: use whatever is current instead of
-                // hitting the bridge again. Keeps "one refresh on a miss" true under concurrency.
-                if (refresh && Volatile.Read(ref entry.Generation) != generationAtEntry)
+                if (!refresh && currentSnapshot is { } loadedMeanwhile)
                 {
-                    return entry.Snapshot;
+                    return loadedMeanwhile;
                 }
 
                 var groups = await _hueService.GetGroupsAsync(bridge, cancellationToken);
@@ -173,19 +218,17 @@ namespace JellyfinHuePlugin.Services
                     .Select(s => groupsById.TryGetValue(s.GroupId, out var g) ? s with { GroupName = g.Name, GroupedLightId = g.GroupedLightId } : s)
                     .ToList();
 
-                var snapshot = new Snapshot(groups, enriched);
+                var freshSnapshot = new Snapshot(groups, enriched);
 
-                // An Invalidate landed while the bridge calls above were in flight: this result
-                // is stale by definition. Discard it instead of writing it back, which would
-                // silently undo the invalidation.
-                if (Volatile.Read(ref entry.Generation) != generationAtEntry)
+                if (entry.TryStore(freshSnapshot, currentGeneration))
                 {
-                    return entry.Snapshot;
+                    return freshSnapshot;
                 }
 
-                entry.Snapshot = snapshot;
-                Interlocked.Increment(ref entry.Generation);
-                return snapshot;
+                // An Invalidate landed while the bridge calls above were in flight: this result is
+                // stale by definition. Report whatever is current instead of serving data that was
+                // explicitly discarded.
+                return entry.ReadState().Snapshot;
             }
             finally
             {

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -179,6 +180,37 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
+        public async Task Invalidate_WhileAPeerRefreshIsQueuedOnTheGate_QueuedCallStillFetches()
+        {
+            // Seed the cache so "9" and "10" below both take the miss -> refresh path.
+            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+
+            var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).Returns(gate.Task);
+
+            // "9" misses, refreshes, and blocks on the gate holding it the whole time.
+            var holder = _catalog.ResolveGroupedLightAsync(_bridge, "9", CancellationToken.None);
+
+            // "10" also misses; its own refresh has to queue behind the holder's gate.
+            var queued = _catalog.ResolveGroupedLightAsync(_bridge, "10", CancellationToken.None);
+
+            // Invalidate lands while "10" is queued, i.e. after it captured the generation but
+            // before it ever reached the gate-holding refresh's post-fetch check.
+            _catalog.Invalidate(_bridge);
+
+            gate.SetResult(Groups);
+            var ids = await Task.WhenAll(holder, queued);
+
+            ids.Should().Equal(new string?[] { null, null });
+
+            // The queued call's own reason for refreshing (a genuine miss for "10") was never
+            // satisfied by the holder's (discarded) fetch, so it must still hit the bridge itself
+            // rather than reuse the invalidate's null result: seed + holder's discarded refresh +
+            // the queued call's own refresh.
+            VerifyGroupFetches(Times.Exactly(3));
+        }
+
+        [Fact]
         public async Task GetScenes_AreEnrichedWithGroupNameAndGroupedLight()
         {
             var scenes = await _catalog.GetScenesAsync(_bridge, CancellationToken.None);
@@ -198,6 +230,100 @@ namespace JellyfinHuePlugin.Tests.Services
             await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
 
             VerifyGroupFetches(Times.Exactly(2));
+        }
+    }
+
+    /// <summary>
+    /// Direct tests of HueResourceCatalog.Entry's (Snapshot, Generation) synchronization
+    /// contract - the mechanism that keeps a concurrent Invalidate from racing a write. Entry is
+    /// internal (not private) specifically so this is possible, the same way HueService exposes
+    /// ShouldAcceptBridgeCertificate for its own otherwise-untestable concurrency seam.
+    ///
+    /// These are white-box by necessity, not by choice: a resolve racing a single Invalidate
+    /// through HueResourceCatalog's public API is observationally identical whether the race
+    /// resolves correctly or not, because a discarded write and a legitimate later write produce
+    /// the exact same content (the mocked bridge always returns the same data) and the exact
+    /// same fetch count (Invalidate unconditionally clears the entry regardless of who "wins", so
+    /// by the time both sides of the race have completed, the state is indistinguishable from a
+    /// plain sequential invalidate-then-refetch). Only Entry's own return values - which pin
+    /// exactly which generation a store was attempted against - can tell the two apart. See the
+    /// task report for the full reasoning and the black-box attempts that were ruled out.
+    /// </summary>
+    public class HueResourceCatalogEntryTests
+    {
+        private static HueResourceCatalog.Snapshot MakeSnapshot(string tag) =>
+            new(new[] { new HueGroupResource(tag, tag, tag, "room", null) }, Array.Empty<HueSceneResource>());
+
+        [Fact]
+        public void TryStore_WithAStaleGeneration_IsRejectedAndWritesNothing()
+        {
+            var entry = new HueResourceCatalog.Entry();
+            var (_, generation) = entry.ReadState(); // 0: what a caller would have captured before fetching
+
+            entry.Invalidate(); // a concurrent Invalidate lands before that caller's store
+
+            var stored = entry.TryStore(MakeSnapshot("stale"), generation);
+
+            stored.Should().BeFalse("the generation moved since this snapshot's fetch started, so the store must be refused");
+            entry.ReadState().Snapshot.Should().BeNull("a rejected store must not have written anything");
+        }
+
+        [Fact]
+        public void TryStore_WithTheCurrentGeneration_SucceedsAndAdvancesTheGeneration()
+        {
+            var entry = new HueResourceCatalog.Entry();
+            var (_, generation) = entry.ReadState();
+
+            var stored = entry.TryStore(MakeSnapshot("fresh"), generation);
+
+            stored.Should().BeTrue();
+            var (snapshot, newGeneration) = entry.ReadState();
+            snapshot!.Groups[0].Id.Should().Be("fresh");
+            newGeneration.Should().Be(generation + 1, "a successful store must advance the generation, the same way Invalidate does");
+        }
+
+        [Fact]
+        public void Invalidate_AfterASuccessfulStore_ClearsItAndAdvancesTheGenerationAgain()
+        {
+            var entry = new HueResourceCatalog.Entry();
+            entry.TryStore(MakeSnapshot("v1"), 0);
+
+            entry.Invalidate();
+
+            var (snapshot, generation) = entry.ReadState();
+            snapshot.Should().BeNull();
+            generation.Should().Be(2);
+        }
+
+        [Fact]
+        public async Task ConcurrentTryStoreAndInvalidate_NeverLoseAGenerationIncrement()
+        {
+            // A real, non-cooperative thread race (no TaskCompletionSource needed - the property
+            // under test is the atomicity of the lock itself, not an interleaving of awaits).
+            // Every successful TryStore and every Invalidate call increments the generation
+            // exactly once, and nothing else does; if the shared lock ever let two of those
+            // read-modify-write sequences interleave (the exact class of bug fixed here - the
+            // prior implementation checked the generation and wrote the snapshot as two separate,
+            // unsynchronized steps), some increments would be silently lost.
+            var entry = new HueResourceCatalog.Entry();
+            const int attempts = 300;
+            var successCount = 0;
+
+            var storeTasks = Enumerable.Range(0, attempts).Select(_ => Task.Run(() =>
+            {
+                var (_, generation) = entry.ReadState();
+                if (entry.TryStore(MakeSnapshot("x"), generation))
+                {
+                    Interlocked.Increment(ref successCount);
+                }
+            }));
+            var invalidateTasks = Enumerable.Range(0, attempts).Select(_ => Task.Run(() => entry.Invalidate()));
+
+            await Task.WhenAll(storeTasks.Concat(invalidateTasks));
+
+            var (_, finalGeneration) = entry.ReadState();
+            finalGeneration.Should().Be(successCount + attempts,
+                "every successful store and every Invalidate must advance the generation exactly once, with no lost updates under real concurrency");
         }
     }
 }
