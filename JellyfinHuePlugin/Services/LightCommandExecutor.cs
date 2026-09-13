@@ -14,26 +14,28 @@ namespace JellyfinHuePlugin.Services
     }
 
     /// <summary>
-    /// The one place that turns a light action into HueService calls. Owns the transition
-    /// logic and the turn-off wait, which is cancellable.
+    /// The one place that turns a light action into HueService calls. Resolves the profile's
+    /// target group and scenes through the catalog, sends brightness as percent and
+    /// transitions in milliseconds. Turn-off with a transition is a single fade-out request.
     /// </summary>
     public class LightCommandExecutor
     {
         private readonly HueService _hueService;
+        private readonly HueResourceCatalog _catalog;
         private readonly ILogger _logger;
-        private readonly TimeProvider _clock;
 
-        public LightCommandExecutor(HueService hueService, ILogger logger, TimeProvider? timeProvider = null)
+        public LightCommandExecutor(HueService hueService, HueResourceCatalog catalog, ILogger logger)
         {
             _hueService = hueService;
+            _catalog = catalog;
             _logger = logger;
-            _clock = timeProvider ?? TimeProvider.System;
         }
 
         /// <summary>
         /// Sends the profile's commands for the action to the bridge. Warns and returns when
-        /// the bridge has no IP or username. Logs and swallows HueService failures. Lets
-        /// OperationCanceledException propagate when the token is cancelled.
+        /// the bridge has no IP or username, or when the target cannot be resolved (the catalog
+        /// warns). Logs and swallows HueService failures. Lets OperationCanceledException
+        /// propagate when the token is cancelled.
         /// </summary>
         public virtual async Task ExecuteAsync(LightAction action, HueBridge bridge, LightControlProfile profile, CancellationToken cancellationToken)
         {
@@ -68,117 +70,99 @@ namespace JellyfinHuePlugin.Services
             }
         }
 
+        /// <summary>Deciseconds in the configuration, milliseconds on the wire.</summary>
+        private static int? DurationMs(bool enabled, int deciseconds) => enabled ? deciseconds * 100 : null;
+
         private async Task PlayAsync(HueBridge bridge, LightControlProfile profile, CancellationToken cancellationToken)
         {
-            int? transitionTime = profile.EnablePlayTransition ? profile.PlayTransitionDuration : null;
+            var durationMs = DurationMs(profile.EnablePlayTransition, profile.PlayTransitionDuration);
 
             if (!string.IsNullOrWhiteSpace(profile.PlaySceneId))
             {
+                var sceneId = await _catalog.ResolveSceneAsync(bridge, profile.PlaySceneId, cancellationToken);
+                if (sceneId == null)
+                {
+                    return;
+                }
+
                 _logger.LogInformation("[{ProfileName}] Activating play scene {SceneId}", profile.Name, profile.PlaySceneId);
-                await _hueService.ActivateSceneAsync(
-                    bridge.IpAddress,
-                    bridge.Username,
-                    profile.TargetGroupId,
-                    profile.PlaySceneId,
-                    transitionTime,
-                    cancellationToken);
+                await _hueService.RecallSceneAsync(bridge, sceneId, durationMs, cancellationToken);
+                return;
             }
-            else if (profile.TurnOffLightsOnPlay)
+
+            var groupedLightId = await _catalog.ResolveGroupedLightAsync(bridge, profile.TargetGroupId, cancellationToken);
+            if (groupedLightId == null)
+            {
+                return;
+            }
+
+            if (profile.TurnOffLightsOnPlay)
             {
                 _logger.LogInformation("[{ProfileName}] Turning off lights in group {GroupId}", profile.Name, profile.TargetGroupId);
-                if (transitionTime.HasValue && transitionTime.Value > 0)
-                {
-                    // Dim to minimum first so the transition is visible, then turn off
-                    await _hueService.SetGroupStateAsync(
-                        bridge.IpAddress,
-                        bridge.Username,
-                        profile.TargetGroupId,
-                        new HueLightState { On = true, Bri = 1, TransitionTime = transitionTime },
-                        cancellationToken);
-                    // Wait for the transition to complete (transitionTime is in deciseconds; ×100 = milliseconds).
-                    // A newer command for the session cancels this wait.
-                    await Task.Delay(TimeSpan.FromMilliseconds(transitionTime.Value * 100), _clock, cancellationToken);
-                    await _hueService.SetGroupStateAsync(
-                        bridge.IpAddress,
-                        bridge.Username,
-                        profile.TargetGroupId,
-                        new HueLightState { On = false },
-                        cancellationToken);
-                }
-                else
-                {
-                    await _hueService.SetGroupStateAsync(
-                        bridge.IpAddress,
-                        bridge.Username,
-                        profile.TargetGroupId,
-                        new HueLightState { On = false },
-                        cancellationToken);
-                }
+                await _hueService.SetGroupedLightAsync(bridge, groupedLightId,
+                    new GroupedLightState { On = false, DurationMs = durationMs }, cancellationToken);
+                return;
             }
-            else
-            {
-                _logger.LogInformation("[{ProfileName}] Dimming lights to {Brightness}", profile.Name, profile.PlayBrightness);
-                await _hueService.SetGroupStateAsync(
-                    bridge.IpAddress,
-                    bridge.Username,
-                    profile.TargetGroupId,
-                    new HueLightState { On = true, Bri = profile.PlayBrightness, TransitionTime = transitionTime },
-                    cancellationToken);
-            }
+
+            _logger.LogInformation("[{ProfileName}] Dimming lights to {Brightness}", profile.Name, profile.PlayBrightness);
+            await _hueService.SetGroupedLightAsync(bridge, groupedLightId,
+                new GroupedLightState { On = true, Brightness = profile.PlayBrightness, DurationMs = durationMs }, cancellationToken);
         }
 
         private async Task PauseAsync(HueBridge bridge, LightControlProfile profile, CancellationToken cancellationToken)
         {
-            int? transitionTime = profile.EnablePauseTransition ? profile.PauseTransitionDuration : null;
+            var durationMs = DurationMs(profile.EnablePauseTransition, profile.PauseTransitionDuration);
 
             if (!string.IsNullOrWhiteSpace(profile.PauseSceneId))
             {
+                var sceneId = await _catalog.ResolveSceneAsync(bridge, profile.PauseSceneId, cancellationToken);
+                if (sceneId == null)
+                {
+                    return;
+                }
+
                 _logger.LogInformation("[{ProfileName}] Activating pause scene {SceneId}", profile.Name, profile.PauseSceneId);
-                await _hueService.ActivateSceneAsync(
-                    bridge.IpAddress,
-                    bridge.Username,
-                    profile.TargetGroupId,
-                    profile.PauseSceneId,
-                    transitionTime,
-                    cancellationToken);
+                await _hueService.RecallSceneAsync(bridge, sceneId, durationMs, cancellationToken);
+                return;
             }
-            else
+
+            var groupedLightId = await _catalog.ResolveGroupedLightAsync(bridge, profile.TargetGroupId, cancellationToken);
+            if (groupedLightId == null)
             {
-                _logger.LogInformation("[{ProfileName}] Brightening lights to {Brightness}", profile.Name, profile.PauseBrightness);
-                await _hueService.SetGroupStateAsync(
-                    bridge.IpAddress,
-                    bridge.Username,
-                    profile.TargetGroupId,
-                    new HueLightState { On = true, Bri = profile.PauseBrightness, TransitionTime = transitionTime },
-                    cancellationToken);
+                return;
             }
+
+            _logger.LogInformation("[{ProfileName}] Brightening lights to {Brightness}", profile.Name, profile.PauseBrightness);
+            await _hueService.SetGroupedLightAsync(bridge, groupedLightId,
+                new GroupedLightState { On = true, Brightness = profile.PauseBrightness, DurationMs = durationMs }, cancellationToken);
         }
 
         private async Task StopAsync(HueBridge bridge, LightControlProfile profile, CancellationToken cancellationToken)
         {
-            int? transitionTime = profile.EnableStopTransition ? profile.StopTransitionDuration : null;
+            var durationMs = DurationMs(profile.EnableStopTransition, profile.StopTransitionDuration);
 
             if (!string.IsNullOrWhiteSpace(profile.StopSceneId))
             {
+                var sceneId = await _catalog.ResolveSceneAsync(bridge, profile.StopSceneId, cancellationToken);
+                if (sceneId == null)
+                {
+                    return;
+                }
+
                 _logger.LogInformation("[{ProfileName}] Activating stop scene {SceneId}", profile.Name, profile.StopSceneId);
-                await _hueService.ActivateSceneAsync(
-                    bridge.IpAddress,
-                    bridge.Username,
-                    profile.TargetGroupId,
-                    profile.StopSceneId,
-                    transitionTime,
-                    cancellationToken);
+                await _hueService.RecallSceneAsync(bridge, sceneId, durationMs, cancellationToken);
+                return;
             }
-            else
+
+            var groupedLightId = await _catalog.ResolveGroupedLightAsync(bridge, profile.TargetGroupId, cancellationToken);
+            if (groupedLightId == null)
             {
-                _logger.LogInformation("[{ProfileName}] Turning lights on to {Brightness}", profile.Name, profile.StopBrightness);
-                await _hueService.SetGroupStateAsync(
-                    bridge.IpAddress,
-                    bridge.Username,
-                    profile.TargetGroupId,
-                    new HueLightState { On = true, Bri = profile.StopBrightness, TransitionTime = transitionTime },
-                    cancellationToken);
+                return;
             }
+
+            _logger.LogInformation("[{ProfileName}] Turning lights on to {Brightness}", profile.Name, profile.StopBrightness);
+            await _hueService.SetGroupedLightAsync(bridge, groupedLightId,
+                new GroupedLightState { On = true, Brightness = profile.StopBrightness, DurationMs = durationMs }, cancellationToken);
         }
     }
 }

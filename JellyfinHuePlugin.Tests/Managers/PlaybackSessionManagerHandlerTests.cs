@@ -26,6 +26,7 @@ namespace JellyfinHuePlugin.Tests.Managers
     {
         private readonly Mock<ISessionManager> _mockSessionManager;
         private readonly Mock<HueService> _mockHueService;
+        private readonly Mock<HueResourceCatalog> _mockCatalog;
         private readonly Mock<IMediaSegmentManager> _mockSegmentManager;
         private readonly Mock<ILibraryManager> _mockLibraryManager;
         private readonly PlaybackSessionManager _manager;
@@ -60,29 +61,31 @@ namespace JellyfinHuePlugin.Tests.Managers
                         EnableForMovies = true,
                         EnableForTvShows = true,
                         PlayBrightness = 20,
-                        PauseBrightness = 100,
-                        StopBrightness = 254,
+                        PauseBrightness = 60,
+                        StopBrightness = 100,
                         TargetGroupId = "1"
                     }
                 }
             };
 
             _mockHueService
-                .Setup(h => h.SetGroupStateAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                    It.IsAny<HueLightState>(), It.IsAny<CancellationToken>()))
+                .Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+            _mockHueService
+                .Setup(h => h.RecallSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync(true);
 
-            _mockHueService
-                .Setup(h => h.ActivateSceneAsync(
-                    It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                    It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(true);
+            _mockCatalog = new Mock<HueResourceCatalog>(_mockHueService.Object, NullLogger.Instance) { CallBase = false };
+            _mockCatalog.Setup(c => c.ResolveGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((HueBridge _, string target, CancellationToken _) => "gl-" + target);
+            _mockCatalog.Setup(c => c.ResolveSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync((HueBridge _, string scene, CancellationToken _) => scene);
 
             _manager = new PlaybackSessionManager(
                 _mockSessionManager.Object,
                 new NullLogger<PlaybackSessionManager>(),
                 _mockHueService.Object,
+                _mockCatalog.Object,
                 () => _config,
                 _mockSegmentManager.Object,
                 _mockLibraryManager.Object);
@@ -101,6 +104,10 @@ namespace JellyfinHuePlugin.Tests.Managers
                 RemoteEndPoint = remoteEndPoint
             };
         }
+
+        private void VerifyGroupedLight(Func<GroupedLightState, bool> match, Times times) =>
+            _mockHueService.Verify(h => h.SetGroupedLightAsync(It.Is<HueBridge>(b => b.Id == "bridge1"), "gl-1",
+                It.Is<GroupedLightState>(s => match(s)), It.IsAny<CancellationToken>()), times);
 
         [Fact]
         public async Task PlaybackStart_WithBrightness_SetsGroupState()
@@ -122,10 +129,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             await _manager.WhenIdleAsync();
 
             // Assert
-            _mockHueService.Verify(h => h.SetGroupStateAsync(
-                "192.168.1.50", "testuser", "1",
-                It.Is<HueLightState>(s => s.On == true && s.Bri == 20),
-                It.IsAny<CancellationToken>()), Times.Once);
+            VerifyGroupedLight(s => s.On == true && s.Brightness == 20, Times.Once());
         }
 
         [Fact]
@@ -148,9 +152,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             await _manager.WhenIdleAsync();
 
             // Assert
-            _mockHueService.Verify(h => h.ActivateSceneAsync(
-                "192.168.1.50", "testuser", "1", "scene123",
-                It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Once);
+            _mockHueService.Verify(h => h.RecallSceneAsync(It.Is<HueBridge>(b => b.Id == "bridge1"), "scene123", null, It.IsAny<CancellationToken>()), Times.Once);
         }
 
         [Fact]
@@ -173,10 +175,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             await _manager.WhenIdleAsync();
 
             // Assert
-            _mockHueService.Verify(h => h.SetGroupStateAsync(
-                "192.168.1.50", "testuser", "1",
-                It.Is<HueLightState>(s => s.On == false),
-                It.IsAny<CancellationToken>()), Times.Once);
+            VerifyGroupedLight(s => s.On == false, Times.Once());
         }
 
         [Fact]
@@ -208,10 +207,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             await _manager.WhenIdleAsync();
 
             // Assert
-            _mockHueService.Verify(h => h.SetGroupStateAsync(
-                "192.168.1.50", "testuser", "1",
-                It.Is<HueLightState>(s => s.On == true && s.Bri == 254),
-                It.IsAny<CancellationToken>()), Times.Once);
+            VerifyGroupedLight(s => s.On == true && s.Brightness == 100, Times.Once());
         }
 
         [Fact]
@@ -231,10 +227,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             _mockSessionManager.Raise(s => s.SessionEnded += null, new SessionEventArgs { SessionInfo = session });
             await _manager.WhenIdleAsync();
 
-            _mockHueService.Verify(h => h.SetGroupStateAsync(
-                "192.168.1.50", "testuser", "1",
-                It.Is<HueLightState>(s => s.On == true && s.Bri == 254),
-                It.IsAny<CancellationToken>()), Times.Once);
+            VerifyGroupedLight(s => s.On == true && s.Brightness == 100, Times.Once());
         }
 
         [Fact]
@@ -267,10 +260,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             await _manager.WhenIdleAsync();
 
             // Assert — should set pause brightness
-            _mockHueService.Verify(h => h.SetGroupStateAsync(
-                "192.168.1.50", "testuser", "1",
-                It.Is<HueLightState>(s => s.On == true && s.Bri == 100),
-                It.IsAny<CancellationToken>()), Times.Once);
+            VerifyGroupedLight(s => s.On == true && s.Brightness == 60, Times.Once());
         }
 
         [Fact]
@@ -290,9 +280,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             await _manager.WhenIdleAsync();
 
             // Assert — no calls made
-            _mockHueService.Verify(h => h.SetGroupStateAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                It.IsAny<HueLightState>(), It.IsAny<CancellationToken>()), Times.Never);
+            _mockHueService.Verify(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact]
@@ -316,9 +304,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             await _manager.WhenIdleAsync();
 
             // Assert
-            _mockHueService.Verify(h => h.SetGroupStateAsync(
-                It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
-                It.IsAny<HueLightState>(), It.IsAny<CancellationToken>()), Times.Never);
+            _mockHueService.Verify(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact]
@@ -342,10 +328,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             await _manager.WhenIdleAsync();
 
             // Assert
-            _mockHueService.Verify(h => h.SetGroupStateAsync(
-                "192.168.1.50", "testuser", "1",
-                It.Is<HueLightState>(s => s.TransitionTime == 10),
-                It.IsAny<CancellationToken>()), Times.Once);
+            VerifyGroupedLight(s => s.DurationMs == 1000, Times.Once());
         }
     }
 }

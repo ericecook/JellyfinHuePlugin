@@ -54,6 +54,7 @@ namespace JellyfinHuePlugin.Managers
             ISessionManager sessionManager,
             ILogger<PlaybackSessionManager> logger,
             HueService hueService,
+            HueResourceCatalog catalog,
             Func<PluginConfiguration> getConfig,
             IMediaSegmentManager segmentManager,
             ILibraryManager libraryManager,
@@ -65,7 +66,7 @@ namespace JellyfinHuePlugin.Managers
             _segmentManager = segmentManager;
             _libraryManager = libraryManager;
             _clock = timeProvider ?? TimeProvider.System;
-            _executor = new LightCommandExecutor(hueService, logger, _clock);
+            _executor = new LightCommandExecutor(hueService, catalog, logger);
 
             // Subscribe to session events
             _sessionManager.PlaybackStart += OnPlaybackStart;
@@ -77,6 +78,9 @@ namespace JellyfinHuePlugin.Managers
         /// <summary>Movie/episode detection by entity type. Anything else, including null, is neither.</summary>
         internal static (bool IsMovie, bool IsEpisode) ClassifyItem(BaseItem? item)
             => (item is Movie, item is Episode);
+
+        /// <summary>Jellyfin's item id, or null when there is no item or it has the empty id.</summary>
+        internal static Guid? ItemIdOf(BaseItem? item) => item == null || item.Id == Guid.Empty ? null : item.Id;
 
         private async void OnPlaybackStart(object? sender, PlaybackProgressEventArgs e)
             => await TrackAsync(OnPlaybackStartAsync(e), "playback start");
@@ -165,7 +169,10 @@ namespace JellyfinHuePlugin.Managers
             var entry = _sessions.GetOrAdd(e.Session.Id, _ => new SessionEntry());
             lock (entry.Gate)
             {
-                entry.State = new SessionSnapshot(profile, _clock.GetUtcNow(), outroSegments, PlaybackState.Playing, false);
+                entry.State = new SessionSnapshot(profile, _clock.GetUtcNow(), outroSegments, PlaybackState.Playing, false)
+                {
+                    ItemId = ItemIdOf(e.Item)
+                };
             }
 
             var bridge = ResolveBridge(config, profile);
@@ -238,9 +245,18 @@ namespace JellyfinHuePlugin.Managers
             // The entry stays in the map (created here if it doesn't exist yet) so a start
             // that follows always shares its queue with this stop.
             var entry = _sessions.GetOrAdd(e.Session.Id, _ => new SessionEntry());
+            var stoppedItem = ItemIdOf(e.Item);
             SessionSnapshot? snapshot;
             lock (entry.Gate)
             {
+                // Jellyfin raises each event on its own task, so an auto-play stop for the previous
+                // item can arrive after the next item's start. That stop must not touch the new item.
+                if (entry.State is { ItemId: Guid current } && stoppedItem is Guid stopped && current != stopped)
+                {
+                    _logger.LogDebug("Ignoring stop for item {StoppedItem}: session {SessionId} is playing {CurrentItem}", stopped, e.Session.Id, current);
+                    return;
+                }
+
                 snapshot = entry.State;
                 entry.State = null;
             }

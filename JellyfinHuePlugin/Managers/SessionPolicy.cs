@@ -21,7 +21,11 @@ namespace JellyfinHuePlugin.Managers
         DateTimeOffset StartedAt,
         IReadOnlyList<TickRange> OutroSegments,
         PlaybackState PlaybackState,
-        bool OutroLightsTriggered);
+        bool OutroLightsTriggered)
+    {
+        /// <summary>The item playing when the snapshot was taken; null when Jellyfin gave none. A stop for another item is ignored.</summary>
+        public Guid? ItemId { get; init; }
+    }
 
     /// <summary>Everything a progress event contributes to the decision.</summary>
     internal readonly record struct ProgressInput(

@@ -19,6 +19,7 @@ namespace JellyfinHuePlugin
         private readonly ISessionManager _sessionManager;
         private readonly ILogger<Plugin> _logger;
         private readonly HueService _hueService;
+        private readonly HueResourceCatalog _catalog;
         private readonly IMediaSegmentManager _segmentManager;
         private readonly ILibraryManager _libraryManager;
         private PlaybackSessionManager? _playbackManager;
@@ -38,6 +39,7 @@ namespace JellyfinHuePlugin
             _libraryManager = libraryManager;
             _logger = loggerFactory.CreateLogger<Plugin>();
             _hueService = new HueService(loggerFactory.CreateLogger<HueService>());
+            _catalog = new HueResourceCatalog(_hueService, loggerFactory.CreateLogger<HueResourceCatalog>());
 
             Instance = this;
 
@@ -67,6 +69,7 @@ namespace JellyfinHuePlugin
                     _sessionManager,
                     loggerFactory.CreateLogger<PlaybackSessionManager>(),
                     _hueService,
+                    _catalog,
                     () => Configuration,
                     _segmentManager,
                     _libraryManager);
@@ -89,6 +92,8 @@ namespace JellyfinHuePlugin
         public static Plugin? Instance { get; private set; }
 
         public HueService HueService => _hueService;
+
+        public HueResourceCatalog Catalog => _catalog;
 
         public IEnumerable<PluginPageInfo> GetPages()
         {
