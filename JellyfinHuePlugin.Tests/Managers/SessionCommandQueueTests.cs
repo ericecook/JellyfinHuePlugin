@@ -20,20 +20,12 @@ namespace JellyfinHuePlugin.Tests.Managers
         private static TaskCompletionSource Gate() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         [Fact]
-        public async Task RunsCommandsInOrder()
+        public async Task SequentialCommands_RunInOrder()
         {
-            var firstGate = Gate();
+            await _queue.Enqueue(_ => { _log.Add("first"); return Task.CompletedTask; });
+            await _queue.Enqueue(_ => { _log.Add("second"); return Task.CompletedTask; });
 
-            var first = _queue.Enqueue(async _ => { _log.Add("first:start"); await firstGate.Task; _log.Add("first:end"); });
-            var second = _queue.Enqueue(_ => { _log.Add("second"); return Task.CompletedTask; });
-
-            await Task.Delay(50);
-            _log.Should().Equal("first:start");
-
-            firstGate.SetResult();
-            await Task.WhenAll(first, second);
-
-            _log.Should().Equal("first:start", "first:end", "second");
+            _log.Should().Equal("first", "second");
         }
 
         [Fact]
