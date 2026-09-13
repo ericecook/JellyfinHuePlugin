@@ -28,9 +28,12 @@ namespace JellyfinHuePlugin.Services
         internal const long MinimumV2SoftwareVersion = 1948086000;
 
         /// <summary>
-        /// Present on every bridge request. Its value is the bridge id the certificate must name,
-        /// or null for the one unauthenticated call that learns the id (chain validation only).
-        /// Absent on requests to anything that is not a bridge, which then get system trust.
+        /// Present on every bridge request sent over <see cref="_httpClient"/>. Its value is the
+        /// bridge id the certificate must name. The one call that has no id yet -- the unauthenticated
+        /// GetBridgeInfoAsync -- never runs on this client (it uses <see cref="_bridgeInfoClient"/>
+        /// instead), so an empty value here should never happen in real use; the callback treats it
+        /// as a hard failure rather than silently degrading to chain-only trust. Absent on requests to
+        /// anything that is not a bridge (e.g. cloud discovery), which get ordinary system trust.
         /// </summary>
         internal static readonly HttpRequestOptionsKey<string?> ExpectedBridgeIdOption = new("hue.expectedBridgeId");
 
@@ -39,6 +42,18 @@ namespace JellyfinHuePlugin.Services
 
         private readonly ILogger<HueService> _logger;
         private readonly HttpClient _httpClient;
+
+        /// <summary>
+        /// Dedicated connection pool for the single unauthenticated call (GET /api/0/config) that
+        /// learns a bridge's id before any pinning is possible.
+        /// ServerCertificateCustomValidationCallback fires once per TLS handshake, not per request,
+        /// so if this call shared a connection pool with authenticated CLIP requests, a connection
+        /// opened here under chain-only trust would let a later request carrying the application key
+        /// reuse it and skip subject-id pinning entirely. A separate HttpClient (and therefore a
+        /// separate connection pool) forces a fresh handshake -- and a fresh callback invocation --
+        /// for every authenticated request. Do not merge this back into _httpClient.
+        /// </summary>
+        private readonly HttpClient _bridgeInfoClient;
 
         /// <summary>Bridge ids learned from /api/0/config for bridges whose configuration has none yet.</summary>
         private readonly ConcurrentDictionary<string, string> _bridgeIdsByHost = new(StringComparer.OrdinalIgnoreCase);
@@ -50,45 +65,93 @@ namespace JellyfinHuePlugin.Services
         };
 
         public HueService(ILogger<HueService> logger)
-            : this(logger, CreateDefaultHandler(logger, BridgeCertificateValidator.LoadRoots(Environment.GetEnvironmentVariable(ExtraRootEnvironmentVariable), logger)))
         {
+            _logger = logger;
+            var roots = BridgeCertificateValidator.LoadRoots(Environment.GetEnvironmentVariable(ExtraRootEnvironmentVariable), logger);
+            _httpClient = new HttpClient(CreateDefaultHandler(logger, roots));
+            _httpClient.Timeout = TimeSpan.FromSeconds(5);
+            _bridgeInfoClient = new HttpClient(CreateBridgeInfoHandler(logger, roots));
+            _bridgeInfoClient.Timeout = TimeSpan.FromSeconds(5);
         }
 
-        // Test seam: lets tests capture requests and feed canned bridge responses.
+        // Test seam: lets tests capture requests and feed canned bridge responses. Both clients route
+        // through the one supplied handler, so existing tests see every request through one mock.
         public HueService(ILogger<HueService> logger, HttpMessageHandler handler)
         {
             _logger = logger;
             _httpClient = new HttpClient(handler);
             _httpClient.Timeout = TimeSpan.FromSeconds(5);
+            _bridgeInfoClient = _httpClient;
         }
 
-        // One client for everything. Bridge requests carry ExpectedBridgeIdOption and are judged by
-        // BridgeCertificateValidator; anything else (the cloud discovery endpoint) needs system trust.
+        // Judged by the extracted, independently-testable decision function; anything that isn't a
+        // bridge request (the cloud discovery endpoint) needs system trust.
         private static HttpMessageHandler CreateDefaultHandler(ILogger logger, IReadOnlyList<X509Certificate2> roots) => new HttpClientHandler
         {
             AllowAutoRedirect = false, // Prevent HTTP->HTTPS redirects
             ServerCertificateCustomValidationCallback = (request, certificate, _, errors) =>
-            {
-                if (!request.Options.TryGetValue(ExpectedBridgeIdOption, out var expectedBridgeId))
-                {
-                    return errors == SslPolicyErrors.None;
-                }
+                ShouldAcceptBridgeCertificate(request, certificate, errors, roots, logger)
+        };
 
+        // This client only ever sends the one unauthenticated /api/0/config request that learns a
+        // bridge's id, so there is no subject to pin yet: chain-only trust, unconditionally.
+        private static HttpMessageHandler CreateBridgeInfoHandler(ILogger logger, IReadOnlyList<X509Certificate2> roots) => new HttpClientHandler
+        {
+            AllowAutoRedirect = false,
+            ServerCertificateCustomValidationCallback = (request, certificate, _, _) =>
+            {
                 if (certificate == null)
                 {
                     return false;
                 }
 
-                var verdict = BridgeCertificateValidator.Validate(certificate, string.IsNullOrEmpty(expectedBridgeId) ? null : expectedBridgeId, roots);
+                var verdict = BridgeCertificateValidator.Validate(certificate, null, roots);
                 if (verdict != BridgeCertificateValidator.Verdict.Trusted)
                 {
-                    logger.LogWarning("Bridge certificate rejected for {Host}: {Verdict} (subject {Subject}, expected {BridgeId})",
-                        request.RequestUri?.Host, verdict, BridgeCertificateValidator.SubjectCommonName(certificate), string.IsNullOrEmpty(expectedBridgeId) ? "any" : expectedBridgeId);
+                    logger.LogWarning("Bridge certificate rejected for {Host}: {Verdict} (subject {Subject})",
+                        request.RequestUri?.Host, verdict, BridgeCertificateValidator.SubjectCommonName(certificate));
                 }
 
                 return verdict == BridgeCertificateValidator.Verdict.Trusted;
             }
         };
+
+        /// <summary>
+        /// The certificate decision for every request on the main client. Extracted out of the
+        /// HttpClientHandler lambda so it can be unit tested directly instead of only through an
+        /// actual TLS handshake (which is also why the sentinel and pooling bugs both lived here
+        /// undetected). No option at all (a non-bridge request) falls back to system trust; a
+        /// present-but-empty id is a hard failure, since the only caller that used to mean
+        /// "chain-only" has moved to <see cref="_bridgeInfoClient"/>; otherwise the chain must be
+        /// trusted and the subject must name the expected bridge.
+        /// </summary>
+        internal static bool ShouldAcceptBridgeCertificate(HttpRequestMessage request, X509Certificate2? certificate, SslPolicyErrors errors, IReadOnlyList<X509Certificate2> roots, ILogger logger)
+        {
+            if (!request.Options.TryGetValue(ExpectedBridgeIdOption, out var expectedBridgeId))
+            {
+                return errors == SslPolicyErrors.None;
+            }
+
+            if (string.IsNullOrEmpty(expectedBridgeId))
+            {
+                logger.LogWarning("Bridge request to {Host} has no expected bridge id pinned; rejecting", request.RequestUri?.Host);
+                return false;
+            }
+
+            if (certificate == null)
+            {
+                return false;
+            }
+
+            var verdict = BridgeCertificateValidator.Validate(certificate, expectedBridgeId, roots);
+            if (verdict != BridgeCertificateValidator.Verdict.Trusted)
+            {
+                logger.LogWarning("Bridge certificate rejected for {Host}: {Verdict} (subject {Subject}, expected {BridgeId})",
+                    request.RequestUri?.Host, verdict, BridgeCertificateValidator.SubjectCommonName(certificate), expectedBridgeId);
+            }
+
+            return verdict == BridgeCertificateValidator.Verdict.Trusted;
+        }
 
         // ---------------------------------------------------------------------------------
         // CLIP v2
@@ -100,8 +163,9 @@ namespace JellyfinHuePlugin.Services
             // HttpRequestOptions.TryGetValue<string?> reports "absent" whenever the stored value is a
             // literal null (it pattern-matches the boxed value against TValue, which never matches null
             // for a reference type) -- indistinguishable from a request that never called NewRequest at
-            // all. Store an empty sentinel instead so every bridge request is recognized as one; the
-            // certificate callback below treats empty the same as "no specific id" (chain-only).
+            // all. Store an empty sentinel instead so every bridge request is still recognized as one;
+            // ShouldAcceptBridgeCertificate treats a present-but-empty id as a hard failure (defense in
+            // depth -- every real caller on this client always resolves a real id before getting here).
             request.Options.Set(ExpectedBridgeIdOption, expectedBridgeId ?? string.Empty);
             if (applicationKey != null)
             {
@@ -261,7 +325,7 @@ namespace JellyfinHuePlugin.Services
 
             var uri = BridgeUri.Build(target.Value.Host, "clip", "v2", "resource", resourceType);
             var response = await SendWithRetryAsync(() => _httpClient.SendAsync(
-                NewRequest(HttpMethod.Get, uri, bridge.Username, target.Value.BridgeId, null), cancellationToken));
+                NewRequest(HttpMethod.Get, uri, bridge.Username, target.Value.BridgeId, null), cancellationToken), cancellationToken);
             return await ReadEnvelopeAsync(response, $"get {resourceType}", cancellationToken);
         }
 
@@ -277,8 +341,9 @@ namespace JellyfinHuePlugin.Services
             try
             {
                 var uri = BridgeUri.Build(host, "api", "0", "config");
-                var response = await SendWithRetryAsync(() => _httpClient.SendAsync(
-                    NewRequest(HttpMethod.Get, uri, null, null, null), cancellationToken));
+                // Its own connection pool: see the comment on _bridgeInfoClient.
+                var response = await SendWithRetryAsync(() => _bridgeInfoClient.SendAsync(
+                    NewRequest(HttpMethod.Get, uri, null, null, null), cancellationToken), cancellationToken);
                 var content = await response.Content.ReadAsStringAsync(cancellationToken);
                 var excerpt = content.Length > 500 ? content[..500] + "…" : content;
 
@@ -341,7 +406,7 @@ namespace JellyfinHuePlugin.Services
                 var uri = BridgeUri.Build(host, "api");
                 var body = new { devicetype = DeviceType, generateclientkey = false };
                 var response = await SendWithRetryAsync(() => _httpClient.SendAsync(
-                    NewRequest(HttpMethod.Post, uri, null, info.BridgeId, body), cancellationToken));
+                    NewRequest(HttpMethod.Post, uri, null, info.BridgeId, body), cancellationToken), cancellationToken);
                 var content = await response.Content.ReadAsStringAsync(cancellationToken);
 
                 if (content.TrimStart().StartsWith('<'))
@@ -371,9 +436,10 @@ namespace JellyfinHuePlugin.Services
                 if (first.TryGetProperty("error", out var error))
                 {
                     var type = error.TryGetProperty("type", out var t) && t.ValueKind == JsonValueKind.Number ? t.GetInt32() : 0;
+                    // Only the extracted description/type, never the raw body: a later element in
+                    // the same array could carry a real success/username if the bridge (or a
+                    // man-in-the-middle) sent a mixed response, and the key must never reach a log.
                     _logger.LogWarning("Authentication failed - Type: {Type}, Description: {Error}", type, GetString(error, "description"));
-                    // Error bodies carry no key, so they are safe to show.
-                    _logger.LogDebug("Authentication response: {Response}", content.Length > 500 ? content[..500] + "…" : content);
                     return null;
                 }
 
@@ -532,7 +598,7 @@ namespace JellyfinHuePlugin.Services
 
                 var uri = BridgeUri.Build(target.Value.Host, "clip", "v2", "resource", "grouped_light", groupedLightId);
                 var response = await SendWithRetryAsync(() => _httpClient.SendAsync(
-                    NewRequest(HttpMethod.Put, uri, bridge.Username, target.Value.BridgeId, state.ToRequestBody()), cancellationToken));
+                    NewRequest(HttpMethod.Put, uri, bridge.Username, target.Value.BridgeId, state.ToRequestBody()), cancellationToken), cancellationToken);
                 return await ReadEnvelopeAsync(response, $"grouped_light {groupedLightId}", cancellationToken) != null;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -571,7 +637,7 @@ namespace JellyfinHuePlugin.Services
 
                 var uri = BridgeUri.Build(target.Value.Host, "clip", "v2", "resource", "scene", sceneId);
                 var response = await SendWithRetryAsync(() => _httpClient.SendAsync(
-                    NewRequest(HttpMethod.Put, uri, bridge.Username, target.Value.BridgeId, new { recall }), cancellationToken));
+                    NewRequest(HttpMethod.Put, uri, bridge.Username, target.Value.BridgeId, new { recall }), cancellationToken), cancellationToken);
                 return await ReadEnvelopeAsync(response, $"scene {sceneId}", cancellationToken) != null;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -636,14 +702,18 @@ namespace JellyfinHuePlugin.Services
             }
         }
 
-        // Retry once on transient connection failures (stale pooled connections to Hue bridge)
-        private async Task<HttpResponseMessage> SendWithRetryAsync(Func<Task<HttpResponseMessage>> request)
+        // Retry once on transient connection failures (stale pooled connections to Hue bridge).
+        // Never retries once cancellation has been requested: cancelling a request can itself
+        // surface as an HttpRequestException wrapping an IOException rather than a clean
+        // OperationCanceledException, and retrying that would spend an extra network attempt on a
+        // call the caller has already given up on.
+        private async Task<HttpResponseMessage> SendWithRetryAsync(Func<Task<HttpResponseMessage>> request, CancellationToken cancellationToken)
         {
             try
             {
                 return await request();
             }
-            catch (HttpRequestException ex) when (ex.InnerException is IOException)
+            catch (HttpRequestException ex) when (ex.InnerException is IOException && !cancellationToken.IsCancellationRequested)
             {
                 _logger.LogDebug("Connection reset, retrying request");
                 return await request();
@@ -789,7 +859,7 @@ namespace JellyfinHuePlugin.Services
             try
             {
                 bridgeIp = NormalizeBridgeIp(bridgeIp);
-                var response = await SendWithRetryAsync(() => _httpClient.GetAsync($"https://{bridgeIp}/api/{username}/lights", cancellationToken));
+                var response = await SendWithRetryAsync(() => _httpClient.GetAsync($"https://{bridgeIp}/api/{username}/lights", cancellationToken), cancellationToken);
                 response.EnsureSuccessStatusCode();
                 
                 return await response.Content.ReadFromJsonAsync<Dictionary<string, HueLight>>(cancellationToken);
@@ -807,7 +877,7 @@ namespace JellyfinHuePlugin.Services
             try
             {
                 bridgeIp = NormalizeBridgeIp(bridgeIp);
-                var response = await SendWithRetryAsync(() => _httpClient.GetAsync($"https://{bridgeIp}/api/{username}/groups", cancellationToken));
+                var response = await SendWithRetryAsync(() => _httpClient.GetAsync($"https://{bridgeIp}/api/{username}/groups", cancellationToken), cancellationToken);
                 response.EnsureSuccessStatusCode();
                 
                 return await response.Content.ReadFromJsonAsync<Dictionary<string, HueGroup>>(cancellationToken);
@@ -825,7 +895,7 @@ namespace JellyfinHuePlugin.Services
             try
             {
                 bridgeIp = NormalizeBridgeIp(bridgeIp);
-                var response = await SendWithRetryAsync(() => _httpClient.GetAsync($"https://{bridgeIp}/api/{username}/scenes", cancellationToken));
+                var response = await SendWithRetryAsync(() => _httpClient.GetAsync($"https://{bridgeIp}/api/{username}/scenes", cancellationToken), cancellationToken);
                 response.EnsureSuccessStatusCode();
                 
                 return await response.Content.ReadFromJsonAsync<Dictionary<string, HueScene>>(cancellationToken);
@@ -850,7 +920,7 @@ namespace JellyfinHuePlugin.Services
                     $"https://{bridgeIp}/api/{username}/groups/{groupId}/action",
                     requestBody,
                     HueJsonOptions,
-                    cancellationToken));
+                    cancellationToken), cancellationToken);
 
                 return await ReadBridgeResultAsync(response, $"scene {sceneId} on group {groupId}", cancellationToken);
             }
@@ -875,7 +945,7 @@ namespace JellyfinHuePlugin.Services
                     $"https://{bridgeIp}/api/{username}/groups/{groupId}/action",
                     state,
                     HueJsonOptions,
-                    cancellationToken));
+                    cancellationToken), cancellationToken);
 
                 return await ReadBridgeResultAsync(response, $"group {groupId} state", cancellationToken);
             }
@@ -900,7 +970,7 @@ namespace JellyfinHuePlugin.Services
                     $"https://{bridgeIp}/api/{username}/lights/{lightId}/state",
                     state,
                     HueJsonOptions,
-                    cancellationToken));
+                    cancellationToken), cancellationToken);
 
                 return await ReadBridgeResultAsync(response, $"light {lightId} state", cancellationToken);
             }
@@ -914,6 +984,10 @@ namespace JellyfinHuePlugin.Services
         public void Dispose()
         {
             _httpClient.Dispose();
+            if (!ReferenceEquals(_bridgeInfoClient, _httpClient))
+            {
+                _bridgeInfoClient.Dispose();
+            }
         }
     }
 
