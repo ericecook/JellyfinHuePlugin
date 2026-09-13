@@ -448,10 +448,10 @@
                                         <div id="playBrightnessContainer" class="inputContainer">
                                             <label class="inputLabel" for="profilePlayBrightness">Brightness</label>
                                             <div style="display: flex; align-items: center; gap: 15px;">
-                                                <input type="range" id="profilePlayBrightnessSlider" min="0" max="254" value="20" style="flex: 1;" />
-                                                <input type="number" id="profilePlayBrightness" is="emby-input" min="0" max="254" value="20" style="width: 80px;" />
+                                                <input type="range" id="profilePlayBrightnessSlider" min="0" max="100" value="8" style="flex: 1;" />
+                                                <input type="number" id="profilePlayBrightness" is="emby-input" min="0" max="100" value="8" style="width: 80px;" />
                                             </div>
-                                            <div id="profilePlayBrightnessDesc" class="fieldDescription">Dim (20 / 254)</div>
+                                            <div id="profilePlayBrightnessDesc" class="fieldDescription">Very Dim (8%)</div>
                                         </div>
 
                                         <div class="checkboxContainer" style="margin-top: 5px;">
@@ -483,10 +483,10 @@
                                         <div id="pauseBrightnessContainer" class="inputContainer">
                                             <label class="inputLabel" for="profilePauseBrightness">Brightness</label>
                                             <div style="display: flex; align-items: center; gap: 15px;">
-                                                <input type="range" id="profilePauseBrightnessSlider" min="0" max="254" value="100" style="flex: 1;" />
-                                                <input type="number" id="profilePauseBrightness" is="emby-input" min="0" max="254" value="100" style="width: 80px;" />
+                                                <input type="range" id="profilePauseBrightnessSlider" min="0" max="100" value="39" style="flex: 1;" />
+                                                <input type="number" id="profilePauseBrightness" is="emby-input" min="0" max="100" value="39" style="width: 80px;" />
                                             </div>
-                                            <div id="profilePauseBrightnessDesc" class="fieldDescription">Medium (100 / 254)</div>
+                                            <div id="profilePauseBrightnessDesc" class="fieldDescription">Dim (39%)</div>
                                         </div>
 
                                         <div class="checkboxContainer" style="margin-top: 5px;">
@@ -530,10 +530,10 @@
                                         <div id="stopBrightnessContainer" class="inputContainer">
                                             <label class="inputLabel" for="profileStopBrightness">Brightness</label>
                                             <div style="display: flex; align-items: center; gap: 15px;">
-                                                <input type="range" id="profileStopBrightnessSlider" min="0" max="254" value="254" style="flex: 1;" />
-                                                <input type="number" id="profileStopBrightness" is="emby-input" min="0" max="254" value="254" style="width: 80px;" />
+                                                <input type="range" id="profileStopBrightnessSlider" min="0" max="100" value="100" style="flex: 1;" />
+                                                <input type="number" id="profileStopBrightness" is="emby-input" min="0" max="100" value="100" style="width: 80px;" />
                                             </div>
-                                            <div id="profileStopBrightnessDesc" class="fieldDescription">Very Bright (254 / 254)</div>
+                                            <div id="profileStopBrightnessDesc" class="fieldDescription">Very Bright (100%)</div>
                                         </div>
 
                                         <div class="checkboxContainer" style="margin-top: 5px;">
@@ -595,10 +595,10 @@
                 // Helper: Get brightness description
                 getBrightnessDescription: function(value) {
                     if (value === 0) return 'OFF (responsive)';
-                    if (value < 50) return 'Very Dim';
-                    if (value < 100) return 'Dim';
-                    if (value < 150) return 'Medium';
-                    if (value < 200) return 'Bright';
+                    if (value < 20) return 'Very Dim';
+                    if (value < 40) return 'Dim';
+                    if (value < 60) return 'Medium';
+                    if (value < 80) return 'Bright';
                     return 'Very Bright';
                 },
                 
@@ -640,7 +640,7 @@
                     } else if (profile.PlaySceneId) {
                         items.push('Activates scene on play');
                     } else {
-                        var bri = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20;
+                        var bri = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 8;
                         items.push('Dims to ' + bri + ' on play');
                     }
 
@@ -687,7 +687,7 @@
                     Dashboard.showLoadingMsg();
                     
                     var groupId = profile.TargetGroupId || '0';
-                    var brightness = profile.TurnOffLightsOnPlay ? 0 : (profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20);
+                    var brightness = profile.TurnOffLightsOnPlay ? 0 : (profile.PlayBrightness !== undefined ? profile.PlayBrightness : 8);
 
                     ApiClient.ajax({
                         type: 'POST',
@@ -821,14 +821,14 @@
                         slider.addEventListener('input', function() {
                             input.value = slider.value;
                             if (desc) {
-                                desc.textContent = HuePluginConfig.getBrightnessDescription(parseInt(slider.value)) + ' (' + slider.value + ' / 254)';
+                                desc.textContent = HuePluginConfig.getBrightnessDescription(parseInt(slider.value)) + ' (' + slider.value + '%)';
                             }
                         });
                         
                         input.addEventListener('input', function() {
                             slider.value = input.value;
                             if (desc) {
-                                desc.textContent = HuePluginConfig.getBrightnessDescription(parseInt(input.value)) + ' (' + input.value + ' / 254)';
+                                desc.textContent = HuePluginConfig.getBrightnessDescription(parseInt(input.value)) + ' (' + input.value + '%)';
                             }
                         });
                     }
@@ -865,40 +865,40 @@
                             Name: 'New Profile',
                             EnableForMovies: true,
                             EnableForTvShows: false,
-                            PlayBrightness: 20
+                            PlayBrightness: 8
                         },
                         'movie-theater': {
                             Name: 'Movie Theater',
                             EnableForMovies: true,
                             EnableForTvShows: false,
                             TurnOffLightsOnPlay: true,
-                            PauseBrightness: 15,
+                            PauseBrightness: 6,
                             PauseGracePeriodSeconds: 60,
-                            StopBrightness: 60,
+                            StopBrightness: 24,
                             EnableOutroLights: true
                         },
                         'tv-viewing': {
                             Name: 'TV Viewing',
                             EnableForMovies: false,
                             EnableForTvShows: true,
-                            PlayBrightness: 60,
-                            PauseBrightness: 120,
-                            StopBrightness: 200,
+                            PlayBrightness: 24,
+                            PauseBrightness: 47,
+                            StopBrightness: 79,
                             EnableOutroLights: false
                         },
                         'bedroom-casual': {
                             Name: 'Bedroom Casual',
                             EnableForMovies: true,
                             EnableForTvShows: true,
-                            PlayBrightness: 80,
-                            PauseBrightness: 150,
-                            StopBrightness: 200
+                            PlayBrightness: 31,
+                            PauseBrightness: 59,
+                            StopBrightness: 79
                         },
                         'gaming': {
                             Name: 'Gaming Setup',
                             EnableForMovies: true,
                             EnableForTvShows: true,
-                            PlayBrightness: 50,
+                            PlayBrightness: 20,
                             EnableOutroLights: false
                         }
                     };
@@ -915,13 +915,13 @@
                     document.querySelector('#profileClientName').value = '';
                     document.querySelector('#profileIpAddress').value = '';
                     document.querySelector('#profileTurnOffLightsOnPlay').checked = template.TurnOffLightsOnPlay || false;
-                    document.querySelector('#profilePlayBrightness').value = template.PlayBrightness || 20;
-                    document.querySelector('#profilePauseBrightness').value = template.PauseBrightness || 100;
+                    document.querySelector('#profilePlayBrightness').value = template.PlayBrightness || 8;
+                    document.querySelector('#profilePauseBrightness').value = template.PauseBrightness || 39;
                     var templateGracePeriod = template.PauseGracePeriodSeconds || 0;
                     document.querySelector('#profileEnablePauseGracePeriod').checked = templateGracePeriod > 0;
                     document.querySelector('#profilePauseGracePeriod').value = templateGracePeriod > 0 ? templateGracePeriod : 30;
                     document.querySelector('#pauseGracePeriodContainer').style.display = templateGracePeriod > 0 ? '' : 'none';
-                    document.querySelector('#profileStopBrightness').value = template.StopBrightness || 254;
+                    document.querySelector('#profileStopBrightness').value = template.StopBrightness || 100;
                     document.querySelector('#profileEnableOutroLights').checked = template.EnableOutroLights || false;
 
                     // Per-state transitions (defaults: disabled, 0.4s)
@@ -950,18 +950,18 @@
                     document.querySelector('#stopBrightnessContainer').style.display = '';
 
                     // Sync sliders
-                    var playBrightness = template.PlayBrightness || 20;
-                    var pauseBrightness = template.PauseBrightness || 100;
-                    var stopBrightness = template.StopBrightness || 254;
+                    var playBrightness = template.PlayBrightness || 8;
+                    var pauseBrightness = template.PauseBrightness || 39;
+                    var stopBrightness = template.StopBrightness || 100;
 
                     document.querySelector('#profilePlayBrightnessSlider').value = playBrightness;
                     document.querySelector('#profilePauseBrightnessSlider').value = pauseBrightness;
                     document.querySelector('#profileStopBrightnessSlider').value = stopBrightness;
 
                     // Update descriptions
-                    document.querySelector('#profilePlayBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(playBrightness) + ' (' + playBrightness + ' / 254)';
-                    document.querySelector('#profilePauseBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(pauseBrightness) + ' (' + pauseBrightness + ' / 254)';
-                    document.querySelector('#profileStopBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(stopBrightness) + ' (' + stopBrightness + ' / 254)';
+                    document.querySelector('#profilePlayBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(playBrightness) + ' (' + playBrightness + '%)';
+                    document.querySelector('#profilePauseBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(pauseBrightness) + ' (' + pauseBrightness + '%)';
+                    document.querySelector('#profileStopBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(stopBrightness) + ' (' + stopBrightness + '%)';
                     
                     HuePluginConfig.profileDeviceIds = [];
                     HuePluginConfig.renderProfileDeviceIdList();
@@ -1477,13 +1477,13 @@
                     document.querySelector('#profileClientName').value = profile.TargetClientName || '';
                     document.querySelector('#profileIpAddress').value = profile.TargetIpAddress || '';
                     document.querySelector('#profileTurnOffLightsOnPlay').checked = profile.TurnOffLightsOnPlay || false;
-                    document.querySelector('#profilePlayBrightness').value = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20;
-                    document.querySelector('#profilePauseBrightness').value = profile.PauseBrightness !== undefined ? profile.PauseBrightness : 100;
+                    document.querySelector('#profilePlayBrightness').value = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 8;
+                    document.querySelector('#profilePauseBrightness').value = profile.PauseBrightness !== undefined ? profile.PauseBrightness : 39;
                     var gracePeriod = profile.PauseGracePeriodSeconds || 0;
                     document.querySelector('#profileEnablePauseGracePeriod').checked = gracePeriod > 0;
                     document.querySelector('#profilePauseGracePeriod').value = gracePeriod > 0 ? gracePeriod : 30;
                     document.querySelector('#pauseGracePeriodContainer').style.display = gracePeriod > 0 ? '' : 'none';
-                    document.querySelector('#profileStopBrightness').value = profile.StopBrightness !== undefined ? profile.StopBrightness : 254;
+                    document.querySelector('#profileStopBrightness').value = profile.StopBrightness !== undefined ? profile.StopBrightness : 100;
                     document.querySelector('#profileEnableOutroLights').checked = profile.EnableOutroLights || false;
 
                     // Per-state transitions
@@ -1509,18 +1509,18 @@
                     document.querySelector('#stopTransitionContainer').style.display = profile.EnableStopTransition ? '' : 'none';
 
                     // Sync sliders with input values
-                    var playBrightness = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 20;
-                    var pauseBrightness = profile.PauseBrightness !== undefined ? profile.PauseBrightness : 100;
-                    var stopBrightness = profile.StopBrightness !== undefined ? profile.StopBrightness : 254;
+                    var playBrightness = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 8;
+                    var pauseBrightness = profile.PauseBrightness !== undefined ? profile.PauseBrightness : 39;
+                    var stopBrightness = profile.StopBrightness !== undefined ? profile.StopBrightness : 100;
 
                     document.querySelector('#profilePlayBrightnessSlider').value = playBrightness;
                     document.querySelector('#profilePauseBrightnessSlider').value = pauseBrightness;
                     document.querySelector('#profileStopBrightnessSlider').value = stopBrightness;
 
                     // Update descriptions
-                    document.querySelector('#profilePlayBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(playBrightness) + ' (' + playBrightness + ' / 254)';
-                    document.querySelector('#profilePauseBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(pauseBrightness) + ' (' + pauseBrightness + ' / 254)';
-                    document.querySelector('#profileStopBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(stopBrightness) + ' (' + stopBrightness + ' / 254)';
+                    document.querySelector('#profilePlayBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(playBrightness) + ' (' + playBrightness + '%)';
+                    document.querySelector('#profilePauseBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(pauseBrightness) + ' (' + pauseBrightness + '%)';
+                    document.querySelector('#profileStopBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(stopBrightness) + ' (' + stopBrightness + '%)';
                     
                     HuePluginConfig.profileDeviceIds = (profile.TargetDeviceIds || []).slice();
                     HuePluginConfig.renderProfileDeviceIdList();
@@ -1573,10 +1573,10 @@
                         PauseSceneId: document.querySelector('#profilePauseSceneId').value,
                         StopSceneId: document.querySelector('#profileStopSceneId').value,
                         TurnOffLightsOnPlay: document.querySelector('#profileTurnOffLightsOnPlay').checked,
-                        PlayBrightness: Math.max(0, Math.min(254, parseInt(document.querySelector('#profilePlayBrightness').value) || 0)),
-                        PauseBrightness: Math.max(0, Math.min(254, parseInt(document.querySelector('#profilePauseBrightness').value) || 0)),
+                        PlayBrightness: Math.max(0, Math.min(100, parseInt(document.querySelector('#profilePlayBrightness').value) || 0)),
+                        PauseBrightness: Math.max(0, Math.min(100, parseInt(document.querySelector('#profilePauseBrightness').value) || 0)),
                         PauseGracePeriodSeconds: document.querySelector('#profileEnablePauseGracePeriod').checked ? Math.max(1, parseInt(document.querySelector('#profilePauseGracePeriod').value) || 30) : 0,
-                        StopBrightness: Math.max(0, Math.min(254, parseInt(document.querySelector('#profileStopBrightness').value) || 0)),
+                        StopBrightness: Math.max(0, Math.min(100, parseInt(document.querySelector('#profileStopBrightness').value) || 0)),
                         EnablePlayTransition: document.querySelector('#profileEnablePlayTransition').checked,
                         PlayTransitionDuration: HuePluginConfig.parseNonNegativeInt('#profilePlayTransitionDuration'),
                         EnablePauseTransition: document.querySelector('#profileEnablePauseTransition').checked,

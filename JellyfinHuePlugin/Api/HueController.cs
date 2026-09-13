@@ -24,6 +24,7 @@ namespace JellyfinHuePlugin.Api
     {
         private readonly ILogger<HueController> _logger;
         private readonly HueService _hueService;
+        private readonly HueResourceCatalog _catalog;
 
         public HueController(ILogger<HueController> logger)
         {
@@ -35,6 +36,7 @@ namespace JellyfinHuePlugin.Api
             }
 
             _hueService = Plugin.Instance.HueService;
+            _catalog = Plugin.Instance.Catalog;
         }
 
         private HueBridge? GetBridge(string? bridgeId)
@@ -57,13 +59,6 @@ namespace JellyfinHuePlugin.Api
             _logger.LogInformation("API: Discovering Hue bridges");
 
             var bridges = await _hueService.DiscoverBridgesAsync(cancellationToken);
-
-            // If no bridges found via cloud, try local discovery
-            if (bridges.Count == 0)
-            {
-                _logger.LogInformation("No bridges found via cloud, trying local discovery");
-                bridges = await _hueService.DiscoverBridgesLocalAsync(cancellationToken);
-            }
 
             return Ok(bridges);
         }
@@ -194,7 +189,7 @@ namespace JellyfinHuePlugin.Api
         }
 
         [HttpGet("lights")]
-        public async Task<ActionResult<Dictionary<string, HueLight>>> GetLights(
+        public async Task<ActionResult<Dictionary<string, HueLightResource>>> GetLights(
             [FromQuery] string? bridgeId,
             CancellationToken cancellationToken)
         {
@@ -206,18 +201,19 @@ namespace JellyfinHuePlugin.Api
 
             _logger.LogInformation("API: Getting lights from bridge {BridgeName}", bridge.Name);
 
-            var lights = await _hueService.GetLightsAsync(bridge.IpAddress, bridge.Username, cancellationToken);
-
+            var lights = await _hueService.GetLightsAsync(bridge, cancellationToken);
             if (lights == null)
             {
                 return StatusCode(500, "Failed to retrieve lights");
             }
 
-            return Ok(lights);
+            return Ok(lights.ToDictionary(l => l.Id));
         }
 
+        // Keyed by grouped_light id, which is what a profile stores as TargetGroupId. The bridge
+        // home is left out: the page adds its own "All Lights" option with value "0".
         [HttpGet("groups")]
-        public async Task<ActionResult<Dictionary<string, HueGroup>>> GetGroups(
+        public async Task<ActionResult<Dictionary<string, HueGroupResource>>> GetGroups(
             [FromQuery] string? bridgeId,
             CancellationToken cancellationToken)
         {
@@ -229,18 +225,17 @@ namespace JellyfinHuePlugin.Api
 
             _logger.LogInformation("API: Getting groups from bridge {BridgeName}", bridge.Name);
 
-            var groups = await _hueService.GetGroupsAsync(bridge.IpAddress, bridge.Username, cancellationToken);
-
+            var groups = await _catalog.GetGroupsAsync(bridge, cancellationToken);
             if (groups == null)
             {
                 return StatusCode(500, "Failed to retrieve groups");
             }
 
-            return Ok(groups);
+            return Ok(groups.Where(g => g.Type != "bridge_home").ToDictionary(g => g.GroupedLightId));
         }
 
         [HttpGet("scenes")]
-        public async Task<ActionResult<Dictionary<string, HueScene>>> GetScenes(
+        public async Task<ActionResult<Dictionary<string, HueSceneResource>>> GetScenes(
             [FromQuery] string? bridgeId,
             CancellationToken cancellationToken)
         {
@@ -252,14 +247,13 @@ namespace JellyfinHuePlugin.Api
 
             _logger.LogInformation("API: Getting scenes from bridge {BridgeName}", bridge.Name);
 
-            var scenes = await _hueService.GetScenesAsync(bridge.IpAddress, bridge.Username, cancellationToken);
-
+            var scenes = await _catalog.GetScenesAsync(bridge, cancellationToken);
             if (scenes == null)
             {
                 return StatusCode(500, "Failed to retrieve scenes");
             }
 
-            return Ok(scenes);
+            return Ok(scenes.ToDictionary(s => s.Id));
         }
 
         [HttpPost("test")]
@@ -275,30 +269,27 @@ namespace JellyfinHuePlugin.Api
 
             _logger.LogInformation("API: Testing light control on bridge {BridgeName}", bridge.Name);
 
-            var state = new HueLightState
-            {
-                On = true,
-                Bri = request.Brightness,
-                TransitionTime = 10
-            };
-
             bool success;
             if (!string.IsNullOrWhiteSpace(request.SceneId))
             {
-                success = await _hueService.ActivateSceneAsync(
-                    bridge.IpAddress,
-                    bridge.Username,
-                    request.GroupId ?? "0",
-                    request.SceneId,
-                    cancellationToken: cancellationToken);
+                var sceneId = await _catalog.ResolveSceneAsync(bridge, request.SceneId, cancellationToken);
+                if (sceneId == null)
+                {
+                    return StatusCode(500, "Scene not found on the bridge; re-select it");
+                }
+
+                success = await _hueService.RecallSceneAsync(bridge, sceneId, 1000, cancellationToken);
             }
             else
             {
-                success = await _hueService.SetGroupStateAsync(
-                    bridge.IpAddress,
-                    bridge.Username,
-                    request.GroupId ?? "0",
-                    state,
+                var groupedLightId = await _catalog.ResolveGroupedLightAsync(bridge, request.GroupId ?? "0", cancellationToken);
+                if (groupedLightId == null)
+                {
+                    return StatusCode(500, "Target group not found on the bridge; re-select it");
+                }
+
+                success = await _hueService.SetGroupedLightAsync(bridge, groupedLightId,
+                    new GroupedLightState { On = true, Brightness = Math.Clamp(request.Brightness, 0, 100), DurationMs = 1000 },
                     cancellationToken);
             }
 
@@ -331,7 +322,8 @@ namespace JellyfinHuePlugin.Api
 
             try
             {
-                var lights = await _hueService.GetLightsAsync(request.BridgeIp, request.Username, cancellationToken);
+                var probe = new HueBridge { Name = "verify", IpAddress = request.BridgeIp, Username = request.Username };
+                var lights = await _hueService.GetLightsAsync(probe, cancellationToken);
                 if (lights != null)
                 {
                     return Ok(new VerifyConnectionResult { Success = true });

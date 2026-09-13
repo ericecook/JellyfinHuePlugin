@@ -7,9 +7,7 @@ using System.Net.Http;
 using System.Net.Http.Json;
 using System.IO;
 using System.Net.Security;
-using System.Net.Sockets;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
@@ -696,57 +694,6 @@ namespace JellyfinHuePlugin.Services
             }
         }
 
-        // ---------------------------------------------------------------------------------
-        // v1 (deleted in Task 6)
-        // ---------------------------------------------------------------------------------
-
-        // The bridge answers state changes with HTTP 200 and a JSON array of
-        // {"success":{...}} / {"error":{"type","address","description"}} entries, one per
-        // key. An unknown key or a bad API key is therefore invisible to IsSuccessStatusCode.
-        private async Task<bool> ReadBridgeResultAsync(HttpResponseMessage response, string operation, CancellationToken cancellationToken)
-        {
-            var content = await response.Content.ReadAsStringAsync(cancellationToken);
-            // A wrong IP can serve a whole web page; keep log lines bounded.
-            var excerpt = content.Length > 500 ? content[..500] + "…" : content;
-
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("Bridge returned {Status} for {Operation}: {Content}", response.StatusCode, operation, excerpt);
-                return false;
-            }
-
-            try
-            {
-                using var doc = JsonDocument.Parse(content);
-                if (doc.RootElement.ValueKind != JsonValueKind.Array)
-                {
-                    _logger.LogWarning("Unexpected bridge response for {Operation}: {Content}", operation, excerpt);
-                    return false;
-                }
-
-                var ok = true;
-                foreach (var entry in doc.RootElement.EnumerateArray())
-                {
-                    if (entry.TryGetProperty("error", out var error))
-                    {
-                        ok = false;
-                        _logger.LogWarning("Bridge error for {Operation}: type {Type} at {Address}: {Description}",
-                            operation,
-                            error.TryGetProperty("type", out var t) ? t.ToString() : "?",
-                            error.TryGetProperty("address", out var a) ? a.ToString() : "?",
-                            error.TryGetProperty("description", out var d) ? d.ToString() : "?");
-                    }
-                }
-
-                return ok;
-            }
-            catch (JsonException ex)
-            {
-                _logger.LogWarning(ex, "Could not parse bridge response for {Operation}: {Content}", operation, excerpt);
-                return false;
-            }
-        }
-
         // Retry once on transient connection failures (stale pooled connections to Hue bridge).
         // Never retries once cancellation has been requested: cancelling a request can itself
         // surface as an HttpRequestException wrapping an IOException rather than a clean
@@ -783,7 +730,7 @@ namespace JellyfinHuePlugin.Services
                     // Normalize all bridge IPs
                     foreach (var bridge in bridges)
                     {
-                        bridge.InternalIpAddress = NormalizeBridgeIp(bridge.InternalIpAddress);
+                        bridge.InternalIpAddress = BridgeUri.StripSchemeAndPath(bridge.InternalIpAddress);
                         _logger.LogInformation("Found bridge {Id} at {Ip}", bridge.Id, bridge.InternalIpAddress);
                     }
                 }
@@ -798,93 +745,6 @@ namespace JellyfinHuePlugin.Services
             }
         }
 
-        // Alternative: Local network discovery using SSDP
-        public async Task<List<HueBridgeDiscovery>> DiscoverBridgesLocalAsync(CancellationToken cancellationToken = default)
-        {
-            var bridges = new List<HueBridgeDiscovery>();
-            
-            try
-            {
-                _logger.LogInformation("Performing local SSDP discovery...");
-                
-                using var udpClient = new UdpClient();
-                udpClient.Client.Bind(new IPEndPoint(IPAddress.Any, 0));
-                
-                var multicastEndpoint = new IPEndPoint(IPAddress.Parse("239.255.255.250"), 1900);
-                
-                var searchMessage = 
-                    "M-SEARCH * HTTP/1.1\r\n" +
-                    "HOST: 239.255.255.250:1900\r\n" +
-                    "MAN: \"ssdp:discover\"\r\n" +
-                    "MX: 3\r\n" +
-                    "ST: ssdp:all\r\n\r\n";
-                
-                var searchBytes = Encoding.ASCII.GetBytes(searchMessage);
-                await udpClient.SendAsync(searchBytes, searchBytes.Length, multicastEndpoint);
-                
-                udpClient.Client.ReceiveTimeout = 3000;
-
-                // Enforce a 5-second timeout so the loop doesn't hang indefinitely
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                timeoutCts.CancelAfter(TimeSpan.FromSeconds(5));
-
-                while (!timeoutCts.Token.IsCancellationRequested)
-                {
-                    try
-                    {
-                        var result = await udpClient.ReceiveAsync(timeoutCts.Token);
-                        var response = Encoding.ASCII.GetString(result.Buffer);
-
-                        if (response.Contains("IpBridge", StringComparison.OrdinalIgnoreCase))
-                        {
-                            var ip = result.RemoteEndPoint.Address.ToString();
-                            var bridgeId = ExtractBridgeIdFromSsdp(response);
-
-                            if (!bridges.Any(b => b.InternalIpAddress == ip))
-                            {
-                                bridges.Add(new HueBridgeDiscovery
-                                {
-                                    Id = bridgeId,
-                                    InternalIpAddress = ip
-                                });
-                                _logger.LogInformation("Found Hue bridge at {IpAddress}", ip);
-                            }
-                        }
-                    }
-                    catch (SocketException)
-                    {
-                        break; // Socket timeout
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        break; // Discovery timeout elapsed
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error during local bridge discovery");
-            }
-            
-            return bridges;
-        }
-
-        private string ExtractBridgeIdFromSsdp(string response)
-        {
-            var lines = response.Split('\n');
-            foreach (var line in lines)
-            {
-                if (line.StartsWith("hue-bridgeid:", StringComparison.OrdinalIgnoreCase))
-                {
-                    return line.Split(':')[1].Trim();
-                }
-            }
-            return Guid.NewGuid().ToString("N")[..16];
-        }
-
-        // Normalize bridge IP to remove any protocol and ensure it's just IP:port
-        internal static string NormalizeBridgeIp(string bridgeIp) => BridgeUri.StripSchemeAndPath(bridgeIp);
-
         // Test connection to bridge - returns the raw response for diagnostics
         public virtual async Task<string> TestBridgeConnectionAsync(string bridgeIp, CancellationToken cancellationToken = default)
         {
@@ -896,134 +756,6 @@ namespace JellyfinHuePlugin.Services
 
             return $"Bridge {info.BridgeId} (model {info.ModelId}, software {info.SoftwareVersion}, API {info.ApiVersion}) — "
                 + (info.SupportsV2 ? "supports API v2." : $"does NOT support API v2; bridge software {MinimumV2SoftwareVersion} or newer is required.");
-        }
-
-        // Get all lights
-        public async Task<Dictionary<string, HueLight>?> GetLightsAsync(string bridgeIp, string username, CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                bridgeIp = NormalizeBridgeIp(bridgeIp);
-                var response = await SendWithRetryAsync(() => _httpClient.GetAsync($"https://{bridgeIp}/api/{username}/lights", cancellationToken), cancellationToken);
-                response.EnsureSuccessStatusCode();
-                
-                return await response.Content.ReadFromJsonAsync<Dictionary<string, HueLight>>(cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting lights");
-                return null;
-            }
-        }
-
-        // Get all groups
-        public async Task<Dictionary<string, HueGroup>?> GetGroupsAsync(string bridgeIp, string username, CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                bridgeIp = NormalizeBridgeIp(bridgeIp);
-                var response = await SendWithRetryAsync(() => _httpClient.GetAsync($"https://{bridgeIp}/api/{username}/groups", cancellationToken), cancellationToken);
-                response.EnsureSuccessStatusCode();
-                
-                return await response.Content.ReadFromJsonAsync<Dictionary<string, HueGroup>>(cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting groups");
-                return null;
-            }
-        }
-
-        // Get all scenes
-        public async Task<Dictionary<string, HueScene>?> GetScenesAsync(string bridgeIp, string username, CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                bridgeIp = NormalizeBridgeIp(bridgeIp);
-                var response = await SendWithRetryAsync(() => _httpClient.GetAsync($"https://{bridgeIp}/api/{username}/scenes", cancellationToken), cancellationToken);
-                response.EnsureSuccessStatusCode();
-                
-                return await response.Content.ReadFromJsonAsync<Dictionary<string, HueScene>>(cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting scenes");
-                return null;
-            }
-        }
-
-        // Activate a scene
-        public virtual async Task<bool> ActivateSceneAsync(string bridgeIp, string username, string groupId, string sceneId, int? transitionTime = null, CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                bridgeIp = NormalizeBridgeIp(bridgeIp);
-                object requestBody = transitionTime.HasValue
-                    ? new { scene = sceneId, transitiontime = transitionTime.Value }
-                    : new { scene = sceneId };
-                var response = await SendWithRetryAsync(() => _httpClient.PutAsJsonAsync(
-                    $"https://{bridgeIp}/api/{username}/groups/{groupId}/action",
-                    requestBody,
-                    HueJsonOptions,
-                    cancellationToken), cancellationToken);
-
-                return await ReadBridgeResultAsync(response, $"scene {sceneId} on group {groupId}", cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error activating scene {SceneId}", sceneId);
-                return false;
-            }
-        }
-
-        // Set group state (brightness, on/off, etc.)
-        public virtual async Task<bool> SetGroupStateAsync(string bridgeIp, string username, string groupId, HueLightState state, CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                bridgeIp = NormalizeBridgeIp(bridgeIp);
-                var response = await SendWithRetryAsync(() => _httpClient.PutAsJsonAsync(
-                    $"https://{bridgeIp}/api/{username}/groups/{groupId}/action",
-                    state,
-                    HueJsonOptions,
-                    cancellationToken), cancellationToken);
-
-                return await ReadBridgeResultAsync(response, $"group {groupId} state", cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error setting group state");
-                return false;
-            }
-        }
-
-        // Set individual light state
-        public async Task<bool> SetLightStateAsync(string bridgeIp, string username, string lightId, HueLightState state, CancellationToken cancellationToken = default)
-        {
-            try
-            {
-                bridgeIp = NormalizeBridgeIp(bridgeIp);
-                var response = await SendWithRetryAsync(() => _httpClient.PutAsJsonAsync(
-                    $"https://{bridgeIp}/api/{username}/lights/{lightId}/state",
-                    state,
-                    HueJsonOptions,
-                    cancellationToken), cancellationToken);
-
-                return await ReadBridgeResultAsync(response, $"light {lightId} state", cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error setting light state");
-                return false;
-            }
         }
 
         public void Dispose()
