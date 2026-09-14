@@ -100,6 +100,51 @@
                 margin-top: 0;
             }
 
+            /* Per-section Test button (Play/Pause/Stop) */
+            .hue-state-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
+            }
+            .hue-state-header h3 {
+                margin: 0;
+            }
+            .hue-test-button {
+                min-width: 72px;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .hue-test-icon {
+                font-size: 20px;
+                vertical-align: middle;
+            }
+            .hue-test-ok {
+                color: #4caf50;
+            }
+            .hue-test-fail {
+                color: #ff9800;
+            }
+            .hue-test-error {
+                color: #ff9800;
+                font-size: 0.88em;
+                margin-top: 6px;
+            }
+            .hue-spinner {
+                display: inline-block;
+                width: 1em;
+                height: 1em;
+                border: 2px solid currentColor;
+                border-right-color: transparent;
+                border-radius: 50%;
+                vertical-align: middle;
+                animation: hue-spin 0.8s linear infinite;
+            }
+            @keyframes hue-spin {
+                to { transform: rotate(360deg); }
+            }
+
             /* Dividers */
             .hue-divider {
                 height: 1px;
@@ -429,7 +474,11 @@
 
                                     <!-- Play Section -->
                                     <div class="hue-state-section">
-                                        <h3>Play</h3>
+                                        <div class="hue-state-header">
+                                            <h3>Play</h3>
+                                            <button is="emby-button" type="button" class="raised hue-test-button" data-test-action="Play">Test</button>
+                                        </div>
+                                        <div class="hue-test-error" id="profileTestPlayError" style="display:none;"></div>
 
                                         <div class="inputContainer">
                                             <label class="inputLabel" for="profilePlaySceneId">Scene</label>
@@ -472,7 +521,11 @@
 
                                     <!-- Pause Section -->
                                     <div class="hue-state-section">
-                                        <h3>Pause</h3>
+                                        <div class="hue-state-header">
+                                            <h3>Pause</h3>
+                                            <button is="emby-button" type="button" class="raised hue-test-button" data-test-action="Pause">Test</button>
+                                        </div>
+                                        <div class="hue-test-error" id="profileTestPauseError" style="display:none;"></div>
 
                                         <div class="inputContainer">
                                             <label class="inputLabel" for="profilePauseSceneId">Scene</label>
@@ -519,7 +572,11 @@
 
                                     <!-- Stop Section -->
                                     <div class="hue-state-section">
-                                        <h3>Stop</h3>
+                                        <div class="hue-state-header">
+                                            <h3>Stop</h3>
+                                            <button is="emby-button" type="button" class="raised hue-test-button" data-test-action="Stop">Test</button>
+                                        </div>
+                                        <div class="hue-test-error" id="profileTestStopError" style="display:none;"></div>
 
                                         <div class="inputContainer">
                                             <label class="inputLabel" for="profileStopSceneId">Scene</label>
@@ -676,33 +733,96 @@
                     }
                 },
 
-                // Test profile
-                testProfile: function(index) {
-                    var profile = HuePluginConfig.profiles[index];
-                    if (!profile) return;
-                    
-                    // Close menu
-                    var menu = document.querySelector('#profileMenu' + index);
-                    if (menu) menu.style.display = 'none';
-                    
-                    Dashboard.showLoadingMsg();
-                    
-                    var groupId = profile.TargetGroupId || '0';
-                    var turnOff = !!profile.TurnOffLightsOnPlay;
-                    var brightness = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 8;
+                // Test button feedback. 'busy' disables the button and shows a spinner; 'ok' and
+                // 'fail' show an icon and restore idleHtml after 2 s; 'idle' restores it at once.
+                // Any call cancels a pending restore.
+                showTestState: function(button, state, idleHtml) {
+                    if (!button) return;
+                    if (button.hueTestTimer) {
+                        clearTimeout(button.hueTestTimer);
+                        button.hueTestTimer = null;
+                    }
+                    if (state === 'busy') {
+                        button.disabled = true;
+                        button.innerHTML = '<span class="hue-spinner"></span>';
+                        return;
+                    }
+                    button.disabled = false;
+                    if (state === 'idle') {
+                        button.innerHTML = idleHtml;
+                        return;
+                    }
+                    button.innerHTML = state === 'ok'
+                        ? '<span class="material-icons hue-test-icon hue-test-ok">check</span>'
+                        : '<span class="material-icons hue-test-icon hue-test-fail">error_outline</span>';
+                    button.hueTestTimer = setTimeout(function() {
+                        button.hueTestTimer = null;
+                        button.innerHTML = idleHtml;
+                    }, 2000);
+                },
 
-                    ApiClient.ajax({
+                // Runs one light action for a profile (saved or not). Resolves to { Success, Error }; never rejects.
+                runTest: function(action, profile) {
+                    var unreachable = { Success: false, Error: 'Could not reach the server; check the server logs' };
+                    return ApiClient.ajax({
                         type: 'POST',
                         url: ApiClient.getUrl('api/hueplugin/test'),
-                        data: JSON.stringify({ BridgeId: profile.BridgeId || '', GroupId: groupId, Brightness: brightness, TurnOff: turnOff }),
-                        contentType: 'application/json'
-                    }).then(function() {
-                        Dashboard.hideLoadingMsg();
-                        Dashboard.alert('Profile "' + profile.Name + '" tested successfully. Lights should have changed.');
+                        data: JSON.stringify({ Action: action, Profile: profile }),
+                        contentType: 'application/json',
+                        dataType: 'json'
+                    }).then(function(result) {
+                        return result || unreachable;
                     }).catch(function(error) {
-                        Dashboard.hideLoadingMsg();
                         console.error('Test failed:', error);
-                        Dashboard.alert('Test failed. Check the server logs for details.');
+                        return unreachable;
+                    });
+                },
+
+                // Test button on an editor section: the values on screen, saved or not
+                testEditorAction: function(button) {
+                    var action = button.getAttribute('data-test-action');
+                    var errorLine = document.querySelector('#profileTest' + action + 'Error');
+                    errorLine.style.display = 'none';
+                    HuePluginConfig.showTestState(button, 'busy');
+
+                    HuePluginConfig.runTest(action, HuePluginConfig.readEditorProfile()).then(function(result) {
+                        HuePluginConfig.showTestState(button, result.Success ? 'ok' : 'fail', 'Test');
+                        if (!result.Success) {
+                            errorLine.textContent = result.Error || 'Test failed; check the server logs';
+                            errorLine.style.display = '';
+                        }
+                    });
+                },
+
+                // Every editor Test button back to "Test", every error line hidden
+                resetEditorTests: function() {
+                    document.querySelectorAll('#profileEditorModal .hue-test-button').forEach(function(button) {
+                        HuePluginConfig.showTestState(button, 'idle', 'Test');
+                    });
+                    ['Play', 'Pause', 'Stop'].forEach(function(action) {
+                        document.querySelector('#profileTest' + action + 'Error').style.display = 'none';
+                    });
+                },
+
+                // Test Play / Pause / Stop from a profile card's menu: the saved profile
+                testProfile: function(index, action) {
+                    var profile = HuePluginConfig.profiles[index];
+                    if (!profile) return;
+
+                    var menu = document.querySelector('#profileMenu' + index);
+                    if (menu) menu.style.display = 'none';
+
+                    var button = document.querySelector('#profileMenuButton' + index);
+                    var errorLine = document.querySelector('#profileTestError' + index);
+                    if (errorLine) errorLine.style.display = 'none';
+                    HuePluginConfig.showTestState(button, 'busy');
+
+                    HuePluginConfig.runTest(action, profile).then(function(result) {
+                        HuePluginConfig.showTestState(button, result.Success ? 'ok' : 'fail', '&#x22EE;');
+                        if (!result.Success && errorLine) {
+                            errorLine.textContent = result.Error || 'Test failed; check the server logs';
+                            errorLine.style.display = '';
+                        }
                     });
                 },
 
@@ -975,6 +1095,8 @@
                     HuePluginConfig.populateBridgeDropdown(defaultBridgeId);
                     HuePluginConfig.loadProfileGroups(defaultBridgeId, '0');
                     HuePluginConfig.loadProfileScenes(defaultBridgeId, '', '', '');
+
+                    HuePluginConfig.resetEditorTests();
 
                     // Show modal
                     document.querySelector('#profileEditorModal').style.display = 'block';
@@ -1471,10 +1593,12 @@
                             html += '</h3>';
                             html += '</div>';
                             html += '<div class="profile-menu" style="position: relative;">';
-                            html += '<button is="emby-button" type="button" class="raised" onclick="event.stopPropagation(); HuePluginConfig.toggleProfileMenu(' + index + ')" style="padding: 4px 12px;">&#x22EE;</button>';
+                            html += '<button is="emby-button" type="button" class="raised" id="profileMenuButton' + index + '" onclick="event.stopPropagation(); HuePluginConfig.toggleProfileMenu(' + index + ')" style="padding: 4px 12px; min-width: 40px;">&#x22EE;</button>';
                             html += '<div id="profileMenu' + index + '" class="hue-dropdown" style="display:none;">';
                             html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.editProfile(' + index + ')"><span class="material-icons">edit</span>Edit</div>';
-                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.testProfile(' + index + ')"><span class="material-icons">lightbulb</span>Test</div>';
+                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.testProfile(' + index + ', \'Play\')"><span class="material-icons">play_arrow</span>Test Play</div>';
+                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.testProfile(' + index + ', \'Pause\')"><span class="material-icons">pause</span>Test Pause</div>';
+                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.testProfile(' + index + ', \'Stop\')"><span class="material-icons">stop</span>Test Stop</div>';
                             html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.duplicateProfile(' + index + ')"><span class="material-icons">content_copy</span>Duplicate</div>';
                             if (index > 0) {
                                 html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.moveProfile(' + index + ', -1)"><span class="material-icons">arrow_upward</span>Move Up</div>';
@@ -1486,6 +1610,7 @@
                             html += '</div>';
                             html += '</div>';
                             html += '</div>';
+                            html += '<div class="hue-test-error" id="profileTestError' + index + '" style="display:none;"></div>';
 
                             // Summary list
                             html += '<ul style="margin: 6px 0 0 0; padding-left: 20px; font-size: 0.88em; opacity: 0.6;">';
@@ -1588,6 +1713,8 @@
                     HuePluginConfig.loadProfileGroups(bridgeId, profile.TargetGroupId);
                     HuePluginConfig.loadProfileScenes(bridgeId, profile.PlaySceneId, profile.PauseSceneId, profile.StopSceneId);
 
+                    HuePluginConfig.resetEditorTests();
+
                     // Show modal
                     document.querySelector('#profileEditorModal').style.display = 'block';
 
@@ -1609,8 +1736,9 @@
                     HuePluginConfig.createFromTemplate('blank');
                 },
 
-                saveCurrentProfile: function() {
-                    var profile = {
+                // The profile as the editor currently shows it, saved or not
+                readEditorProfile: function() {
+                    return {
                         Id: HuePluginConfig.currentEditingProfile !== null ?
                             HuePluginConfig.profiles[HuePluginConfig.currentEditingProfile].Id :
                             HuePluginConfig.generateGuid(),
@@ -1639,7 +1767,11 @@
                         StopTransitionDuration: HuePluginConfig.parseNonNegativeInt('#profileStopTransitionDuration'),
                         EnableOutroLights: document.querySelector('#profileEnableOutroLights').checked
                     };
-                    
+                },
+
+                saveCurrentProfile: function() {
+                    var profile = HuePluginConfig.readEditorProfile();
+
                     // Validate profile name
                     if (!profile.Name || !profile.Name.trim()) {
                         Dashboard.alert('Please enter a profile name.');
@@ -2192,6 +2324,12 @@
                         HuePluginConfig.saveCurrentProfile();
                     });
                 }
+
+                document.querySelectorAll('#profileEditorModal .hue-test-button').forEach(function(button) {
+                    button.addEventListener('click', function() {
+                        HuePluginConfig.testEditorAction(this);
+                    });
+                });
 
                 var cancelProfileButton = document.querySelector('#cancelProfileButton');
                 if (cancelProfileButton) {

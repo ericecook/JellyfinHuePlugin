@@ -125,7 +125,7 @@ the page load, the banner says so and the rewrite runs again next time.
 
 - Verify the plugin is enabled
 - Check that your profile's client/device/IP filters match your playback device
-- Test the light control using the "Test" button in the profile editor
+- Use **Test** on the Play, Pause or Stop section of the profile editor (it uses the values on screen, saved or not), or Test Play / Test Pause / Test Stop in the profile card's menu. A failed test says why under the button
 - Check Jellyfin logs for profile matching debug messages
 - Look for `Bridge error for ...` warnings from `HueService` in the Jellyfin log. The bridge
   answers every light command with a per-parameter result; a rejected parameter, a revoked
