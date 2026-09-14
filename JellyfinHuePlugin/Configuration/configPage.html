@@ -647,6 +647,7 @@
                 bridges: [],
                 currentEditingProfile: null,
                 profileDeviceIds: [],
+                editorTestGeneration: 0,
                 knownDevices: [],
                 knownDevicesLoading: false,
 
@@ -783,9 +784,12 @@
                     var action = button.getAttribute('data-test-action');
                     var errorLine = document.querySelector('#profileTest' + action + 'Error');
                     errorLine.style.display = 'none';
+                    var generation = HuePluginConfig.editorTestGeneration;
                     HuePluginConfig.showTestState(button, 'busy');
 
                     HuePluginConfig.runTest(action, HuePluginConfig.readEditorProfile()).then(function(result) {
+                        // The editor was reopened while this test was out; the result belongs to the closed session
+                        if (generation !== HuePluginConfig.editorTestGeneration) return;
                         HuePluginConfig.showTestState(button, result.Success ? 'ok' : 'fail', 'Test');
                         if (!result.Success) {
                             errorLine.textContent = result.Error || 'Test failed; check the server logs';
@@ -796,6 +800,7 @@
 
                 // Every editor Test button back to "Test", every error line hidden
                 resetEditorTests: function() {
+                    HuePluginConfig.editorTestGeneration++;
                     document.querySelectorAll('#profileEditorModal .hue-test-button').forEach(function(button) {
                         HuePluginConfig.showTestState(button, 'idle', 'Test');
                     });
