@@ -13,19 +13,20 @@ using Xunit;
 namespace JellyfinHuePlugin.Tests.Services
 {
     /// <summary>
-    /// The executor is the only code that talks to HueService for playback. These tests pin
-    /// the exact v2 calls per action: percent brightness, millisecond transitions, scene recall,
-    /// and the catalog resolving the profile's ids.
+    /// The executor is the only code that talks to HueService for light actions, from playback
+    /// and from the plugin page's Test buttons. These tests pin the exact v2 calls per action
+    /// (percent brightness, millisecond transitions, scene recall, the catalog resolving the
+    /// profile's ids) and the outcome each path reports.
     /// </summary>
     public class LightCommandExecutorTests
     {
         private sealed class CapturingLogger : ILogger<LightCommandExecutor>
         {
-            public List<string> Lines { get; } = new();
+            public List<(LogLevel Level, string Text)> Entries { get; } = new();
             public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
             public bool IsEnabled(LogLevel logLevel) => true;
             public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
-                => Lines.Add(formatter(state, exception));
+                => Entries.Add((logLevel, formatter(state, exception)));
         }
 
         private readonly Mock<HueService> _hue;
@@ -62,7 +63,7 @@ namespace JellyfinHuePlugin.Tests.Services
             TargetGroupId = "1"
         };
 
-        private Task Execute(LightAction action, LightControlProfile profile, CancellationToken token = default)
+        private Task<LightCommandOutcome> Execute(LightAction action, LightControlProfile profile, CancellationToken token = default)
             => _executor.ExecuteAsync(action, _bridge, profile, token);
 
         private void VerifyGroupedLight(Func<GroupedLightState, bool> match, Times times) =>
@@ -78,7 +79,7 @@ namespace JellyfinHuePlugin.Tests.Services
             profile.EnablePlayTransition = true;
             profile.PlayTransitionDuration = 7;
 
-            await Execute(LightAction.Play, profile);
+            (await Execute(LightAction.Play, profile)).Should().Be(LightCommandOutcome.Succeeded);
 
             VerifyGroupedLight(s => s.On == true && s.Brightness == 20 && s.DurationMs == 700, Times.Once());
         }
@@ -86,7 +87,7 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task Play_Brightness_NoTransition_OmitsDuration()
         {
-            await Execute(LightAction.Play, MakeProfile());
+            (await Execute(LightAction.Play, MakeProfile())).Should().Be(LightCommandOutcome.Succeeded);
 
             _sent.Should().ContainSingle().Which.DurationMs.Should().BeNull();
         }
@@ -99,7 +100,7 @@ namespace JellyfinHuePlugin.Tests.Services
             profile.EnablePlayTransition = true;
             profile.PlayTransitionDuration = 4;
 
-            await Execute(LightAction.Play, profile);
+            (await Execute(LightAction.Play, profile)).Should().Be(LightCommandOutcome.Succeeded);
 
             VerifyRecall("scene-play", 400, Times.Once());
             _sent.Should().BeEmpty();
@@ -111,7 +112,7 @@ namespace JellyfinHuePlugin.Tests.Services
             var profile = MakeProfile();
             profile.TurnOffLightsOnPlay = true;
 
-            await Execute(LightAction.Play, profile);
+            (await Execute(LightAction.Play, profile)).Should().Be(LightCommandOutcome.Succeeded);
 
             var state = _sent.Should().ContainSingle().Subject;
             state.On.Should().BeFalse();
@@ -127,7 +128,7 @@ namespace JellyfinHuePlugin.Tests.Services
             profile.EnablePlayTransition = true;
             profile.PlayTransitionDuration = 50;
 
-            await Execute(LightAction.Play, profile);
+            (await Execute(LightAction.Play, profile)).Should().Be(LightCommandOutcome.Succeeded);
 
             var state = _sent.Should().ContainSingle().Subject;
             state.On.Should().BeFalse();
@@ -141,7 +142,7 @@ namespace JellyfinHuePlugin.Tests.Services
             profile.EnablePauseTransition = true;
             profile.PauseTransitionDuration = 3;
 
-            await Execute(LightAction.Pause, profile);
+            (await Execute(LightAction.Pause, profile)).Should().Be(LightCommandOutcome.Succeeded);
 
             VerifyGroupedLight(s => s.On == true && s.Brightness == 60 && s.DurationMs == 300, Times.Once());
         }
@@ -152,7 +153,7 @@ namespace JellyfinHuePlugin.Tests.Services
             var profile = MakeProfile();
             profile.PauseSceneId = "scene-pause";
 
-            await Execute(LightAction.Pause, profile);
+            (await Execute(LightAction.Pause, profile)).Should().Be(LightCommandOutcome.Succeeded);
 
             VerifyRecall("scene-pause", null, Times.Once());
         }
@@ -160,7 +161,7 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task Stop_Brightness_SendsPercent()
         {
-            await Execute(LightAction.Stop, MakeProfile());
+            (await Execute(LightAction.Stop, MakeProfile())).Should().Be(LightCommandOutcome.Succeeded);
 
             VerifyGroupedLight(s => s.On == true && s.Brightness == 100 && s.DurationMs == null, Times.Once());
         }
@@ -173,9 +174,28 @@ namespace JellyfinHuePlugin.Tests.Services
             profile.EnableStopTransition = true;
             profile.StopTransitionDuration = 9;
 
-            await Execute(LightAction.Stop, profile);
+            (await Execute(LightAction.Stop, profile)).Should().Be(LightCommandOutcome.Succeeded);
 
             VerifyRecall("scene-stop", 900, Times.Once());
+        }
+
+        [Theory]
+        [InlineData(LightAction.Play, 250, 100)]
+        [InlineData(LightAction.Play, -5, 0)]
+        [InlineData(LightAction.Pause, 250, 100)]
+        [InlineData(LightAction.Pause, -5, 0)]
+        [InlineData(LightAction.Stop, 250, 100)]
+        [InlineData(LightAction.Stop, -5, 0)]
+        public async Task Brightness_IsClampedToPercent(LightAction action, int stored, int sent)
+        {
+            var profile = MakeProfile();
+            profile.PlayBrightness = stored;
+            profile.PauseBrightness = stored;
+            profile.StopBrightness = stored;
+
+            (await Execute(action, profile)).Should().Be(LightCommandOutcome.Succeeded);
+
+            _sent.Should().ContainSingle().Which.Brightness.Should().Be(sent);
         }
 
         [Fact]
@@ -183,8 +203,9 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             var bridge = new HueBridge { Id = "b", Name = "Empty", IpAddress = "", Username = "" };
 
-            await _executor.ExecuteAsync(LightAction.Play, bridge, MakeProfile(), CancellationToken.None);
+            var outcome = await _executor.ExecuteAsync(LightAction.Play, bridge, MakeProfile(), CancellationToken.None);
 
+            outcome.Should().Be(LightCommandOutcome.BridgeNotConfigured);
             _hue.VerifyNoOtherCalls();
             _catalog.VerifyNoOtherCalls();
         }
@@ -195,7 +216,7 @@ namespace JellyfinHuePlugin.Tests.Services
             _catalog.Setup(c => c.ResolveGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((string?)null);
 
-            await Execute(LightAction.Play, MakeProfile());
+            (await Execute(LightAction.Play, MakeProfile())).Should().Be(LightCommandOutcome.GroupUnresolved);
 
             _sent.Should().BeEmpty();
         }
@@ -208,21 +229,39 @@ namespace JellyfinHuePlugin.Tests.Services
             var profile = MakeProfile();
             profile.StopSceneId = "gone";
 
-            await Execute(LightAction.Stop, profile);
+            (await Execute(LightAction.Stop, profile)).Should().Be(LightCommandOutcome.SceneUnresolved);
 
             _hue.Verify(h => h.RecallSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
             _sent.Should().BeEmpty();
         }
 
         [Fact]
-        public async Task HueServiceThrows_IsSwallowed()
+        public async Task BridgeRejectsGroupedLightCommand_IsFailed()
+        {
+            _hue.Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(false);
+
+            (await Execute(LightAction.Play, MakeProfile())).Should().Be(LightCommandOutcome.Failed);
+        }
+
+        [Fact]
+        public async Task BridgeRejectsSceneRecall_IsFailed()
+        {
+            _hue.Setup(h => h.RecallSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(false);
+            var profile = MakeProfile();
+            profile.PauseSceneId = "scene-pause";
+
+            (await Execute(LightAction.Pause, profile)).Should().Be(LightCommandOutcome.Failed);
+        }
+
+        [Fact]
+        public async Task HueServiceThrows_IsSwallowedAsFailed()
         {
             _hue.Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new InvalidOperationException("bridge offline"));
 
-            var act = () => Execute(LightAction.Stop, MakeProfile());
-
-            await act.Should().NotThrowAsync();
+            (await Execute(LightAction.Stop, MakeProfile())).Should().Be(LightCommandOutcome.Failed);
         }
 
         [Fact]
@@ -253,7 +292,7 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
-        public async Task Execute_LogsCompletionWithElapsedTimeAtDebug()
+        public async Task Execute_LogsCompletionWithElapsedTimeAndOutcomeAtDebug()
         {
             var log = new CapturingLogger();
             var executor = new LightCommandExecutor(_hue.Object, _catalog.Object, log);
@@ -261,7 +300,10 @@ namespace JellyfinHuePlugin.Tests.Services
 
             await executor.ExecuteAsync(LightAction.Stop, _bridge, profile, CancellationToken.None);
 
-            log.Lines.Should().Contain(l => l.StartsWith("[" + profile.Name + "] Stop command finished in ") && l.EndsWith("ms (success: True)"));
+            log.Entries.Should().Contain(e => e.Level == LogLevel.Debug
+                && e.Text.StartsWith("[" + profile.Name + "] Stop command finished in ")
+                && e.Text.EndsWith(" ms (Succeeded)"));
         }
     }
 }
+
