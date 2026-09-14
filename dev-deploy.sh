@@ -13,8 +13,8 @@ echo "Stopping Jellyfin..."
 docker compose stop jellyfin
 
 echo "Deploying to $PLUGIN_DIR..."
-sudo mkdir -p "$PLUGIN_DIR"
-sudo cp dev-output/* "$PLUGIN_DIR/"
+mkdir -p "$PLUGIN_DIR"
+cp dev-output/* "$PLUGIN_DIR/"
 
 echo "Starting Jellyfin..."
 docker compose start jellyfin
