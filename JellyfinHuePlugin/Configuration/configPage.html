@@ -688,6 +688,8 @@
                 bridgeVerifyGeneration: 0,
                 // Bumped by every loadEditorTargets; a group or scene list for an earlier load is ignored
                 editorTargetsGeneration: 0,
+                // The open Add Bridge modal's session; every async result checks it is still the live one
+                addBridgeSession: null,
                 profileDeviceIds: [],
                 editorTestGeneration: 0,
                 knownDevices: [],
@@ -1532,21 +1534,62 @@
                     });
                 },
 
-                // Open add bridge modal
+                // Open the Add Bridge modal as a new session. Results from an earlier session (a pairing retry, a
+                // verification, a discovery still out) see that their session is over and change nothing here.
                 openAddBridge: function() {
+                    HuePluginConfig.endAddBridgeSession();
+                    HuePluginConfig.addBridgeSession = { ended: false, countdown: null };
+
                     document.querySelector('#newBridgeName').value = 'Bridge';
                     document.querySelector('#newBridgeIp').value = '';
                     document.querySelector('#newBridgeUsername').value = '';
+                    var select = document.querySelector('#addBridgeSelect');
+                    select.innerHTML = '';
+                    select.onchange = null;
                     document.querySelector('#addBridgeSelector').style.display = 'none';
                     document.querySelector('#addBridgeAuthProgress').style.display = 'none';
+                    document.querySelector('#addBridgeAuthProgressText').textContent = '';
+                    document.querySelector('#addBridgeAuthCountdown').textContent = '';
+                    document.querySelector('#authBridgeInModalText').textContent = 'Authenticate';
+                    document.querySelector('#saveAddBridge span').textContent = 'Save';
+                    HuePluginConfig.setAddBridgeBusy(false);
                     HuePluginConfig.openModal('addBridgeModal');
+                },
+
+                endAddBridgeSession: function() {
+                    var session = HuePluginConfig.addBridgeSession;
+                    if (!session) return;
+                    session.ended = true;
+                    if (session.countdown) {
+                        clearInterval(session.countdown);
+                        session.countdown = null;
+                    }
+                },
+
+                isLiveAddBridgeSession: function(session) {
+                    return !!session && session === HuePluginConfig.addBridgeSession && !session.ended;
+                },
+
+                // While pairing or verifying only Cancel stays usable, so a retry can never use values that differ from the screen
+                setAddBridgeBusy: function(busy) {
+                    ['#newBridgeName', '#newBridgeIp', '#newBridgeUsername', '#addBridgeSelect', '#discoverBridgeInModal', '#authBridgeInModal', '#saveAddBridge'].forEach(function(selector) {
+                        document.querySelector(selector).disabled = busy;
+                    });
                 },
 
                 // Discover bridges in add modal
                 discoverBridgeInModal: function() {
+                    var session = HuePluginConfig.addBridgeSession;
                     Dashboard.showLoadingMsg();
 
                     ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/discover')).then(function(bridges) {
+                        Dashboard.hideLoadingMsg();
+                        // Cancelled or reopened while discovery ran: the results belong to that closed session
+                        if (!HuePluginConfig.isLiveAddBridgeSession(session)) return;
+                        // Pairing or verification started meanwhile and works from the address it read; do not change it under them
+                        if (document.querySelector('#newBridgeIp').disabled) return;
+
+                        var ipInput = document.querySelector('#newBridgeIp');
                         if (bridges && bridges.length > 1) {
                             var select = document.querySelector('#addBridgeSelect');
                             select.innerHTML = '';
@@ -1556,28 +1599,29 @@
                                 opt.textContent = b.InternalIpAddress + ' (' + (b.Id || 'unknown') + ')';
                                 select.appendChild(opt);
                             });
+                            select.onchange = function() {
+                                ipInput.value = select.value;
+                            };
                             document.querySelector('#addBridgeSelector').style.display = 'block';
-                            document.querySelector('#newBridgeIp').value = bridges[0].InternalIpAddress;
-                            select.addEventListener('change', function() {
-                                document.querySelector('#newBridgeIp').value = this.value;
-                            });
+                            ipInput.value = bridges[0].InternalIpAddress;
                             Dashboard.alert('Found ' + bridges.length + ' bridges. Select one.');
                         } else if (bridges && bridges.length === 1) {
                             document.querySelector('#addBridgeSelector').style.display = 'none';
-                            document.querySelector('#newBridgeIp').value = bridges[0].InternalIpAddress;
+                            ipInput.value = bridges[0].InternalIpAddress;
                             Dashboard.alert('Bridge found at ' + bridges[0].InternalIpAddress);
                         } else {
                             Dashboard.alert('No Hue bridges found. You can enter the IP address manually.');
                         }
-                        Dashboard.hideLoadingMsg();
                     }).catch(function(error) {
                         Dashboard.hideLoadingMsg();
                         console.error('Bridge discovery failed:', error);
+                        if (!HuePluginConfig.isLiveAddBridgeSession(session)) return;
                         Dashboard.alert('Failed to discover bridges. Check your network connection.');
                     });
                 },
 
-                // Authenticate bridge in add modal
+                // Pair with the bridge at the typed address: up to three attempts, three seconds apart, while the
+                // user presses the link button. Everything is tied to the Add Bridge session that started it.
                 authBridgeInModal: function() {
                     var bridgeIp = document.querySelector('#newBridgeIp').value.trim();
                     var bridgeName = document.querySelector('#newBridgeName').value.trim() || 'Bridge';
@@ -1586,7 +1630,7 @@
                         return;
                     }
 
-                    var btn = document.querySelector('#authBridgeInModal');
+                    var session = HuePluginConfig.addBridgeSession;
                     var btnText = document.querySelector('#authBridgeInModalText');
                     var progressEl = document.querySelector('#addBridgeAuthProgress');
                     var progressText = document.querySelector('#addBridgeAuthProgressText');
@@ -1594,7 +1638,15 @@
                     var maxAttempts = 3;
                     var attempt = 0;
 
-                    btn.disabled = true;
+                    function live() {
+                        return HuePluginConfig.isLiveAddBridgeSession(session);
+                    }
+                    function idle() {
+                        HuePluginConfig.setAddBridgeBusy(false);
+                        btnText.textContent = 'Authenticate';
+                    }
+
+                    HuePluginConfig.setAddBridgeBusy(true);
                     progressEl.style.display = 'block';
 
                     function tryAuth() {
@@ -1611,46 +1663,67 @@
                             dataType: 'json'
                         }).then(function(result) {
                             if (result.Success) {
-                                btn.disabled = false;
-                                btnText.textContent = 'Authenticate';
-                                progressEl.style.display = 'none';
-                                document.querySelector('#newBridgeUsername').value = result.Username;
-
-                                // The server stored the bridge before answering; show the stored list
-                                HuePluginConfig.adoptPairedBridge(result.Id, bridgeName).then(function(stored) {
-                                    if (!stored) return;
-                                    HuePluginConfig.closeModal('addBridgeModal');
-                                    Dashboard.alert('Bridge "' + stored.Name + '" added and authenticated!');
-                                });
-                            } else if (attempt < maxAttempts) {
+                                HuePluginConfig.onBridgePaired(session, result, bridgeIp, bridgeName);
+                                return;
+                            }
+                            // Cancelled: no further attempts, and nothing shown in a modal that has moved on
+                            if (!live()) return;
+                            if (attempt < maxAttempts) {
                                 var remaining = 3;
                                 countdownEl.textContent = 'Retrying in ' + remaining + 's...';
                                 var interval = setInterval(function() {
+                                    if (!live()) {
+                                        clearInterval(interval);
+                                        return;
+                                    }
                                     remaining--;
                                     if (remaining > 0) {
                                         countdownEl.textContent = 'Retrying in ' + remaining + 's...';
                                     } else {
                                         clearInterval(interval);
+                                        session.countdown = null;
                                         countdownEl.textContent = '';
                                         tryAuth();
                                     }
                                 }, 1000);
+                                session.countdown = interval;
                             } else {
-                                btn.disabled = false;
-                                btnText.textContent = 'Authenticate';
+                                idle();
                                 progressText.textContent = 'Authentication failed after ' + maxAttempts + ' attempts.';
                                 countdownEl.textContent = 'Press the link button on your Hue bridge and try again.';
                             }
                         }).catch(function(error) {
-                            btn.disabled = false;
-                            btnText.textContent = 'Authenticate';
-                            progressEl.style.display = 'none';
                             console.error('Authentication error:', error);
+                            if (!live()) return;
+                            idle();
+                            progressEl.style.display = 'none';
                             Dashboard.alert('Authentication failed. Check the server logs for details.');
                         });
                     }
 
                     tryAuth();
+                },
+
+                // Pairing stored the bridge on the server before answering, so the stored list is adopted whether or
+                // not the user is still waiting in the modal, and either way the user is told
+                onBridgePaired: function(session, result, bridgeIp, bridgeName) {
+                    if (HuePluginConfig.isLiveAddBridgeSession(session)) {
+                        document.querySelector('#newBridgeUsername').value = result.Username;
+                        document.querySelector('#addBridgeAuthProgressText').textContent = 'Paired; saving…';
+                        document.querySelector('#addBridgeAuthCountdown').textContent = '';
+                    }
+                    HuePluginConfig.adoptPairedBridge(result.Id, bridgeName).then(function(stored) {
+                        if (!HuePluginConfig.isLiveAddBridgeSession(session)) {
+                            if (stored) Dashboard.alert('Pairing with ' + bridgeIp + ' completed; the bridge was added.');
+                            return;
+                        }
+                        HuePluginConfig.setAddBridgeBusy(false);
+                        document.querySelector('#authBridgeInModalText').textContent = 'Authenticate';
+                        document.querySelector('#addBridgeAuthProgress').style.display = 'none';
+                        if (!stored) return;
+                        HuePluginConfig.closeModal('addBridgeModal');
+                        Dashboard.alert('Bridge "' + stored.Name + '" added and authenticated!');
+                    });
                 },
 
                 saveAddBridge: function() {
@@ -1667,14 +1740,18 @@
                         return;
                     }
 
-                    var btn = document.querySelector('#saveAddBridge');
-                    var btnText = btn.querySelector('span');
-                    btn.disabled = true;
-                    btnText.textContent = 'Verifying...';
+                    var session = HuePluginConfig.addBridgeSession;
+                    var btnText = document.querySelector('#saveAddBridge span');
+                    function live() {
+                        return HuePluginConfig.isLiveAddBridgeSession(session);
+                    }
                     function idle() {
-                        btn.disabled = false;
+                        HuePluginConfig.setAddBridgeBusy(false);
                         btnText.textContent = 'Save';
                     }
+
+                    HuePluginConfig.setAddBridgeBusy(true);
+                    btnText.textContent = 'Verifying...';
 
                     ApiClient.ajax({
                         type: 'POST',
@@ -1683,6 +1760,8 @@
                         contentType: 'application/json',
                         dataType: 'json'
                     }).then(function(result) {
+                        // Cancelled while verifying: nothing has been stored, so nothing is added
+                        if (!live()) return;
                         if (!result.Success) {
                             idle();
                             Dashboard.alert('Connection failed: ' + (result.Error || 'Unknown error'));
@@ -1700,6 +1779,11 @@
                         HuePluginConfig.commit(function(draft) {
                             storedName = HuePluginConfig.upsertBridge(draft.Bridges, bridge).Name;
                         }).then(function(saved) {
+                            // A save already sent completes even if the modal was cancelled meanwhile
+                            if (!live()) {
+                                if (saved) Dashboard.alert('Bridge "' + storedName + '" added!');
+                                return;
+                            }
                             idle();
                             if (!saved) return;
                             HuePluginConfig.closeModal('addBridgeModal');
@@ -1707,6 +1791,7 @@
                         });
                     }).catch(function(error) {
                         console.error('Verify connection failed:', error);
+                        if (!live()) return;
                         idle();
                         Dashboard.alert('Could not verify bridge connection. Check the IP address and try again.');
                     });
@@ -2005,9 +2090,15 @@
 
                 closeModal: function(id) {
                     document.querySelector('#' + id).style.display = 'none';
+                    HuePluginConfig.onModalHidden(id);
                     if (history.state && history.state.huePluginModal === id) {
                         history.back();
                     }
+                },
+
+                // Every way a modal disappears (its buttons, the backdrop, Back, leaving the page) ends here
+                onModalHidden: function(id) {
+                    if (id === 'addBridgeModal') HuePluginConfig.endAddBridgeSession();
                 },
 
                 // Hides every open modal the current history entry no longer belongs to
@@ -2016,6 +2107,7 @@
                     document.querySelectorAll('body > .hue-modal-overlay').forEach(function(overlay) {
                         if (overlay.id !== current && overlay.style.display === 'block') {
                             overlay.style.display = 'none';
+                            HuePluginConfig.onModalHidden(overlay.id);
                         }
                     });
                 },
@@ -2531,6 +2623,7 @@
                 page.addEventListener('viewbeforehide', function() {
                     document.querySelectorAll('body > .hue-modal-overlay').forEach(function(overlay) {
                         overlay.style.display = 'none';
+                        HuePluginConfig.onModalHidden(overlay.id);
                     });
                 });
 
