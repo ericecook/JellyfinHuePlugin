@@ -27,19 +27,22 @@ namespace JellyfinHuePlugin.Api
         private readonly HueResourceCatalog _catalog;
         private readonly ConfigurationMigrator _migrator;
         private readonly IHueConfiguration _configuration;
+        private readonly LightCommandExecutor _executor;
 
         public HueController(
             ILogger<HueController> logger,
             HueService hueService,
             HueResourceCatalog catalog,
             ConfigurationMigrator migrator,
-            IHueConfiguration configuration)
+            IHueConfiguration configuration,
+            LightCommandExecutor executor)
         {
             _logger = logger;
             _hueService = hueService;
             _catalog = catalog;
             _migrator = migrator;
             _configuration = configuration;
+            _executor = executor;
         }
 
         private HueBridge? GetBridge(string? bridgeId)
@@ -198,7 +201,7 @@ namespace JellyfinHuePlugin.Api
                     // survives. The cached rooms and scenes describe the old bridge just as
                     // much, so drop those here - the catalog keys by id + address + key, which
                     // the assignments below change.
-                    _logger.LogInformation("Bridge {BridgeName} changed address or application key; clearing its pinned bridge id and cached resources", bridge.Name);
+                    _logger.LogInformation("Bridge {BridgeName} changed address or application key; dropping its cached resources and re-learning its bridge id", bridge.Name);
                     _catalog.Invalidate(bridge);
                 }
 
@@ -286,50 +289,36 @@ namespace JellyfinHuePlugin.Api
         }
 
         [HttpPost("test")]
-        public async Task<ActionResult> TestLightControl(
+        public async Task<ActionResult<TestLightResult>> TestLightControl(
             [FromBody][Required] TestLightRequest request,
             CancellationToken cancellationToken)
         {
-            var bridge = GetBridge(request.BridgeId);
-            if (bridge == null || string.IsNullOrWhiteSpace(bridge.IpAddress) || string.IsNullOrWhiteSpace(bridge.Username))
+            if (request.Action is not { } action || !Enum.IsDefined(action) || request.Profile is not { } profile)
             {
-                return BadRequest("Bridge not configured");
+                return BadRequest("Action (Play, Pause or Stop) and Profile are required");
             }
 
-            _logger.LogInformation("API: Testing light control on bridge {BridgeName}", bridge.Name);
-
-            bool success;
-            if (!string.IsNullOrWhiteSpace(request.SceneId))
+            var bridge = GetBridge(profile.BridgeId);
+            if (bridge == null)
             {
-                var sceneId = await _catalog.ResolveSceneAsync(bridge, request.SceneId, cancellationToken);
-                if (sceneId == null)
-                {
-                    return StatusCode(500, "Scene not found on the bridge; re-select it");
-                }
-
-                success = await _hueService.RecallSceneAsync(bridge, sceneId, 1000, cancellationToken);
-            }
-            else
-            {
-                var groupedLightId = await _catalog.ResolveGroupedLightAsync(bridge, request.GroupId ?? "0", cancellationToken);
-                if (groupedLightId == null)
-                {
-                    return StatusCode(500, "Target group not found on the bridge; re-select it");
-                }
-
-                var state = request.TurnOff
-                    ? new GroupedLightState { On = false, DurationMs = 1000 }
-                    : new GroupedLightState { On = true, Brightness = Math.Clamp(request.Brightness, 0, 100), DurationMs = 1000 };
-                success = await _hueService.SetGroupedLightAsync(bridge, groupedLightId, state, cancellationToken);
+                return Ok(new TestLightResult { Error = TestError(LightCommandOutcome.BridgeNotConfigured) });
             }
 
-            if (success)
-            {
-                return Ok(new { message = "Light control test successful" });
-            }
+            _logger.LogInformation("API: Testing {Action} for profile {ProfileName} on bridge {BridgeName}", action, profile.Name, bridge.Name);
 
-            return StatusCode(500, "Failed to control lights");
+            var outcome = await _executor.ExecuteAsync(action, bridge, profile, cancellationToken);
+            return Ok(new TestLightResult { Success = outcome == LightCommandOutcome.Succeeded, Error = TestError(outcome) });
         }
+
+        /// <summary>The reason the page shows under the Test button; null on success.</summary>
+        private static string? TestError(LightCommandOutcome outcome) => outcome switch
+        {
+            LightCommandOutcome.Succeeded => null,
+            LightCommandOutcome.BridgeNotConfigured => "Bridge not configured",
+            LightCommandOutcome.SceneUnresolved => "Scene not found on the bridge, or the bridge could not be reached; re-select it or check the server logs",
+            LightCommandOutcome.GroupUnresolved => "Target group not found on the bridge, or the bridge could not be reached; re-select it or check the server logs",
+            _ => "The bridge did not accept the command; check the server logs"
+        };
 
         [HttpPost("testconnection")]
         public async Task<ActionResult<string>> TestBridgeConnection(

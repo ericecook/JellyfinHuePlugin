@@ -38,6 +38,7 @@ namespace JellyfinHuePlugin.Tests.Api
         private readonly Mock<HueService> _hue;
         private readonly Mock<HueResourceCatalog> _catalog;
         private readonly Mock<ConfigurationMigrator> _migrator;
+        private readonly Mock<LightCommandExecutor> _executor;
         private readonly CapturingLogger _log = new();
         private readonly PluginConfiguration _config;
         private readonly FakeHueConfiguration _store;
@@ -51,9 +52,10 @@ namespace JellyfinHuePlugin.Tests.Api
             _hue = new Mock<HueService>(new NullLogger<HueService>(), new MdnsBridgeDiscovery(NullLogger<MdnsBridgeDiscovery>.Instance)) { CallBase = false };
             _catalog = new Mock<HueResourceCatalog>(_hue.Object, NullLogger<HueResourceCatalog>.Instance) { CallBase = false };
             _migrator = new Mock<ConfigurationMigrator>(_hue.Object, _catalog.Object, NullLogger<ConfigurationMigrator>.Instance) { CallBase = false };
+            _executor = new Mock<LightCommandExecutor>(_hue.Object, _catalog.Object, NullLogger<LightCommandExecutor>.Instance) { CallBase = false };
             _config = new PluginConfiguration { EnablePlugin = true, Bridges = new List<HueBridge> { Bridge() } };
             _store = new FakeHueConfiguration(_config);
-            _controller = new HueController(_log, _hue.Object, _catalog.Object, _migrator.Object, _store);
+            _controller = new HueController(_log, _hue.Object, _catalog.Object, _migrator.Object, _store, _executor.Object);
         }
 
         private static T Value<T>(ActionResult<T> result) => ((OkObjectResult)result.Result!).Value.Should().BeOfType<T>().Subject;
@@ -245,69 +247,79 @@ namespace JellyfinHuePlugin.Tests.Api
             Status(await _controller.GetScenes("b1", CancellationToken.None)).Should().Be(500);
         }
 
-        [Fact]
-        public async Task TestLightControl_Unconfigured_Is400()
-        {
-            _config.Bridges[0].Username = "";
+        private static LightControlProfile TestProfile(string bridgeId = "b1") =>
+            new() { Name = "Living Room", BridgeId = bridgeId, TargetGroupId = "gl-1", PlaySceneId = "", PlayBrightness = 55 };
 
-            Status(await _controller.TestLightControl(new TestLightRequest { BridgeId = "b1" }, CancellationToken.None)).Should().Be(400);
+        private void ExecutorReturns(LightCommandOutcome outcome) =>
+            _executor.Setup(e => e.ExecuteAsync(It.IsAny<LightAction>(), It.IsAny<HueBridge>(), It.IsAny<LightControlProfile>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(outcome);
+
+        [Fact]
+        public async Task TestLightControl_MissingOrUnknownActionOrMissingProfile_Is400()
+        {
+            Status(await _controller.TestLightControl(new TestLightRequest { Profile = TestProfile() }, CancellationToken.None)).Should().Be(400);
+            Status(await _controller.TestLightControl(new TestLightRequest { Action = (LightAction)7, Profile = TestProfile() }, CancellationToken.None)).Should().Be(400);
+            Status(await _controller.TestLightControl(new TestLightRequest { Action = LightAction.Play }, CancellationToken.None)).Should().Be(400);
+
+            _executor.VerifyNoOtherCalls();
         }
 
         [Fact]
-        public async Task TestLightControl_TurnOff_SendsOffWithoutBrightness()
+        public async Task TestLightControl_UnknownBridge_ReportsItAndSendsNothing()
         {
-            _catalog.Setup(c => c.ResolveGroupedLightAsync(It.IsAny<HueBridge>(), "gl-1", It.IsAny<CancellationToken>())).ReturnsAsync("gl-1");
-            GroupedLightState? sent = null;
-            _hue.Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), "gl-1", It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()))
-                .Callback<HueBridge, string, GroupedLightState, CancellationToken>((_, _, s, _) => sent = s).ReturnsAsync(true);
+            var result = Value(await _controller.TestLightControl(new TestLightRequest { Action = LightAction.Play, Profile = TestProfile(bridgeId: "nope") }, CancellationToken.None));
 
-            Status(await _controller.TestLightControl(new TestLightRequest { BridgeId = "b1", GroupId = "gl-1", TurnOff = true, Brightness = 50 }, CancellationToken.None)).Should().Be(200);
-
-            sent!.On.Should().BeFalse();
-            sent.Brightness.Should().BeNull();
-            sent.DurationMs.Should().Be(1000);
+            result.Success.Should().BeFalse();
+            result.Error.Should().Be("Bridge not configured");
+            _executor.VerifyNoOtherCalls();
         }
 
         [Fact]
-        public async Task TestLightControl_Brightness_IsClampedAndOn()
+        public async Task TestLightControl_EmptyBridgeId_UsesTheFirstBridge()
         {
-            _catalog.Setup(c => c.ResolveGroupedLightAsync(It.IsAny<HueBridge>(), "0", It.IsAny<CancellationToken>())).ReturnsAsync("gl-0");
-            GroupedLightState? sent = null;
-            _hue.Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), "gl-0", It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()))
-                .Callback<HueBridge, string, GroupedLightState, CancellationToken>((_, _, s, _) => sent = s).ReturnsAsync(true);
+            ExecutorReturns(LightCommandOutcome.Succeeded);
 
-            await _controller.TestLightControl(new TestLightRequest { BridgeId = "b1", Brightness = 250 }, CancellationToken.None);
+            await _controller.TestLightControl(new TestLightRequest { Action = LightAction.Stop, Profile = TestProfile(bridgeId: "") }, CancellationToken.None);
 
-            sent!.On.Should().BeTrue();
-            sent.Brightness.Should().Be(100);
+            _executor.Verify(e => e.ExecuteAsync(LightAction.Stop, _config.Bridges[0], It.IsAny<LightControlProfile>(), It.IsAny<CancellationToken>()), Times.Once);
         }
 
         [Fact]
-        public async Task TestLightControl_Scene_RecallsWithOneSecond()
+        public async Task TestLightControl_PassesTheRequestsActionProfileAndToken()
         {
-            _catalog.Setup(c => c.ResolveSceneAsync(It.IsAny<HueBridge>(), "abc", It.IsAny<CancellationToken>())).ReturnsAsync("sc-1");
-            _hue.Setup(h => h.RecallSceneAsync(It.IsAny<HueBridge>(), "sc-1", 1000, It.IsAny<CancellationToken>())).ReturnsAsync(true);
+            ExecutorReturns(LightCommandOutcome.Succeeded);
+            using var cts = new CancellationTokenSource();
+            var profile = TestProfile();
 
-            Status(await _controller.TestLightControl(new TestLightRequest { BridgeId = "b1", SceneId = "abc" }, CancellationToken.None)).Should().Be(200);
+            await _controller.TestLightControl(new TestLightRequest { Action = LightAction.Pause, Profile = profile }, cts.Token);
+
+            _executor.Verify(e => e.ExecuteAsync(LightAction.Pause, _config.Bridges[0], It.Is<LightControlProfile>(p => ReferenceEquals(p, profile)), cts.Token), Times.Once);
+        }
+
+        [Theory]
+        [InlineData(LightCommandOutcome.Succeeded, true, null)]
+        [InlineData(LightCommandOutcome.BridgeNotConfigured, false, "Bridge not configured")]
+        [InlineData(LightCommandOutcome.SceneUnresolved, false, "Scene not found on the bridge, or the bridge could not be reached; re-select it or check the server logs")]
+        [InlineData(LightCommandOutcome.GroupUnresolved, false, "Target group not found on the bridge, or the bridge could not be reached; re-select it or check the server logs")]
+        [InlineData(LightCommandOutcome.Failed, false, "The bridge did not accept the command; check the server logs")]
+        public async Task TestLightControl_MapsTheOutcome(LightCommandOutcome outcome, bool success, string? error)
+        {
+            ExecutorReturns(outcome);
+
+            var result = Value(await _controller.TestLightControl(new TestLightRequest { Action = LightAction.Play, Profile = TestProfile() }, CancellationToken.None));
+
+            result.Success.Should().Be(success);
+            result.Error.Should().Be(error);
         }
 
         [Fact]
-        public async Task TestLightControl_UnresolvedTargets_Are500()
+        public async Task TestLightControl_LogsTheActionProfileAndBridge()
         {
-            _catalog.Setup(c => c.ResolveSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
-            _catalog.Setup(c => c.ResolveGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync((string?)null);
+            ExecutorReturns(LightCommandOutcome.Succeeded);
 
-            Status(await _controller.TestLightControl(new TestLightRequest { BridgeId = "b1", SceneId = "gone" }, CancellationToken.None)).Should().Be(500);
-            Status(await _controller.TestLightControl(new TestLightRequest { BridgeId = "b1", GroupId = "gone" }, CancellationToken.None)).Should().Be(500);
-        }
+            await _controller.TestLightControl(new TestLightRequest { Action = LightAction.Stop, Profile = TestProfile() }, CancellationToken.None);
 
-        [Fact]
-        public async Task TestLightControl_ServiceFailure_Is500()
-        {
-            _catalog.Setup(c => c.ResolveGroupedLightAsync(It.IsAny<HueBridge>(), "0", It.IsAny<CancellationToken>())).ReturnsAsync("gl-0");
-            _hue.Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), "gl-0", It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>())).ReturnsAsync(false);
-
-            Status(await _controller.TestLightControl(new TestLightRequest { BridgeId = "b1" }, CancellationToken.None)).Should().Be(500);
+            _log.Lines.Should().Contain("API: Testing Stop for profile Living Room on bridge Bridge");
         }
 
         [Fact]

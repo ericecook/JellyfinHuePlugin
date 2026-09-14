@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using JellyfinHuePlugin.Configuration;
 using JellyfinHuePlugin.Services;
 
 namespace JellyfinHuePlugin.Api
@@ -59,14 +60,25 @@ namespace JellyfinHuePlugin.Api
         public bool IsAuthenticated { get; set; }
     }
 
+    /// <summary>
+    /// POST api/hueplugin/test. The profile is the page's in-memory copy, saved or not; the
+    /// bridge is looked up server-side from its BridgeId.
+    /// </summary>
     public class TestLightRequest
     {
-        public string? BridgeId { get; set; }
-        public string? GroupId { get; set; }
-        public string? SceneId { get; set; }
-        public int Brightness { get; set; } = 100;
-        /// <summary>Turn the group off instead of setting a brightness, as a turn-off play state does.</summary>
-        public bool TurnOff { get; set; }
+        [Required]
+        public LightAction? Action { get; set; }
+
+        /// <summary>The whole profile as the page holds it; unsaved editor values are allowed.</summary>
+        [Required]
+        public LightControlProfile? Profile { get; set; }
+    }
+
+    /// <summary>What the page shows under a Test button. Error is null on success.</summary>
+    public class TestLightResult
+    {
+        public bool Success { get; set; }
+        public string? Error { get; set; }
     }
 
     public class TestConnectionRequest

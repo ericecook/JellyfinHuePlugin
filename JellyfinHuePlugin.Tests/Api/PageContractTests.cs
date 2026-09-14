@@ -26,7 +26,8 @@ namespace JellyfinHuePlugin.Tests.Api
             { typeof(BridgeMigration), new[] { "Status", "Name" } },
             { typeof(HueGroupResource), new[] { "Name", "Type" } },                                                 // groups (dictionary values)
             { typeof(HueSceneResource), new[] { "Name", "GroupName" } },                                            // scenes (dictionary values)
-            { typeof(BridgeInfo), new[] { "Id", "Name", "IpAddress", "IsAuthenticated" } }                          // bridges
+            { typeof(BridgeInfo), new[] { "Id", "Name", "IpAddress", "IsAuthenticated" } },                         // bridges
+            { typeof(TestLightResult), new[] { "Success", "Error" } },                                              // test
         };
 
         [Theory]
@@ -76,6 +77,18 @@ namespace JellyfinHuePlugin.Tests.Api
             // The dictionary key is what a profile stores as TargetGroupId; HueControllerTests
             // proves the keying, this pins the property the key comes from still exists.
             typeof(HueGroupResource).GetProperty("GroupedLightId").Should().NotBeNull();
+        }
+
+        [Fact]
+        public void TheTestRequestThePageSendsDeserializes()
+        {
+            // The page sends the action by name; LightAction carries its own converter, so this
+            // holds with bare defaults as well as under the host's options.
+            var request = JsonSerializer.Deserialize<TestLightRequest>(@"{""Action"":""Pause"",""Profile"":{""Name"":""x"",""PlaySceneId"":""""}}")!;
+
+            request.Action.Should().Be(LightAction.Pause);
+            request.Profile!.Name.Should().Be("x");
+            request.Profile.PlaySceneId.Should().BeEmpty();
         }
 
         [Fact]
