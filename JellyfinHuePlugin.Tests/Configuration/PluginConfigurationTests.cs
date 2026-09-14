@@ -447,6 +447,60 @@ namespace JellyfinHuePlugin.Tests.Configuration
         }
 
         [Fact]
+        public void FindProfileBridge_ExplicitIdMatching_ReturnsThatBridge()
+        {
+            var config = new PluginConfiguration();
+            var bridge1 = new HueBridge { Id = "b1" };
+            var bridge2 = new HueBridge { Id = "b2" };
+            config.Bridges.Add(bridge1);
+            config.Bridges.Add(bridge2);
+            var profile = new LightControlProfile { BridgeId = "b2" };
+
+            config.FindProfileBridge(profile).Should().BeSameAs(bridge2);
+        }
+
+        [Fact]
+        public void FindProfileBridge_ExplicitIdNotFound_ReturnsNull()
+        {
+            var config = new PluginConfiguration();
+            config.Bridges.Add(new HueBridge { Id = "b1" });
+            var profile = new LightControlProfile { BridgeId = "nope" };
+
+            config.FindProfileBridge(profile).Should().BeNull();
+        }
+
+        [Fact]
+        public void FindProfileBridge_EmptyIdWithExactlyOneBridge_ReturnsThatBridge()
+        {
+            var config = new PluginConfiguration();
+            var bridge = new HueBridge { Id = "b1" };
+            config.Bridges.Add(bridge);
+            var profile = new LightControlProfile { BridgeId = "" };
+
+            config.FindProfileBridge(profile).Should().BeSameAs(bridge);
+        }
+
+        [Fact]
+        public void FindProfileBridge_EmptyIdWithTwoBridges_ReturnsNull()
+        {
+            var config = new PluginConfiguration();
+            config.Bridges.Add(new HueBridge { Id = "b1" });
+            config.Bridges.Add(new HueBridge { Id = "b2" });
+            var profile = new LightControlProfile { BridgeId = "" };
+
+            config.FindProfileBridge(profile).Should().BeNull();
+        }
+
+        [Fact]
+        public void FindProfileBridge_EmptyIdWithNoBridges_ReturnsNull()
+        {
+            var config = new PluginConfiguration();
+            var profile = new LightControlProfile { BridgeId = "" };
+
+            config.FindProfileBridge(profile).Should().BeNull();
+        }
+
+        [Fact]
         public void HueBridge_HardwareId_DefaultsToEmpty()
         {
             new HueBridge().HardwareId.Should().BeEmpty();

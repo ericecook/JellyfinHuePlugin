@@ -93,7 +93,7 @@ namespace JellyfinHuePlugin.Services
                 var entry = new ProfileMigration { Id = profile.Id, Name = profile.Name };
                 report.Profiles.Add(entry);
 
-                var bridge = FindBridge(config, profile);
+                var bridge = config.FindProfileBridge(profile);
                 if (bridge == null || !reachable.Contains(bridge.Id))
                 {
                     entry.Status = MigrationStatus.Skipped;
@@ -129,12 +129,6 @@ namespace JellyfinHuePlugin.Services
 
             return report;
         }
-
-        /// <summary>Same rule as PlaybackSessionManager: an explicit BridgeId must match; an empty one means the only bridge, if there is exactly one.</summary>
-        private static HueBridge? FindBridge(PluginConfiguration config, LightControlProfile profile) =>
-            string.IsNullOrWhiteSpace(profile.BridgeId)
-                ? (config.Bridges.Count == 1 ? config.Bridges[0] : null)
-                : config.Bridges.FirstOrDefault(b => b.Id == profile.BridgeId);
 
         /// <summary>Non-empty and not a v2 UUID: a v1 group number or v1 scene id.</summary>
         private static bool IsLegacyId(string? value) =>

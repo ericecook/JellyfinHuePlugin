@@ -298,7 +298,7 @@ namespace JellyfinHuePlugin.Api
                 return BadRequest("Action (Play, Pause or Stop) and Profile are required");
             }
 
-            var bridge = GetBridge(profile.BridgeId);
+            var bridge = _configuration.Current.FindProfileBridge(profile);
             if (bridge == null)
             {
                 return Ok(new TestLightResult { Error = TestError(LightCommandOutcome.BridgeNotConfigured) });

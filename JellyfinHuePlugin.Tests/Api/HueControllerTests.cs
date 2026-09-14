@@ -275,13 +275,25 @@ namespace JellyfinHuePlugin.Tests.Api
         }
 
         [Fact]
-        public async Task TestLightControl_EmptyBridgeId_UsesTheFirstBridge()
+        public async Task TestLightControl_EmptyBridgeId_UsesTheOnlyBridge()
         {
             ExecutorReturns(LightCommandOutcome.Succeeded);
 
             await _controller.TestLightControl(new TestLightRequest { Action = LightAction.Stop, Profile = TestProfile(bridgeId: "") }, CancellationToken.None);
 
             _executor.Verify(e => e.ExecuteAsync(LightAction.Stop, _config.Bridges[0], It.IsAny<LightControlProfile>(), It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task TestLightControl_EmptyBridgeIdWithTwoBridges_ReportsBridgeNotConfigured()
+        {
+            _config.Bridges.Add(Bridge(id: "b2"));
+
+            var result = Value(await _controller.TestLightControl(new TestLightRequest { Action = LightAction.Play, Profile = TestProfile(bridgeId: "") }, CancellationToken.None));
+
+            result.Success.Should().BeFalse();
+            result.Error.Should().Be("Bridge not configured");
+            _executor.VerifyNoOtherCalls();
         }
 
         [Fact]

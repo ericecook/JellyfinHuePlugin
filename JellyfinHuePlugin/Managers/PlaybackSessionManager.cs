@@ -444,9 +444,7 @@ namespace JellyfinHuePlugin.Managers
         /// <summary>Resolves the profile's bridge, warning once when there is none. Every send path uses this.</summary>
         private HueBridge? ResolveBridge(PluginConfiguration config, LightControlProfile profile)
         {
-            var bridge = string.IsNullOrWhiteSpace(profile.BridgeId)
-                ? (config.Bridges.Count == 1 ? config.Bridges[0] : null)
-                : config.Bridges.FirstOrDefault(b => b.Id == profile.BridgeId);
+            var bridge = config.FindProfileBridge(profile);
 
             if (bridge == null)
             {

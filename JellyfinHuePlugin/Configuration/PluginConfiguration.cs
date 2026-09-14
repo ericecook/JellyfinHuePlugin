@@ -114,6 +114,16 @@ namespace JellyfinHuePlugin.Configuration
         public const int CurrentSchemaVersion = 2;
 
         /// <summary>
+        /// The bridge a profile controls: an explicit BridgeId must match; an empty one means the
+        /// only bridge, if there is exactly one. Playback, the migrator and the Test endpoint all
+        /// use this, so Test sends where playback would.
+        /// </summary>
+        public HueBridge? FindProfileBridge(LightControlProfile profile) =>
+            string.IsNullOrWhiteSpace(profile.BridgeId)
+                ? (Bridges.Count == 1 ? Bridges[0] : null)
+                : Bridges.FirstOrDefault(b => b.Id == profile.BridgeId);
+
+        /// <summary>
         /// Converts every profile's brightness from the v1 0–254 scale to percent, once, and
         /// stamps the schema version. Returns true when something was written, including the
         /// first load of a fresh configuration.
