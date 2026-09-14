@@ -725,8 +725,10 @@
                 toggleProfileMenu: function(index) {
                     var menu = document.querySelector('#profileMenu' + index);
                     if (menu) {
-                        // Close all other menus first
-                        document.querySelectorAll('[id^="profileMenu"]').forEach(function(m) {
+                        // Close all other menus first. Selecting by class, not by an id prefix: an
+                        // id-prefix selector for "profileMenu" also matches each card's
+                        // "profileMenuButton" trigger and would hide that button permanently.
+                        document.querySelectorAll('.hue-dropdown').forEach(function(m) {
                             if (m !== menu) m.style.display = 'none';
                         });
                         var isHidden = window.getComputedStyle(menu).display === 'none';
@@ -907,10 +909,11 @@
                         });
                     });
                     
-                    // Close menus when clicking outside
+                    // Close menus when clicking outside. Selecting by class, not by an id prefix:
+                    // see the comment in toggleProfileMenu for why "profileMenu" as a prefix is unsafe.
                     document.addEventListener('click', function(e) {
                         if (!e.target.closest('.profile-menu')) {
-                            document.querySelectorAll('[id^="profileMenu"]').forEach(function(menu) {
+                            document.querySelectorAll('.hue-dropdown').forEach(function(menu) {
                                 menu.style.display = 'none';
                             });
                         }
