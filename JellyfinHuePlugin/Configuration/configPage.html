@@ -673,7 +673,14 @@
                 pluginId: "2a5f5b3e-8c9d-4f1a-9b7e-6d3c4e5f6a7b",
                 profiles: [],
                 bridges: [],
-                currentEditingProfile: null,
+                // False until the configuration GET succeeds; commit() saves nothing before that
+                loaded: false,
+                // Every commit runs after the previous one settles
+                saveChain: Promise.resolve(),
+                // Id of the profile the editor was opened on; null while adding one
+                currentEditingProfileId: null,
+                // Id the open editor saves under: the edited profile's, or one new id per add session
+                editorProfileId: null,
                 profileDeviceIds: [],
                 editorTestGeneration: 0,
                 knownDevices: [],
@@ -861,22 +868,18 @@
                     });
                 },
 
-                // Duplicate profile
+                // Duplicate profile (appended to the list)
                 duplicateProfile: function(index) {
                     var profile = HuePluginConfig.profiles[index];
                     if (!profile) return;
-                    
-                    // Close menu
-                    var menu = document.querySelector('#profileMenu' + index);
-                    if (menu) menu.style.display = 'none';
-                    
-                    var newProfile = JSON.parse(JSON.stringify(profile)); // Deep clone
-                    newProfile.Id = HuePluginConfig.generateGuid();
-                    newProfile.Name = profile.Name + ' (Copy)';
-                    
-                    HuePluginConfig.profiles.push(newProfile);
-                    HuePluginConfig.renderProfiles();
-                    HuePluginConfig.saveConfiguration();
+                    HuePluginConfig.closeProfileMenus();
+
+                    var copy = HuePluginConfig.deepCopy(profile);
+                    copy.Id = HuePluginConfig.generateGuid();
+                    copy.Name = profile.Name + ' (Copy)';
+                    HuePluginConfig.commit(function(draft) {
+                        draft.Profiles.push(copy);
+                    });
                 },
 
                 // Initialize drag and drop
@@ -894,6 +897,8 @@
                         });
                         
                         card.addEventListener('dragend', function() {
+                            // A later drop that is not a card drag must not reuse this index
+                            draggedIndex = null;
                             this.style.opacity = '1';
                             cards.forEach(function(c) {
                                 c.style.borderTop = '';
@@ -922,18 +927,24 @@
                         });
                         
                         card.addEventListener('drop', function(e) {
-                            if (e.stopPropagation) e.stopPropagation();
-                            
-                            var targetIndex = parseInt(this.getAttribute('data-index'));
-                            if (draggedIndex !== targetIndex) {
-                                var movedProfile = HuePluginConfig.profiles[draggedIndex];
-                                HuePluginConfig.profiles.splice(draggedIndex, 1);
-                                HuePluginConfig.profiles.splice(targetIndex, 0, movedProfile);
-                                HuePluginConfig.renderProfiles();
-                                HuePluginConfig.saveConfiguration();
-                            }
-                            
-                            return false;
+                            e.stopPropagation();
+                            var moved = HuePluginConfig.profiles[draggedIndex];
+                            var target = HuePluginConfig.profiles[parseInt(this.getAttribute('data-index'), 10)];
+                            // A drag that did not start on a card of this list has no profile to move
+                            if (!moved || !target || moved === target) return;
+
+                            var movedId = moved.Id;
+                            var targetId = target.Id;
+                            HuePluginConfig.commit(function(draft) {
+                                var from = HuePluginConfig.indexOfId(draft.Profiles, movedId);
+                                var to = HuePluginConfig.indexOfId(draft.Profiles, targetId);
+                                if (from < 0 || to < 0) {
+                                    HuePluginConfig.showError('Not saved', 'A profile was removed before the move could be saved.');
+                                    return false;
+                                }
+                                var profile = draft.Profiles.splice(from, 1)[0];
+                                draft.Profiles.splice(to, 0, profile);
+                            });
                         });
                     });
                     
@@ -1070,8 +1081,9 @@
                     };
                     
                     var template = templates[templateName] || templates['blank'];
-                    HuePluginConfig.currentEditingProfile = null;
-                    
+                    HuePluginConfig.currentEditingProfileId = null;
+                    HuePluginConfig.editorProfileId = HuePluginConfig.generateGuid();
+
                     // Populate form with template values
                     document.querySelector('#profileEditorTitle').textContent = templateName === 'blank' ? 'Add Profile' : 'Add Profile from Template';
                     document.querySelector('#profileName').value = template.Name;
@@ -1141,6 +1153,7 @@
                     HuePluginConfig.loadProfileScenes(defaultBridgeId, '', '', '');
 
                     HuePluginConfig.resetEditorTests();
+                    HuePluginConfig.setSaving('#saveProfileButton', false, 'Save Profile');
 
                     HuePluginConfig.openModal('profileEditorModal');
 
@@ -1150,9 +1163,166 @@
                     }, 50);
                 },
 
+                // Errors that must stay until read: a Jellyfin dialog, not a toast. The dialog puts the
+                // message through innerHTML, so it is escaped here; the title is set as text.
+                showError: function(title, detail) {
+                    Dashboard.alert({ title: title, message: HuePluginConfig.escapeHtml(detail) });
+                },
+
+                // A short, truthful reason for a failed request: the HTTP status when the server answered,
+                // the message for a network or script error
+                describeError: function(error) {
+                    if (error && typeof error.status === 'number') {
+                        return 'HTTP ' + error.status + (error.statusText ? ' ' + error.statusText : '');
+                    }
+                    if (error && error.message) return error.message;
+                    return 'unknown error';
+                },
+
+                deepCopy: function(value) {
+                    return JSON.parse(JSON.stringify(value));
+                },
+
+                indexOfId: function(list, id) {
+                    for (var i = 0; i < list.length; i++) {
+                        if (list[i] && list[i].Id === id) return i;
+                    }
+                    return -1;
+                },
+
+                closeProfileMenus: function() {
+                    document.querySelectorAll('.hue-dropdown').forEach(function(menu) {
+                        menu.style.display = 'none';
+                    });
+                },
+
+                // A modal's save button while its commit is out: disabled and reading "Saving…"
+                setSaving: function(selector, saving, idleText) {
+                    var button = document.querySelector(selector);
+                    button.disabled = saving;
+                    button.querySelector('span').textContent = saving ? 'Saving…' : idleText;
+                },
+
+                // The one way the page saves. Commits run one at a time. Each applies mutate to a copy of the
+                // confirmed lists - mutate(draft) changes draft.Bridges / draft.Profiles in place, addressing
+                // entries by Id, and returns false (after telling the user why) to save nothing - and the copy
+                // becomes what the page shows only once the server has stored it. Resolves true when stored;
+                // never rejects.
+                commit: function(mutate) {
+                    if (!HuePluginConfig.loaded) {
+                        HuePluginConfig.showError('Not saved', 'The configuration has not finished loading.');
+                        return Promise.resolve(false);
+                    }
+                    var result = HuePluginConfig.saveChain.then(function() {
+                        // Checked again when the commit runs: if Jellyfin re-ran this script while an earlier save was out,
+                        // HuePluginConfig is now the new page's object, whose lists stay empty until its own load finishes
+                        if (!HuePluginConfig.loaded) throw new Error('the page was reloaded before this change could be saved');
+                        var draft = {
+                            Bridges: HuePluginConfig.deepCopy(HuePluginConfig.bridges),
+                            Profiles: HuePluginConfig.deepCopy(HuePluginConfig.profiles)
+                        };
+                        if (mutate(draft) === false) return false;
+                        return ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function(config) {
+                            config.Bridges = draft.Bridges;
+                            config.Profiles = draft.Profiles;
+                            return ApiClient.updatePluginConfiguration(HuePluginConfig.pluginId, config);
+                        }).then(function() {
+                            HuePluginConfig.adoptLists(draft.Bridges, draft.Profiles);
+                            return true;
+                        });
+                    }).catch(function(error) {
+                        console.error('Saving the configuration failed', error);
+                        HuePluginConfig.showError('Not saved', 'The configuration could not be saved: ' + HuePluginConfig.describeError(error));
+                        return false;
+                    });
+                    HuePluginConfig.saveChain = result;
+                    return result;
+                },
+
+                // Stored lists become the page's confirmed state; the bridge cards (and their checks) are
+                // redrawn only when the bridge list itself changed
+                adoptLists: function(bridges, profiles) {
+                    var bridgesChanged = JSON.stringify(bridges) !== JSON.stringify(HuePluginConfig.bridges);
+                    HuePluginConfig.bridges = bridges;
+                    HuePluginConfig.profiles = profiles;
+                    HuePluginConfig.renderProfiles();
+                    if (bridgesChanged) HuePluginConfig.renderBridges();
+                    HuePluginConfig.updateConfigSectionVisibility();
+                },
+
+                // Adopt the stored lists after the server changed them itself (pairing stores the bridge)
+                refreshFromServer: function() {
+                    var result = HuePluginConfig.saveChain.then(function() {
+                        return ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function(config) {
+                            HuePluginConfig.adoptLists(config.Bridges || [], config.Profiles || []);
+                            return true;
+                        });
+                    }).catch(function(error) {
+                        console.error('Reloading the configuration failed', error);
+                        HuePluginConfig.showError('Could not refresh', 'The bridge list could not be reloaded: ' + HuePluginConfig.describeError(error) + '. Reload the page.');
+                        return false;
+                    });
+                    HuePluginConfig.saveChain = result;
+                    return result;
+                },
+
+                // Pairing stores the bridge on the server before it answers. Adopt the stored lists, then apply a
+                // name the user typed (the server keeps an existing entry's name). Resolves to the stored bridge,
+                // or null when the lists could not be reloaded or the rename not saved (the user has been told).
+                adoptPairedBridge: function(bridgeId, typedName) {
+                    function stored() {
+                        var i = HuePluginConfig.indexOfId(HuePluginConfig.bridges, bridgeId);
+                        return i >= 0 ? HuePluginConfig.bridges[i] : null;
+                    }
+                    return HuePluginConfig.refreshFromServer().then(function(refreshed) {
+                        if (!refreshed) return null;
+                        var bridge = stored();
+                        if (!bridge) {
+                            HuePluginConfig.showError('Bridge not shown', 'The paired bridge is no longer in the stored configuration. Reload the page.');
+                            return null;
+                        }
+                        if (typedName === 'Bridge' || bridge.Name === typedName) return bridge;
+                        return HuePluginConfig.commit(function(draft) {
+                            var i = HuePluginConfig.indexOfId(draft.Bridges, bridgeId);
+                            if (i < 0) {
+                                HuePluginConfig.showError('Not saved', 'The paired bridge was removed before its name could be saved.');
+                                return false;
+                            }
+                            draft.Bridges[i].Name = typedName;
+                        }).then(function(saved) {
+                            return saved ? stored() : null;
+                        });
+                    });
+                },
+
+                // Profiles need a bridge with a key, and nothing is editable before the configuration has loaded
+                updateConfigSectionVisibility: function() {
+                    var hasAuthBridge = HuePluginConfig.bridges.some(function(b) {
+                        return b.Username && b.Username.length > 0;
+                    });
+                    document.querySelector('#configSection').style.display = HuePluginConfig.loaded && hasAuthBridge ? 'block' : 'none';
+                },
+
+                // An empty page after a failed load would look like a fresh install, and a save from it would
+                // overwrite everything, so the failure replaces the bridge list and offers Retry
+                renderLoadFailure: function(error) {
+                    var container = document.querySelector('#bridgesList');
+                    container.innerHTML = '<div class="hue-test-error" style="margin-bottom: 10px;"></div>' +
+                        '<button is="emby-button" type="button" class="raised" id="retryLoadButton"><span>Retry</span></button>';
+                    container.querySelector('.hue-test-error').textContent =
+                        'Could not load the plugin configuration: ' + HuePluginConfig.describeError(error) + '.';
+                    container.querySelector('#retryLoadButton').addEventListener('click', function() {
+                        HuePluginConfig.loadConfiguration();
+                    });
+                },
+
                 migrationReport: null,
 
                 loadConfiguration: function () {
+                    HuePluginConfig.loaded = false;
+                    document.querySelector('#addBridgeButton').disabled = true;
+                    document.querySelector('#bridgesList').innerHTML = '<div class="fieldDescription">Loading…</div>';
+                    HuePluginConfig.updateConfigSectionVisibility();
                     Dashboard.showLoadingMsg();
 
                     // Rewrite stored v1 ids and learn bridge ids *before* reading the configuration,
@@ -1169,37 +1339,20 @@
                         HuePluginConfig.migrationReport = report;
                         return ApiClient.getPluginConfiguration(HuePluginConfig.pluginId);
                     }).then(function (config) {
-                        console.log('Loading configuration:', config);
-
-                        try {
-                            // Load bridges
-                            HuePluginConfig.bridges = config.Bridges || [];
-                            HuePluginConfig.renderBridges();
-
-                            // Load profiles
-                            HuePluginConfig.profiles = config.Profiles || [];
-                            HuePluginConfig.renderProfiles();
-                            HuePluginConfig.renderMigrationNotice();
-
-                            // Show config section if any bridge is authenticated
-                            var hasAuthBridge = HuePluginConfig.bridges.some(function(b) {
-                                return b.Username && b.Username.length > 0;
-                            });
-
-                            if (hasAuthBridge) {
-                                document.querySelector('#configSection').style.display = 'block';
-                            }
-
-                            Dashboard.hideLoadingMsg();
-                        } catch (error) {
-                            console.error('Error loading configuration:', error);
-                            Dashboard.hideLoadingMsg();
-                            Dashboard.alert('Error loading configuration: ' + error.message);
-                        }
+                        HuePluginConfig.bridges = config.Bridges || [];
+                        HuePluginConfig.profiles = config.Profiles || [];
+                        HuePluginConfig.renderBridges();
+                        HuePluginConfig.renderProfiles();
+                        HuePluginConfig.renderMigrationNotice();
+                        HuePluginConfig.loaded = true;
+                        HuePluginConfig.updateConfigSectionVisibility();
+                        document.querySelector('#addBridgeButton').disabled = false;
+                        Dashboard.hideLoadingMsg();
                     }).catch(function(error) {
                         console.error('Error fetching configuration:', error);
+                        HuePluginConfig.loaded = false;
                         Dashboard.hideLoadingMsg();
-                        Dashboard.alert('Failed to load plugin configuration. Check the server logs for details.');
+                        HuePluginConfig.renderLoadFailure(error);
                     });
                 },
 
@@ -1303,83 +1456,46 @@
                     }
                 },
 
-                // Edit a bridge by index
-                editBridgeIndex: null,
+                // Edit a bridge. The modal remembers the bridge's Id, never its position in the list.
+                editBridgeId: null,
+                // Bumped by every editBridge; a save answered for an earlier opening leaves the current one alone
+                editBridgeSession: 0,
 
                 editBridge: function(index) {
                     var bridge = HuePluginConfig.bridges[index];
                     if (!bridge) return;
-                    HuePluginConfig.editBridgeIndex = index;
+                    HuePluginConfig.editBridgeSession++;
+                    HuePluginConfig.editBridgeId = bridge.Id;
                     document.querySelector('#editBridgeName').value = bridge.Name || '';
                     document.querySelector('#editBridgeIp').value = bridge.IpAddress || '';
                     document.querySelector('#editBridgeUsername').value = bridge.Username || '';
+                    HuePluginConfig.setSaving('#saveEditBridge', false, 'Save');
                     HuePluginConfig.openModal('editBridgeModal');
                 },
 
                 saveEditBridge: function() {
-                    var index = HuePluginConfig.editBridgeIndex;
-                    if (index === null || !HuePluginConfig.bridges[index]) return;
-                    var bridge = HuePluginConfig.bridges[index];
-                    bridge.Name = document.querySelector('#editBridgeName').value;
-                    bridge.IpAddress = document.querySelector('#editBridgeIp').value;
-                    bridge.Username = document.querySelector('#editBridgeUsername').value;
-                    HuePluginConfig.closeModal('editBridgeModal');
-                    HuePluginConfig.renderBridges();
+                    var session = HuePluginConfig.editBridgeSession;
+                    var bridgeId = HuePluginConfig.editBridgeId;
+                    var name = document.querySelector('#editBridgeName').value;
+                    var ip = document.querySelector('#editBridgeIp').value;
+                    var key = document.querySelector('#editBridgeUsername').value;
 
-                    var hasAuthBridge = HuePluginConfig.bridges.some(function(b) {
-                        return b.Username && b.Username.length > 0;
+                    HuePluginConfig.setSaving('#saveEditBridge', true);
+                    HuePluginConfig.commit(function(draft) {
+                        var index = HuePluginConfig.indexOfId(draft.Bridges, bridgeId);
+                        if (index < 0) {
+                            HuePluginConfig.showError('Not saved', 'This bridge was removed.');
+                            return false;
+                        }
+                        draft.Bridges[index].Name = name;
+                        draft.Bridges[index].IpAddress = ip;
+                        draft.Bridges[index].Username = key;
+                    }).then(function(saved) {
+                        // The modal was closed and reopened meanwhile; this result belongs to the earlier opening
+                        if (session !== HuePluginConfig.editBridgeSession) return;
+                        HuePluginConfig.setSaving('#saveEditBridge', false, 'Save');
+                        if (saved) HuePluginConfig.closeModal('editBridgeModal');
                     });
-                    document.querySelector('#configSection').style.display = hasAuthBridge ? 'block' : 'none';
-                    HuePluginConfig.saveConfiguration();
-                },
-
-                // Authenticate a bridge by index
-                authenticateBridge: function(index) {
-                    var bridge = HuePluginConfig.bridges[index];
-                    if (!bridge) return;
-
-                    var btn = event.target.closest('button');
-                    var maxAttempts = 3;
-                    var attempt = 0;
-
-                    if (btn) btn.disabled = true;
-
-                    function tryAuth() {
-                        attempt++;
-                        if (btn) btn.querySelector('span').textContent = 'Attempt ' + attempt + '/' + maxAttempts + '...';
-
-                        ApiClient.ajax({
-                            type: 'POST',
-                            url: ApiClient.getUrl('api/hueplugin/authenticate'),
-                            data: JSON.stringify({ BridgeIp: bridge.IpAddress, BridgeId: bridge.Id, BridgeName: bridge.Name }),
-                            contentType: 'application/json',
-                            dataType: 'json'
-                        }).then(function(result) {
-                            if (result.Success) {
-                                bridge.Username = result.Username;
-                                // The server just re-pinned this bridge; carry the new id so the
-                                // save below cannot post the previous one back over it.
-                                bridge.HardwareId = result.HardwareId || '';
-                                if (btn) { btn.disabled = false; btn.querySelector('span').textContent = 'Re-auth'; }
-                                HuePluginConfig.renderBridges();
-                                document.querySelector('#configSection').style.display = 'block';
-                                HuePluginConfig.saveConfiguration();
-
-                                Dashboard.alert('Successfully authenticated with ' + bridge.Name + '!');
-                            } else if (attempt < maxAttempts) {
-                                setTimeout(tryAuth, 3000);
-                            } else {
-                                if (btn) { btn.disabled = false; btn.querySelector('span').textContent = 'Authenticate'; }
-                                Dashboard.alert('Authentication failed after ' + maxAttempts + ' attempts. Press the link button on your Hue bridge and try again.');
-                            }
-                        }).catch(function(error) {
-                            if (btn) { btn.disabled = false; btn.querySelector('span').textContent = 'Authenticate'; }
-                            console.error('Authentication error:', error);
-                            Dashboard.alert('Authentication failed. Check the server logs for details.');
-                        });
-                    }
-
-                    tryAuth();
                 },
 
                 // Delete a bridge
@@ -1398,24 +1514,15 @@
 
                     if (!confirm('Delete bridge "' + bridge.Name + '"?')) return;
 
-                    ApiClient.ajax({
-                        type: 'DELETE',
-                        url: ApiClient.getUrl('api/hueplugin/bridges/' + bridge.Id)
-                    }).then(function() {
-                        HuePluginConfig.bridges.splice(index, 1);
-                        HuePluginConfig.renderBridges();
-                        HuePluginConfig.renderProfiles();
-
-                        var hasAuthBridge = HuePluginConfig.bridges.some(function(b) {
-                            return b.Username && b.Username.length > 0;
-                        });
-                        if (!hasAuthBridge) {
-                            document.querySelector('#configSection').style.display = 'none';
+                    // One save; the server drops the removed bridge's cached rooms and pin on it
+                    var bridgeId = bridge.Id;
+                    HuePluginConfig.commit(function(draft) {
+                        var i = HuePluginConfig.indexOfId(draft.Bridges, bridgeId);
+                        if (i < 0) {
+                            HuePluginConfig.showError('Not saved', 'This bridge was already removed.');
+                            return false;
                         }
-                        HuePluginConfig.saveConfiguration();
-                    }).catch(function(error) {
-                        console.error('Delete bridge failed:', error);
-                        Dashboard.alert('Failed to delete bridge. Check the server logs for details.');
+                        draft.Bridges.splice(i, 1);
                     });
                 },
 
@@ -1501,23 +1608,14 @@
                                 btn.disabled = false;
                                 btnText.textContent = 'Authenticate';
                                 progressEl.style.display = 'none';
-
-                                // Fill in the API key and save. The server upserts by IP and
-                                // returns the existing Id for a re-added bridge, so merge rather than push.
                                 document.querySelector('#newBridgeUsername').value = result.Username;
-                                var savedBridge = HuePluginConfig.upsertBridge({
-                                    Id: result.Id,
-                                    Name: bridgeName,
-                                    IpAddress: bridgeIp,
-                                    Username: result.Username,
-                                    HardwareId: result.HardwareId || ''
-                                });
-                                HuePluginConfig.renderBridges();
-                                document.querySelector('#configSection').style.display = 'block';
-                                HuePluginConfig.saveConfiguration();
 
-                                HuePluginConfig.closeModal('addBridgeModal');
-                                Dashboard.alert('Bridge "' + savedBridge.Name + '" added and authenticated!');
+                                // The server stored the bridge before answering; show the stored list
+                                HuePluginConfig.adoptPairedBridge(result.Id, bridgeName).then(function(stored) {
+                                    if (!stored) return;
+                                    HuePluginConfig.closeModal('addBridgeModal');
+                                    Dashboard.alert('Bridge "' + stored.Name + '" added and authenticated!');
+                                });
                             } else if (attempt < maxAttempts) {
                                 var remaining = 3;
                                 countdownEl.textContent = 'Retrying in ' + remaining + 's...';
@@ -1567,6 +1665,10 @@
                     var btnText = btn.querySelector('span');
                     btn.disabled = true;
                     btnText.textContent = 'Verifying...';
+                    function idle() {
+                        btn.disabled = false;
+                        btnText.textContent = 'Save';
+                    }
 
                     ApiClient.ajax({
                         type: 'POST',
@@ -1575,31 +1677,32 @@
                         contentType: 'application/json',
                         dataType: 'json'
                     }).then(function(result) {
-                        if (result.Success) {
-                            var bridgeId = crypto.randomUUID ? crypto.randomUUID() : 'bridge-' + Date.now();
-                            var savedBridge = HuePluginConfig.upsertBridge({
-                                Id: bridgeId,
-                                Name: bridgeName,
-                                IpAddress: bridgeIp,
-                                Username: username,
-                                HardwareId: result.HardwareId || ''
-                            });
-                            HuePluginConfig.renderBridges();
-                            document.querySelector('#configSection').style.display = 'block';
-                            HuePluginConfig.saveConfiguration();
-
-                            HuePluginConfig.closeModal('addBridgeModal');
-                            Dashboard.alert('Bridge "' + savedBridge.Name + '" added!');
-                        } else {
+                        if (!result.Success) {
+                            idle();
                             Dashboard.alert('Connection failed: ' + (result.Error || 'Unknown error'));
+                            return;
                         }
-                        btn.disabled = false;
-                        btnText.textContent = 'Save';
+                        var bridge = {
+                            Id: crypto.randomUUID ? crypto.randomUUID() : 'bridge-' + Date.now(),
+                            Name: bridgeName,
+                            IpAddress: bridgeIp,
+                            Username: username,
+                            HardwareId: result.HardwareId || ''
+                        };
+                        var storedName = bridgeName;
+                        btnText.textContent = 'Saving…';
+                        HuePluginConfig.commit(function(draft) {
+                            storedName = HuePluginConfig.upsertBridge(draft.Bridges, bridge).Name;
+                        }).then(function(saved) {
+                            idle();
+                            if (!saved) return;
+                            HuePluginConfig.closeModal('addBridgeModal');
+                            Dashboard.alert('Bridge "' + storedName + '" added!');
+                        });
                     }).catch(function(error) {
                         console.error('Verify connection failed:', error);
+                        idle();
                         Dashboard.alert('Could not verify bridge connection. Check the IP address and try again.');
-                        btn.disabled = false;
-                        btnText.textContent = 'Save';
                     });
                 },
 
@@ -1676,21 +1779,30 @@
                 },
 
                 moveProfile: function(index, direction) {
-                    var newIndex = index + direction;
-                    if (newIndex < 0 || newIndex >= HuePluginConfig.profiles.length) return;
-                    
-                    var temp = HuePluginConfig.profiles[index];
-                    HuePluginConfig.profiles[index] = HuePluginConfig.profiles[newIndex];
-                    HuePluginConfig.profiles[newIndex] = temp;
+                    var profile = HuePluginConfig.profiles[index];
+                    if (!profile) return;
+                    HuePluginConfig.closeProfileMenus();
 
-                    HuePluginConfig.renderProfiles();
-                    HuePluginConfig.saveConfiguration();
+                    var profileId = profile.Id;
+                    HuePluginConfig.commit(function(draft) {
+                        var from = HuePluginConfig.indexOfId(draft.Profiles, profileId);
+                        if (from < 0) {
+                            HuePluginConfig.showError('Not saved', 'This profile was removed before it could be moved.');
+                            return false;
+                        }
+                        var to = from + direction;
+                        if (to < 0 || to >= draft.Profiles.length) return false;
+                        var moved = draft.Profiles.splice(from, 1)[0];
+                        draft.Profiles.splice(to, 0, moved);
+                    });
                 },
 
                 editProfile: function(index) {
-                    HuePluginConfig.currentEditingProfile = index;
                     var profile = HuePluginConfig.profiles[index];
-                    
+                    if (!profile) return;
+                    HuePluginConfig.currentEditingProfileId = profile.Id;
+                    HuePluginConfig.editorProfileId = profile.Id;
+
                     document.querySelector('#profileEditorTitle').textContent = 'Edit Profile';
                     document.querySelector('#profileName').value = profile.Name || '';
                     document.querySelector('#profileEnabled').checked = profile.Enabled !== false;
@@ -1757,6 +1869,7 @@
                     HuePluginConfig.loadProfileScenes(bridgeId, profile.PlaySceneId, profile.PauseSceneId, profile.StopSceneId);
 
                     HuePluginConfig.resetEditorTests();
+                    HuePluginConfig.setSaving('#saveProfileButton', false, 'Save Profile');
 
                     HuePluginConfig.openModal('profileEditorModal');
 
@@ -1767,11 +1880,20 @@
                 },
 
                 deleteProfile: function(index) {
-                    if (confirm('Are you sure you want to delete this profile?')) {
-                        HuePluginConfig.profiles.splice(index, 1);
-                        HuePluginConfig.renderProfiles();
-                        HuePluginConfig.saveConfiguration();
-                    }
+                    var profile = HuePluginConfig.profiles[index];
+                    if (!profile) return;
+                    HuePluginConfig.closeProfileMenus();
+                    if (!confirm('Are you sure you want to delete this profile?')) return;
+
+                    var profileId = profile.Id;
+                    HuePluginConfig.commit(function(draft) {
+                        var i = HuePluginConfig.indexOfId(draft.Profiles, profileId);
+                        if (i < 0) {
+                            HuePluginConfig.showError('Not saved', 'This profile was already removed.');
+                            return false;
+                        }
+                        draft.Profiles.splice(i, 1);
+                    });
                 },
 
                 openNewProfile: function() {
@@ -1781,16 +1903,15 @@
                 // The profile as the editor currently shows it, saved or not
                 readEditorProfile: function() {
                     return {
-                        Id: HuePluginConfig.currentEditingProfile !== null ?
-                            HuePluginConfig.profiles[HuePluginConfig.currentEditingProfile].Id :
-                            HuePluginConfig.generateGuid(),
+                        Id: HuePluginConfig.editorProfileId,
                         Name: document.querySelector('#profileName').value,
                         Enabled: document.querySelector('#profileEnabled').checked,
                         BridgeId: document.querySelector('#profileBridgeId').value,
                         EnableForMovies: document.querySelector('#profileEnableForMovies').checked,
                         EnableForTvShows: document.querySelector('#profileEnableForTvShows').checked,
                         TargetClientName: document.querySelector('#profileClientName').value,
-                        TargetDeviceIds: HuePluginConfig.profileDeviceIds,
+                        // A copy: the editor stays open while saving, and its device list must not change the saved profile
+                        TargetDeviceIds: HuePluginConfig.profileDeviceIds.slice(),
                         TargetIpAddress: document.querySelector('#profileIpAddress').value,
                         TargetGroupId: document.querySelector('#profileTargetGroupId').value,
                         PlaySceneId: document.querySelector('#profilePlaySceneId').value,
@@ -1825,16 +1946,28 @@
                         Dashboard.alert('At least one media type (Movies or TV Shows) must be enabled.');
                         return;
                     }
-                    
-                    if (HuePluginConfig.currentEditingProfile !== null) {
-                        HuePluginConfig.profiles[HuePluginConfig.currentEditingProfile] = profile;
-                    } else {
-                        HuePluginConfig.profiles.push(profile);
-                    }
-                    
-                    HuePluginConfig.closeProfileEditor();
-                    HuePluginConfig.renderProfiles();
-                    HuePluginConfig.saveConfiguration();
+
+                    // The editor closes only once the server has the profile; a failed save keeps what was typed.
+                    // Retrying reuses editorProfileId, so a new profile is never added twice.
+                    var generation = HuePluginConfig.editorTestGeneration;
+                    var editing = HuePluginConfig.currentEditingProfileId !== null;
+                    HuePluginConfig.setSaving('#saveProfileButton', true);
+                    HuePluginConfig.commit(function(draft) {
+                        var index = HuePluginConfig.indexOfId(draft.Profiles, profile.Id);
+                        if (index >= 0) {
+                            draft.Profiles[index] = profile;
+                        } else if (editing) {
+                            HuePluginConfig.showError('Not saved', 'This profile was removed while the editor was open.');
+                            return false;
+                        } else {
+                            draft.Profiles.push(profile);
+                        }
+                    }).then(function(saved) {
+                        // The editor was reopened meanwhile; this result belongs to the earlier session
+                        if (generation !== HuePluginConfig.editorTestGeneration) return;
+                        HuePluginConfig.setSaving('#saveProfileButton', false, 'Save Profile');
+                        if (saved) HuePluginConfig.closeProfileEditor();
+                    });
                 },
 
                 closeProfileEditor: function() {
@@ -2239,17 +2372,15 @@
                     });
                 },
 
-                // Add a bridge, or update the entry that already has this Id or IP so a
-                // re-added bridge never becomes a duplicate. Keeps the existing Id so
-                // profiles that reference it stay linked, and keeps the existing name
-                // unless the user typed one ('Bridge' is the modal's pre-filled default,
-                // see openAddBridge). Returns the stored entry.
-                upsertBridge: function(bridge) {
+                // Add a bridge to the given list, or update the entry that already has this Id or IP so a
+                // re-added bridge never becomes a duplicate. Keeps the existing Id so profiles that
+                // reference it stay linked, and keeps the existing name unless the user typed one
+                // ('Bridge' is the modal's pre-filled default, see openAddBridge). Returns the stored entry.
+                upsertBridge: function(bridges, bridge) {
                     var existing = null;
-                    for (var i = 0; i < HuePluginConfig.bridges.length; i++) {
-                        var b = HuePluginConfig.bridges[i];
-                        if (b.Id === bridge.Id || b.IpAddress === bridge.IpAddress) {
-                            existing = b;
+                    for (var i = 0; i < bridges.length; i++) {
+                        if (bridges[i].Id === bridge.Id || bridges[i].IpAddress === bridge.IpAddress) {
+                            existing = bridges[i];
                             break;
                         }
                     }
@@ -2264,7 +2395,7 @@
                         }
                         return existing;
                     }
-                    HuePluginConfig.bridges.push(bridge);
+                    bridges.push(bridge);
                     return bridge;
                 },
 
@@ -2275,28 +2406,6 @@
                     return isNaN(value) ? 0 : Math.max(0, value);
                 },
 
-                saveConfiguration: function () {
-                    ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function (config) {
-                        try {
-                            config.Bridges = HuePluginConfig.bridges;
-                            config.Profiles = HuePluginConfig.profiles;
-
-                            ApiClient.updatePluginConfiguration(HuePluginConfig.pluginId, config).then(function () {
-                                console.log('Configuration saved successfully');
-                            }).catch(function(error) {
-                                console.error('Error saving configuration:', error);
-                                Dashboard.alert('Failed to save configuration. Check the server logs for details.');
-                            });
-                        } catch (error) {
-                            console.error('Error preparing configuration:', error);
-                            Dashboard.alert('Failed to prepare configuration for saving. Check the browser console for details.');
-                        }
-                    }).catch(function(error) {
-                        console.error('Error fetching configuration for save:', error);
-                        Dashboard.alert('Failed to load current configuration. Check the server logs for details.');
-                    });
-                },
-                
             };
 
             // Initialize event listeners when page is ready
@@ -2330,17 +2439,6 @@
                         overlay.style.display = 'none';
                     });
                 });
-
-                var form = document.querySelector('#HuePluginConfigForm');
-                if (form) {
-                    form.addEventListener('submit', function (e) {
-                        e.preventDefault();
-                        HuePluginConfig.saveConfiguration();
-                        return false;
-                    });
-                } else {
-                    console.error('HuePluginConfigForm not found');
-                }
 
                 // Bridge management event handlers
                 var addBridgeButton = document.querySelector('#addBridgeButton');
