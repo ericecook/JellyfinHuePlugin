@@ -57,6 +57,12 @@
                 min-height: 0;
                 overflow-y: auto;
             }
+            /* The inline select layout shrinks the select; keep it the size of the modal's other fields */
+            #profileKnownDeviceSelect {
+                font-size: 110%;
+                padding-top: .5em;
+                padding-bottom: .5em;
+            }
             .hue-modal-footer {
                 padding: 20px;
                 border-top: 1px solid rgba(255,255,255,0.1);
@@ -270,9 +276,8 @@
                                     <div class="fieldDescription">Use Discover or enter your bridge's IP address manually</div>
                                 </div>
 
-                                <div id="addBridgeSelector" style="display:none; margin-bottom: 15px;">
-                                    <label class="inputLabel" for="addBridgeSelect">Multiple bridges found — select one:</label>
-                                    <select id="addBridgeSelect" is="emby-select" style="margin-top: 5px;"></select>
+                                <div id="addBridgeSelector" class="selectContainer" style="display:none;">
+                                    <select id="addBridgeSelect" is="emby-select" label="Multiple bridges found — select one:"></select>
                                 </div>
 
                                 <div class="inputContainer">
@@ -446,9 +451,11 @@
                                         <div id="profileDeviceIdList" style="margin-bottom: 10px;"></div>
                                         <div id="profileDeviceIdInputRow" style="display: none;">
                                             <div style="display: flex; gap: 10px; align-items: center;">
-                                                <select id="profileKnownDeviceSelect" is="emby-select" style="flex: 1; min-width: 0;">
-                                                    <!-- Populated from the server's device list -->
-                                                </select>
+                                                <div class="selectContainer selectContainer-inline" style="flex: 1; min-width: 0;">
+                                                    <select id="profileKnownDeviceSelect" is="emby-select" aria-label="Known device">
+                                                        <!-- Populated from the server's device list -->
+                                                    </select>
+                                                </div>
                                                 <button is="emby-button" type="button" class="raised" id="profileAddKnownDeviceButton">
                                                     <span>Add</span>
                                                 </button>
@@ -478,17 +485,15 @@
                                 <div id="tab-lights" class="profile-tab-content" style="display:none;">
                                     <h3>Light Control</h3>
 
-                                    <div class="inputContainer">
-                                        <label class="inputLabel" for="profileBridgeId">Hue Bridge</label>
-                                        <select id="profileBridgeId" is="emby-select">
+                                    <div class="selectContainer">
+                                        <select id="profileBridgeId" is="emby-select" label="Hue Bridge">
                                             <!-- Populated from config.Bridges -->
                                         </select>
                                         <div class="fieldDescription">Select which bridge this profile controls. Changing the bridge will reload available groups and scenes.</div>
                                     </div>
 
-                                    <div class="inputContainer">
-                                        <label class="inputLabel" for="profileTargetGroupId">Target Light Group</label>
-                                        <select id="profileTargetGroupId" is="emby-select">
+                                    <div class="selectContainer">
+                                        <select id="profileTargetGroupId" is="emby-select" label="Target Light Group">
                                             <option value="0">All Lights</option>
                                         </select>
                                     </div>
@@ -501,9 +506,8 @@
                                         </div>
                                         <div class="hue-test-error" id="profileTestPlayError" style="display:none;"></div>
 
-                                        <div class="inputContainer">
-                                            <label class="inputLabel" for="profilePlaySceneId">Scene</label>
-                                            <select id="profilePlaySceneId" is="emby-select">
+                                        <div class="selectContainer">
+                                            <select id="profilePlaySceneId" is="emby-select" label="Scene">
                                                 <option value="">None (Use Brightness)</option>
                                             </select>
                                         </div>
@@ -548,9 +552,8 @@
                                         </div>
                                         <div class="hue-test-error" id="profileTestPauseError" style="display:none;"></div>
 
-                                        <div class="inputContainer">
-                                            <label class="inputLabel" for="profilePauseSceneId">Scene</label>
-                                            <select id="profilePauseSceneId" is="emby-select">
+                                        <div class="selectContainer">
+                                            <select id="profilePauseSceneId" is="emby-select" label="Scene">
                                                 <option value="">None (Use Brightness)</option>
                                             </select>
                                         </div>
@@ -599,9 +602,8 @@
                                         </div>
                                         <div class="hue-test-error" id="profileTestStopError" style="display:none;"></div>
 
-                                        <div class="inputContainer">
-                                            <label class="inputLabel" for="profileStopSceneId">Scene</label>
-                                            <select id="profileStopSceneId" is="emby-select">
+                                        <div class="selectContainer">
+                                            <select id="profileStopSceneId" is="emby-select" label="Scene">
                                                 <option value="">None (Use Brightness)</option>
                                             </select>
                                         </div>
