@@ -188,6 +188,33 @@ namespace JellyfinHuePlugin.Tests
         }
 
         [Fact]
+        public void Constructor_LogsTheRepairedCount()
+        {
+            var log = new CapturingLogger();
+            var onDisk = Config(Bridge());
+            onDisk.Profiles = new List<LightControlProfile> { new() { Name = "kept" }, null! };
+            _xml.Setup(x => x.DeserializeFromFile(typeof(PluginConfiguration), It.IsAny<string>())).Returns(onDisk);
+
+            _ = new Plugin(_paths.Object, _xml.Object, _store, _hue.Object, _catalog.Object, log);
+
+            log.Lines.Should().Contain(l => l.Contains("Repaired 1 invalid entries in the stored configuration"));
+        }
+
+        [Fact]
+        public void UpdateConfiguration_LogsTheDroppedCount()
+        {
+            var log = new CapturingLogger();
+            _xml.Setup(x => x.DeserializeFromFile(typeof(PluginConfiguration), It.IsAny<string>())).Returns(Config(Bridge()));
+            var plugin = new Plugin(_paths.Object, _xml.Object, _store, _hue.Object, _catalog.Object, log);
+            var incoming = Config(null!, Bridge());
+            incoming.Profiles = new List<LightControlProfile> { null!, new() { Name = "p" } };
+
+            plugin.UpdateConfiguration(incoming);
+
+            log.Lines.Should().Contain(l => l.Contains("Dropped 2 invalid entries from a configuration save"));
+        }
+
+        [Fact]
         public void Constructor_RemovesNullEntriesFromTheStoredConfigurationAndSavesOnce()
         {
             var onDisk = Config(Bridge());

@@ -81,7 +81,8 @@ namespace JellyfinHuePlugin
 
         /// <summary>
         /// The web client's generic configuration save lands here (the plugin's own API writes
-        /// through <see cref="BasePlugin{T}.SaveConfiguration()"/> and never does). A bridge whose
+        /// through <see cref="BasePlugin{T}.SaveConfiguration()"/> and never does). Null bridges
+        /// and profiles, which a plugin page before 4.0 could post, are dropped first. A bridge whose
         /// address or application key changed on the page still carries the previous bridge's
         /// pinned id and cached rooms, so the pin is cleared before the single write and the
         /// caches dropped after it. <see cref="HueBridge.HardwareId"/> is server-owned on this
