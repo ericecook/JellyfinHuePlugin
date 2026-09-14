@@ -681,6 +681,10 @@
                 currentEditingProfileId: null,
                 // Id the open editor saves under: the edited profile's, or one new id per add session
                 editorProfileId: null,
+                // Latest check per bridge Id: { state: 'checking'|'ok'|'failed', text, result }
+                bridgeStatus: {},
+                // Bumped by every renderBridges; a check answered for an earlier render is ignored
+                bridgeVerifyGeneration: 0,
                 profileDeviceIds: [],
                 editorTestGeneration: 0,
                 knownDevices: [],
@@ -1384,7 +1388,11 @@
                 },
 
                 // Render bridge cards
+                // Bridge cards, then a check of every bridge that has a key. Results live in bridgeStatus by
+                // bridge Id; a result from an earlier render is ignored (see updateBridgeStatus).
                 renderBridges: function() {
+                    var generation = ++HuePluginConfig.bridgeVerifyGeneration;
+                    HuePluginConfig.bridgeStatus = {};
                     var container = document.querySelector('#bridgesList');
                     if (!container) return;
 
@@ -1420,9 +1428,11 @@
                     html += '</div>';
                     container.innerHTML = html;
 
-                    // Verify authenticated bridges in background
-                    HuePluginConfig.bridges.forEach(function(bridge, index) {
+                    // Check bridges with a key in the background
+                    HuePluginConfig.bridges.forEach(function(bridge) {
                         if (!bridge.Username || bridge.Username.length === 0) return;
+                        var bridgeId = bridge.Id;
+                        HuePluginConfig.bridgeStatus[bridgeId] = { state: 'checking', text: 'Checking...', result: null };
                         ApiClient.ajax({
                             type: 'POST',
                             url: ApiClient.getUrl('api/hueplugin/verifyconnection'),
@@ -1430,18 +1440,19 @@
                             contentType: 'application/json',
                             dataType: 'json'
                         }).then(function(result) {
-                            HuePluginConfig.updateBridgeStatus(index, result.Success, result.Success ? 'Connected' : (result.Error || 'Auth failed'), result);
+                            HuePluginConfig.updateBridgeStatus(generation, bridgeId, result.Success, result.Success ? 'Connected' : (result.Error || 'Auth failed'), result);
                         }).catch(function() {
-                            HuePluginConfig.updateBridgeStatus(index, false, 'Connection error');
+                            HuePluginConfig.updateBridgeStatus(generation, bridgeId, false, 'Connection error');
                         });
                     });
                 },
 
-                updateBridgeStatus: function(index, success, text, result) {
-                    if (HuePluginConfig.bridges[index]) {
-                        HuePluginConfig.bridges[index]._verified = success;
-                    }
-                    var el = document.querySelector('#bridgeStatus-' + index);
+                updateBridgeStatus: function(generation, bridgeId, success, text, result) {
+                    // Sent before the latest render: the list, this bridge's address or its key may have changed since
+                    if (generation !== HuePluginConfig.bridgeVerifyGeneration) return;
+                    HuePluginConfig.bridgeStatus[bridgeId] = { state: success ? 'ok' : 'failed', text: text, result: result || null };
+                    var index = HuePluginConfig.indexOfId(HuePluginConfig.bridges, bridgeId);
+                    var el = index >= 0 ? document.querySelector('#bridgeStatus-' + index) : null;
                     if (!el) return;
                     var color = success ? '#4caf50' : '#f44336';
                     el.querySelector('.bridge-status-dot').style.background = color;
@@ -2238,7 +2249,7 @@
                         var opt = document.createElement('option');
                         opt.value = bridge.Id;
                         var label = bridge.Name + ' (' + bridge.IpAddress + ')';
-                        if (bridge._verified === false) {
+                        if ((HuePluginConfig.bridgeStatus[bridge.Id] || {}).state === 'failed') {
                             label += ' (auth failed)';
                             opt.disabled = true;
                         } else if (!bridge.Username) {
@@ -2254,7 +2265,7 @@
                     }
                     // Fall back to first verified bridge if no selection or selection is disabled
                     if (!select.value || select.selectedOptions[0].disabled) {
-                        var firstVerified = HuePluginConfig.bridges.find(function(b) { return b._verified !== false && b.Username; });
+                        var firstVerified = HuePluginConfig.bridges.find(function(b) { return (HuePluginConfig.bridgeStatus[b.Id] || {}).state !== 'failed' && b.Username; });
                         if (firstVerified) select.value = firstVerified.Id;
                     }
 
