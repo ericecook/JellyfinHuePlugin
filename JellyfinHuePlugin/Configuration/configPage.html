@@ -14,16 +14,34 @@
                 top: 0; left: 0;
                 width: 100%; height: 100%;
                 background: rgba(0,0,0,0.8);
-                z-index: 1000;
+                /* Above the dashboard's app bar (1100) and drawer (1200), below Jellyfin's own dialogs and toasts */
+                z-index: 1300;
                 overflow-y: auto;
             }
+            /* Capped to the viewport so the header, tabs and footer stay on screen and only the body scrolls */
             .hue-modal {
                 max-width: 900px;
                 margin: 50px auto;
+                max-height: calc(100vh - 100px);
+                max-height: calc(100dvh - 100px);
+                display: flex;
+                flex-direction: column;
                 background: #1c1c1e;
                 padding: 0;
                 border-radius: 8px;
                 overflow: hidden;
+            }
+            .hue-modal > * {
+                flex-shrink: 0;
+            }
+            @media (max-width: 600px), (max-height: 500px) {
+                .hue-modal {
+                    margin: 0 auto;
+                    height: 100vh;
+                    height: 100dvh;
+                    max-height: none;
+                    border-radius: 0;
+                }
             }
             .hue-modal-header {
                 padding: 20px;
@@ -31,9 +49,10 @@
             }
             .hue-modal-header h2 { margin: 0; }
             #HuePluginConfigPage .emby-button[disabled] { opacity: 0.5; cursor: default; }
-            .hue-modal-body {
+            .hue-modal .hue-modal-body {
                 padding: 20px;
-                max-height: 70vh;
+                flex: 1 1 auto;
+                min-height: 0;
                 overflow-y: auto;
             }
             .hue-modal-footer {
