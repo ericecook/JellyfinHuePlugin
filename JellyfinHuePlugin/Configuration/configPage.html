@@ -501,6 +501,7 @@
                                         <select id="profileTargetGroupId" is="emby-select" label="Target Light Group">
                                             <option value="0">All Lights</option>
                                         </select>
+                                        <div class="hue-test-error" id="profileTargetsStatus" style="display:none;"></div>
                                     </div>
 
                                     <!-- Play Section -->
@@ -685,6 +686,8 @@
                 bridgeStatus: {},
                 // Bumped by every renderBridges; a check answered for an earlier render is ignored
                 bridgeVerifyGeneration: 0,
+                // Bumped by every loadEditorTargets; a group or scene list for an earlier load is ignored
+                editorTargetsGeneration: 0,
                 profileDeviceIds: [],
                 editorTestGeneration: 0,
                 knownDevices: [],
@@ -1125,12 +1128,6 @@
                     document.querySelector('#profileStopTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(4);
                     document.querySelector('#stopTransitionContainer').style.display = 'none';
 
-                    // Reset brightness visibility (no scenes, turn-off unchecked)
-                    document.querySelector('#playBrightnessContainer').style.display = '';
-                    document.querySelector('#playTurnOffContainer').style.display = '';
-                    document.querySelector('#pauseBrightnessContainer').style.display = '';
-                    document.querySelector('#stopBrightnessContainer').style.display = '';
-
                     // Sync sliders
                     var playBrightness = template.PlayBrightness || 8;
                     var pauseBrightness = template.PauseBrightness || 39;
@@ -1151,10 +1148,8 @@
                     document.querySelector('#profileShowAddDeviceId').style.display = '';
                     HuePluginConfig.refreshKnownDevices();
 
-                    var defaultBridgeId = HuePluginConfig.bridges.length > 0 ? HuePluginConfig.bridges[0].Id : '';
-                    HuePluginConfig.populateBridgeDropdown(defaultBridgeId);
-                    HuePluginConfig.loadProfileGroups(defaultBridgeId, '0');
-                    HuePluginConfig.loadProfileScenes(defaultBridgeId, '', '', '');
+                    HuePluginConfig.populateBridgeDropdown('', false);
+                    HuePluginConfig.loadEditorTargets({ group: '0', play: '', pause: '', stop: '' });
 
                     HuePluginConfig.resetEditorTests();
                     HuePluginConfig.setSaving('#saveProfileButton', false, 'Save Profile');
@@ -1873,11 +1868,14 @@
                     document.querySelector('#profileShowAddDeviceId').style.display = '';
                     HuePluginConfig.refreshKnownDevices();
 
-                    // Populate bridge dropdown and load groups/scenes for the profile's bridge
-                    HuePluginConfig.populateBridgeDropdown(profile.BridgeId);
-                    var bridgeId = profile.BridgeId || (HuePluginConfig.bridges.length === 1 ? HuePluginConfig.bridges[0].Id : '');
-                    HuePluginConfig.loadProfileGroups(bridgeId, profile.TargetGroupId);
-                    HuePluginConfig.loadProfileScenes(bridgeId, profile.PlaySceneId, profile.PauseSceneId, profile.StopSceneId);
+                    // The profile keeps its own bridge; its lists load for the bridge the dropdown shows
+                    HuePluginConfig.populateBridgeDropdown(profile.BridgeId, true);
+                    HuePluginConfig.loadEditorTargets({
+                        group: profile.TargetGroupId,
+                        play: profile.PlaySceneId,
+                        pause: profile.PauseSceneId,
+                        stop: profile.StopSceneId
+                    });
 
                     HuePluginConfig.resetEditorTests();
                     HuePluginConfig.setSaving('#saveProfileButton', false, 'Save Profile');
@@ -1955,6 +1953,12 @@
                     // Validate at least one media type is enabled
                     if (!profile.EnableForMovies && !profile.EnableForTvShows) {
                         Dashboard.alert('At least one media type (Movies or TV Shows) must be enabled.');
+                        return;
+                    }
+
+                    // With two or more bridges an empty BridgeId matches nothing at playback
+                    if (HuePluginConfig.bridges.length >= 2 && !profile.BridgeId) {
+                        Dashboard.alert('Choose a bridge for this profile.');
                         return;
                     }
 
@@ -2231,53 +2235,81 @@
                     HuePluginConfig.populateKnownDeviceSelect();
                 },
 
-                // Populate bridge dropdown in profile editor
-                populateBridgeDropdown: function(selectedBridgeId) {
+                // Bridge select in the profile editor. An existing profile keeps its saved bridge even when that
+                // bridge failed its check or has no key - the option is labelled, not disabled - so opening and
+                // saving a profile can never move it to another bridge. Unusable bridges are disabled for
+                // everything else, except that failed bridges stay selectable when no bridge is usable at all.
+                // An empty saved id follows the server's FindProfileBridge rule: the only bridge, otherwise a
+                // choice the user has to make.
+                populateBridgeDropdown: function(savedBridgeId, isExisting) {
                     var select = document.querySelector('#profileBridgeId');
-                    if (!select) return;
+                    var bridges = HuePluginConfig.bridges;
                     select.innerHTML = '';
 
-                    if (HuePluginConfig.bridges.length === 0) {
-                        var opt = document.createElement('option');
-                        opt.value = '';
-                        opt.textContent = 'No bridges configured';
-                        select.appendChild(opt);
+                    function addOption(value, text, disabled, first) {
+                        var option = document.createElement('option');
+                        option.value = value;
+                        option.textContent = text;
+                        option.disabled = !!disabled;
+                        if (first) {
+                            select.insertBefore(option, select.firstChild);
+                        } else {
+                            select.appendChild(option);
+                        }
+                    }
+                    function usable(bridge) {
+                        return !!bridge.Username && (HuePluginConfig.bridgeStatus[bridge.Id] || {}).state !== 'failed';
+                    }
+
+                    select.onchange = function() {
+                        HuePluginConfig.loadEditorTargets(HuePluginConfig.currentTargetSelections());
+                    };
+
+                    if (bridges.length === 0) {
+                        addOption('', 'No bridges configured');
+                        select.value = '';
                         return;
                     }
 
-                    HuePluginConfig.bridges.forEach(function(bridge) {
-                        var opt = document.createElement('option');
-                        opt.value = bridge.Id;
+                    // With no usable bridge at all, disabling the failed ones would leave nothing to choose
+                    var anyUsable = bridges.some(usable);
+                    var implicitId = isExisting && !savedBridgeId && bridges.length === 1 ? bridges[0].Id : '';
+                    var keptId = isExisting ? (savedBridgeId || implicitId) : '';
+                    bridges.forEach(function(bridge) {
                         var label = bridge.Name + ' (' + bridge.IpAddress + ')';
-                        if ((HuePluginConfig.bridgeStatus[bridge.Id] || {}).state === 'failed') {
-                            label += ' (auth failed)';
-                            opt.disabled = true;
-                        } else if (!bridge.Username) {
+                        if (!bridge.Username) {
                             label += ' (not authenticated)';
-                            opt.disabled = true;
+                        } else if ((HuePluginConfig.bridgeStatus[bridge.Id] || {}).state === 'failed') {
+                            label += ' (connection failed)';
                         }
-                        opt.textContent = label;
-                        select.appendChild(opt);
+                        addOption(bridge.Id, label, bridge.Id !== keptId && (!bridge.Username || (anyUsable && !usable(bridge))));
                     });
 
-                    if (selectedBridgeId) {
-                        select.value = selectedBridgeId;
-                    }
-                    // Fall back to first verified bridge if no selection or selection is disabled
-                    if (!select.value || select.selectedOptions[0].disabled) {
-                        var firstVerified = HuePluginConfig.bridges.find(function(b) { return (HuePluginConfig.bridgeStatus[b.Id] || {}).state !== 'failed' && b.Username; });
-                        if (firstVerified) select.value = firstVerified.Id;
+                    if (keptId) {
+                        select.value = keptId;
+                        if (select.value !== keptId) {
+                            addOption(keptId, 'Unknown bridge (' + keptId + ')');
+                            select.value = keptId;
+                        }
+                        return;
                     }
 
-                    // Reload groups/scenes when bridge changes, preserving current selections
-                    select.onchange = function() {
-                        var bridgeId = select.value;
-                        var currentGroup = document.querySelector('#profileTargetGroupId').value;
-                        var currentPlayScene = document.querySelector('#profilePlaySceneId').value;
-                        var currentPauseScene = document.querySelector('#profilePauseSceneId').value;
-                        var currentStopScene = document.querySelector('#profileStopSceneId').value;
-                        HuePluginConfig.loadProfileGroups(bridgeId, currentGroup);
-                        HuePluginConfig.loadProfileScenes(bridgeId, currentPlayScene, currentPauseScene, currentStopScene);
+                    var first = isExisting ? null : bridges.find(usable);
+                    if (first) {
+                        select.value = first.Id;
+                    } else {
+                        addOption('', 'Choose a bridge', false, true);
+                        select.value = '';
+                    }
+                },
+
+                // The editor's current group and scene choices, carried over when the bridge changes
+                currentTargetSelections: function() {
+                    return {
+                        group: document.querySelector('#profileTargetGroupId').value,
+                        play: document.querySelector('#profilePlaySceneId').value,
+                        pause: document.querySelector('#profilePauseSceneId').value,
+                        stop: document.querySelector('#profileStopSceneId').value
                     };
                 },
 
@@ -2287,7 +2319,7 @@
                 // write back, silently retargeting the profile at All Lights or no scene. Carry
                 // the stored value in an option of its own, flagged so it is obvious it needs
                 // attention; resolving legacy ids is a separate job.
-                setSelectValuePreservingUnknown: function(select, savedValue) {
+                setSelectValuePreservingUnknown: function(select, savedValue, label) {
                     if (!savedValue) return;
 
                     select.value = savedValue;
@@ -2295,17 +2327,64 @@
 
                     var option = document.createElement('option');
                     option.value = savedValue;
-                    option.text = 'Unresolved (' + savedValue + ') \u2014 re-select';
+                    option.text = label || ('Unresolved (' + savedValue + ') \u2014 re-select');
                     select.appendChild(option);
                     select.value = savedValue;
                 },
 
-                loadProfileGroups: function(bridgeId, savedValue) {
-                    var url = 'api/hueplugin/groups';
-                    if (bridgeId) url += '?bridgeId=' + encodeURIComponent(bridgeId);
-                    ApiClient.getJSON(ApiClient.getUrl(url)).then(function (groups) {
-                        var select = document.querySelector('#profileTargetGroupId');
-                        select.innerHTML = '<option value="0">All Lights</option>';
+                // Rooms, zones and scenes for the bridge the editor shows. The selects are rebuilt at once with only
+                // the defaults plus this profile's saved ids, so nothing from an earlier editor session survives; a
+                // list answered for an earlier load (another session or bridge choice) is ignored; a list that
+                // fails to load keeps the saved ids and says so.
+                loadEditorTargets: function(saved) {
+                    var generation = ++HuePluginConfig.editorTargetsGeneration;
+                    var bridgeId = document.querySelector('#profileBridgeId').value;
+                    var groupSelect = document.querySelector('#profileTargetGroupId');
+                    var sceneSelects = {
+                        play: document.querySelector('#profilePlaySceneId'),
+                        pause: document.querySelector('#profilePauseSceneId'),
+                        stop: document.querySelector('#profileStopSceneId')
+                    };
+                    // Nothing loads without a bridge, so saved ids then say they are not loaded
+                    var loadingLabel = bridgeId ? 'Saved selection (loading…)' : 'Saved selection (not loaded)';
+                    var failures = { groups: null, scenes: null };
+
+                    groupSelect.innerHTML = '<option value="0">All Lights</option>';
+                    HuePluginConfig.setSelectValuePreservingUnknown(groupSelect, saved.group, loadingLabel);
+                    Object.keys(sceneSelects).forEach(function(key) {
+                        sceneSelects[key].innerHTML = '<option value="">None (Use Brightness)</option>';
+                        HuePluginConfig.setSelectValuePreservingUnknown(sceneSelects[key], saved[key], loadingLabel);
+                    });
+                    HuePluginConfig.updateStateVisibility();
+                    HuePluginConfig.renderTargetsStatus(null);
+
+                    if (!bridgeId) {
+                        HuePluginConfig.renderTargetsStatus('Choose a bridge to load its rooms and scenes.');
+                        return;
+                    }
+
+                    var bridgeIndex = HuePluginConfig.indexOfId(HuePluginConfig.bridges, bridgeId);
+                    var bridgeName = bridgeIndex >= 0 ? HuePluginConfig.bridges[bridgeIndex].Name : 'this bridge';
+                    var query = '?bridgeId=' + encodeURIComponent(bridgeId);
+
+                    function current() {
+                        return generation === HuePluginConfig.editorTargetsGeneration;
+                    }
+                    function keepSaved(select) {
+                        for (var i = 0; i < select.options.length; i++) {
+                            if (select.options[i].text === loadingLabel) select.options[i].text = 'Saved selection (not loaded)';
+                        }
+                    }
+                    function showFailures() {
+                        var what = failures.groups && failures.scenes ? 'rooms, zones and scenes'
+                            : failures.groups ? 'rooms and zones' : 'scenes';
+                        HuePluginConfig.renderTargetsStatus('Could not load ' + what + ' from ' + bridgeName + ': ' +
+                            (failures.groups || failures.scenes) + '. The saved selections are kept.');
+                    }
+
+                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/groups' + query)).then(function (groups) {
+                        if (!current()) return;
+                        groupSelect.innerHTML = '<option value="0">All Lights</option>';
 
                         // Keyed by grouped_light id (the value a profile stores); Type is room or zone.
                         var byType = { room: [], zone: [] };
@@ -2326,54 +2405,58 @@
                                 option.text = item.name;
                                 optgroup.appendChild(option);
                             });
-                            select.appendChild(optgroup);
+                            groupSelect.appendChild(optgroup);
                         });
 
-                        // Set the saved value after populating
-                        HuePluginConfig.setSelectValuePreservingUnknown(select, savedValue);
-                    }).catch(function(err) {
-                        console.error('Error loading groups for profile:', err);
+                        HuePluginConfig.setSelectValuePreservingUnknown(groupSelect, saved.group);
+                    }).catch(function(error) {
+                        if (!current()) return;
+                        console.error('Error loading groups for profile:', error);
+                        keepSaved(groupSelect);
+                        failures.groups = HuePluginConfig.describeError(error);
+                        showFailures();
                     });
-                },
 
-                loadProfileScenes: function(bridgeId, savedPlayId, savedPauseId, savedStopId) {
-                    var url = 'api/hueplugin/scenes';
-                    if (bridgeId) url += '?bridgeId=' + encodeURIComponent(bridgeId);
-                    ApiClient.getJSON(ApiClient.getUrl(url)).then(function (scenes) {
-                        var playSelect = document.querySelector('#profilePlaySceneId');
-                        var pauseSelect = document.querySelector('#profilePauseSceneId');
-                        var stopSelect = document.querySelector('#profileStopSceneId');
-                        
-                        // Clear and populate all dropdowns
-                        [playSelect, pauseSelect, stopSelect].forEach(function(select) {
+                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/scenes' + query)).then(function (scenes) {
+                        if (!current()) return;
+                        Object.keys(sceneSelects).forEach(function(key) {
+                            var select = sceneSelects[key];
                             select.innerHTML = '<option value="">None (Use Brightness)</option>';
-                            
                             for (var id in scenes) {
                                 var option = document.createElement('option');
                                 option.value = id;
                                 option.text = scenes[id].Name + ' (Group: ' + scenes[id].GroupName + ')';
                                 select.appendChild(option);
                             }
+                            // An id this bridge does not offer is kept as a flagged option rather than falling back to "None"
+                            HuePluginConfig.setSelectValuePreservingUnknown(select, saved[key]);
                         });
-                        
-                        // Set saved values after populating (an id this bridge does not offer is
-                        // kept as a flagged option rather than falling back to "None")
-                        HuePluginConfig.setSelectValuePreservingUnknown(playSelect, savedPlayId);
-                        HuePluginConfig.setSelectValuePreservingUnknown(pauseSelect, savedPauseId);
-                        HuePluginConfig.setSelectValuePreservingUnknown(stopSelect, savedStopId);
-
-                        // Update brightness visibility based on actual selected values
-                        var activePlay = playSelect.value;
-                        var activePause = pauseSelect.value;
-                        var activeStop = stopSelect.value;
-                        var turnOff = document.querySelector('#profileTurnOffLightsOnPlay').checked;
-                        document.querySelector('#playBrightnessContainer').style.display = (activePlay || turnOff) ? 'none' : '';
-                        document.querySelector('#playTurnOffContainer').style.display = activePlay ? 'none' : '';
-                        document.querySelector('#pauseBrightnessContainer').style.display = activePause ? 'none' : '';
-                        document.querySelector('#stopBrightnessContainer').style.display = activeStop ? 'none' : '';
-                    }).catch(function(err) {
-                        console.error('Error loading scenes for profile:', err);
+                        HuePluginConfig.updateStateVisibility();
+                    }).catch(function(error) {
+                        if (!current()) return;
+                        console.error('Error loading scenes for profile:', error);
+                        Object.keys(sceneSelects).forEach(function(key) {
+                            keepSaved(sceneSelects[key]);
+                        });
+                        failures.scenes = HuePluginConfig.describeError(error);
+                        showFailures();
                     });
+                },
+
+                renderTargetsStatus: function(text) {
+                    var status = document.querySelector('#profileTargetsStatus');
+                    status.textContent = text || '';
+                    status.style.display = text ? '' : 'none';
+                },
+
+                // Brightness is ignored while a scene is selected, and Play's brightness while Turn Off is ticked
+                updateStateVisibility: function() {
+                    var playScene = document.querySelector('#profilePlaySceneId').value !== '';
+                    var turnOff = document.querySelector('#profileTurnOffLightsOnPlay').checked;
+                    document.querySelector('#playBrightnessContainer').style.display = (playScene || turnOff) ? 'none' : '';
+                    document.querySelector('#playTurnOffContainer').style.display = playScene ? 'none' : '';
+                    document.querySelector('#pauseBrightnessContainer').style.display = document.querySelector('#profilePauseSceneId').value !== '' ? 'none' : '';
+                    document.querySelector('#stopBrightnessContainer').style.display = document.querySelector('#profileStopSceneId').value !== '' ? 'none' : '';
                 },
 
                 generateGuid: function() {
@@ -2625,21 +2708,9 @@
                     document.querySelector('#pauseGracePeriodContainer').style.display = this.checked ? '' : 'none';
                 });
 
-                // Hide brightness when a scene is selected
-                function updatePlayBrightnessVisibility() {
-                    var sceneSelected = document.querySelector('#profilePlaySceneId').value !== '';
-                    var turnOff = document.querySelector('#profileTurnOffLightsOnPlay').checked;
-                    document.querySelector('#playBrightnessContainer').style.display = (sceneSelected || turnOff) ? 'none' : '';
-                    document.querySelector('#playTurnOffContainer').style.display = sceneSelected ? 'none' : '';
-                }
-                document.querySelector('#profilePlaySceneId').addEventListener('change', updatePlayBrightnessVisibility);
-                document.querySelector('#profileTurnOffLightsOnPlay').addEventListener('change', updatePlayBrightnessVisibility);
-
-                document.querySelector('#profilePauseSceneId').addEventListener('change', function() {
-                    document.querySelector('#pauseBrightnessContainer').style.display = this.value !== '' ? 'none' : '';
-                });
-                document.querySelector('#profileStopSceneId').addEventListener('change', function() {
-                    document.querySelector('#stopBrightnessContainer').style.display = this.value !== '' ? 'none' : '';
+                // Brightness follows the scene and Turn Off choices (updateStateVisibility)
+                ['#profilePlaySceneId', '#profilePauseSceneId', '#profileStopSceneId', '#profileTurnOffLightsOnPlay'].forEach(function(selector) {
+                    document.querySelector(selector).addEventListener('change', HuePluginConfig.updateStateVisibility);
                 });
 
                 console.log('Event listeners initialized');
