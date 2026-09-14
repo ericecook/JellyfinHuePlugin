@@ -690,6 +690,8 @@
                 editorTargetsGeneration: 0,
                 // The open Add Bridge modal's session; every async result checks it is still the live one
                 addBridgeSession: null,
+                // Id of the profile card being dragged; null when no card drag is in progress
+                draggedProfileId: null,
                 profileDeviceIds: [],
                 editorTestGeneration: 0,
                 knownDevices: [],
@@ -830,6 +832,14 @@
                     var action = button.getAttribute('data-test-action');
                     var errorLine = document.querySelector('#profileTest' + action + 'Error');
                     errorLine.style.display = 'none';
+
+                    // A blank number would test a value nobody typed
+                    var problem = HuePluginConfig.validateEditorNumbers(action);
+                    if (problem) {
+                        errorLine.textContent = problem;
+                        errorLine.style.display = '';
+                        return;
+                    }
                     var generation = HuePluginConfig.editorTestGeneration;
                     HuePluginConfig.showTestState(button, 'busy');
 
@@ -891,80 +901,78 @@
                     });
                 },
 
-                // Initialize drag and drop
+                // Reorder by dragging a card onto another. Only a drag that started on a card of this list carries
+                // the private type below, so selected text, links or files dropped on a card do nothing.
                 initializeDragAndDrop: function() {
                     var cards = document.querySelectorAll('.profile-card');
-                    var draggedElement = null;
-                    var draggedIndex = null;
-                    
-                    cards.forEach(function(card, index) {
+                    var dragType = 'application/x-hue-profile';
+
+                    function isProfileDrag(e) {
+                        return HuePluginConfig.draggedProfileId !== null &&
+                            Array.prototype.indexOf.call(e.dataTransfer.types, dragType) >= 0;
+                    }
+                    function clearMarks() {
+                        cards.forEach(function(c) {
+                            c.style.borderTop = '';
+                            c.style.borderBottom = '';
+                        });
+                    }
+
+                    cards.forEach(function(card) {
+                        var profileId = card.getAttribute('data-profile-id');
+
                         card.addEventListener('dragstart', function(e) {
-                            draggedElement = this;
-                            draggedIndex = parseInt(this.getAttribute('data-index'));
-                            this.style.opacity = '0.5';
+                            HuePluginConfig.draggedProfileId = profileId;
+                            e.dataTransfer.setData(dragType, profileId);
                             e.dataTransfer.effectAllowed = 'move';
+                            this.style.opacity = '0.5';
                         });
-                        
+
                         card.addEventListener('dragend', function() {
-                            // A later drop that is not a card drag must not reuse this index
-                            draggedIndex = null;
+                            HuePluginConfig.draggedProfileId = null;
                             this.style.opacity = '1';
-                            cards.forEach(function(c) {
-                                c.style.borderTop = '';
-                                c.style.borderBottom = '';
-                            });
+                            clearMarks();
                         });
-                        
+
                         card.addEventListener('dragover', function(e) {
-                            if (e.preventDefault) e.preventDefault();
+                            if (!isProfileDrag(e)) return;
+                            e.preventDefault();
                             e.dataTransfer.dropEffect = 'move';
-                            
-                            var targetIndex = parseInt(this.getAttribute('data-index'));
-                            if (draggedIndex < targetIndex) {
+                            var from = HuePluginConfig.indexOfId(HuePluginConfig.profiles, HuePluginConfig.draggedProfileId);
+                            var to = HuePluginConfig.indexOfId(HuePluginConfig.profiles, profileId);
+                            if (from < to) {
                                 this.style.borderBottom = '3px solid rgba(255,255,255,0.4)';
                                 this.style.borderTop = '';
                             } else {
                                 this.style.borderTop = '3px solid rgba(255,255,255,0.4)';
                                 this.style.borderBottom = '';
                             }
-                            return false;
                         });
-                        
+
                         card.addEventListener('dragleave', function() {
                             this.style.borderTop = '';
                             this.style.borderBottom = '';
                         });
-                        
-                        card.addEventListener('drop', function(e) {
-                            e.stopPropagation();
-                            var moved = HuePluginConfig.profiles[draggedIndex];
-                            var target = HuePluginConfig.profiles[parseInt(this.getAttribute('data-index'), 10)];
-                            // A drag that did not start on a card of this list has no profile to move
-                            if (!moved || !target || moved === target) return;
 
-                            var movedId = moved.Id;
-                            var targetId = target.Id;
+                        card.addEventListener('drop', function(e) {
+                            if (!isProfileDrag(e)) return;
+                            e.preventDefault();
+                            e.stopPropagation();
+                            var draggedId = HuePluginConfig.draggedProfileId;
+                            clearMarks();
+                            if (draggedId === profileId) return;
+
                             HuePluginConfig.commit(function(draft) {
-                                var from = HuePluginConfig.indexOfId(draft.Profiles, movedId);
-                                var to = HuePluginConfig.indexOfId(draft.Profiles, targetId);
+                                var from = HuePluginConfig.indexOfId(draft.Profiles, draggedId);
+                                var to = HuePluginConfig.indexOfId(draft.Profiles, profileId);
                                 if (from < 0 || to < 0) {
                                     HuePluginConfig.showError('Not saved', 'A profile was removed before the move could be saved.');
                                     return false;
                                 }
-                                var profile = draft.Profiles.splice(from, 1)[0];
-                                draft.Profiles.splice(to, 0, profile);
+                                var moved = draft.Profiles.splice(from, 1)[0];
+                                draft.Profiles.splice(to, 0, moved);
                             });
                         });
-                    });
-                    
-                    // Close menus when clicking outside. Selecting by class, not by an id prefix:
-                    // see the comment in toggleProfileMenu for why "profileMenu" as a prefix is unsafe.
-                    document.addEventListener('click', function(e) {
-                        if (!e.target.closest('.profile-menu')) {
-                            document.querySelectorAll('.hue-dropdown').forEach(function(menu) {
-                                menu.style.display = 'none';
-                            });
-                        }
                     });
                 },
 
@@ -1012,9 +1020,14 @@
                         });
                         
                         input.addEventListener('input', function() {
-                            slider.value = input.value;
+                            var value = parseInt(input.value, 10);
+                            if (isNaN(value)) {
+                                if (desc) desc.textContent = 'Enter a value';
+                                return;
+                            }
+                            slider.value = value;
                             if (desc) {
-                                desc.textContent = HuePluginConfig.getBrightnessDescription(parseInt(input.value)) + ' (' + input.value + '%)';
+                                desc.textContent = HuePluginConfig.getBrightnessDescription(value) + ' (' + value + '%)';
                             }
                         });
                     }
@@ -1034,9 +1047,14 @@
                         });
                         
                         input.addEventListener('input', function() {
-                            slider.value = input.value;
+                            var value = parseInt(input.value, 10);
+                            if (isNaN(value)) {
+                                if (desc) desc.textContent = 'Enter a value';
+                                return;
+                            }
+                            slider.value = value;
                             if (desc) {
-                                desc.textContent = HuePluginConfig.getTransitionDescription(parseInt(input.value));
+                                desc.textContent = HuePluginConfig.getTransitionDescription(value);
                             }
                         });
                     }
@@ -1511,8 +1529,10 @@
                     var bridge = HuePluginConfig.bridges[index];
                     if (!bridge) return;
 
+                    // Profiles that use this bridge now, or would after the delete: the server sends a profile with no
+                    // bridge chosen to the only bridge, so with two bridges those would start using the other one
                     var affectedProfiles = HuePluginConfig.profiles.filter(function(p) {
-                        return p.BridgeId === bridge.Id;
+                        return p.BridgeId === bridge.Id || (!p.BridgeId && HuePluginConfig.bridges.length <= 2);
                     });
                     if (affectedProfiles.length > 0) {
                         var names = affectedProfiles.map(function(p) { return '"' + p.Name + '"'; }).join(', ');
@@ -1820,7 +1840,7 @@
                             var summaryItems = HuePluginConfig.getProfileSummaryItems(profile);
 
                             var isDisabled = profile.Enabled === false;
-                            html += '<div class="hue-card profile-card" draggable="true" data-index="' + index + '" onclick="HuePluginConfig.onCardClick(event, ' + index + ')"' + (isDisabled ? ' style="opacity: 0.5;"' : '') + '>';
+                            html += '<div class="hue-card profile-card" draggable="true" data-index="' + index + '" data-profile-id="' + HuePluginConfig.escapeHtml(profile.Id) + '" onclick="HuePluginConfig.onCardClick(event, ' + index + ')"' + (isDisabled ? ' style="opacity: 0.5;"' : '') + '>';
 
                             // Header row
                             html += '<div style="display: flex; align-items: center; justify-content: space-between;">';
@@ -2012,16 +2032,16 @@
                         PauseSceneId: document.querySelector('#profilePauseSceneId').value,
                         StopSceneId: document.querySelector('#profileStopSceneId').value,
                         TurnOffLightsOnPlay: document.querySelector('#profileTurnOffLightsOnPlay').checked,
-                        PlayBrightness: Math.max(0, Math.min(100, parseInt(document.querySelector('#profilePlayBrightness').value) || 0)),
-                        PauseBrightness: Math.max(0, Math.min(100, parseInt(document.querySelector('#profilePauseBrightness').value) || 0)),
-                        PauseGracePeriodSeconds: document.querySelector('#profileEnablePauseGracePeriod').checked ? Math.max(1, parseInt(document.querySelector('#profilePauseGracePeriod').value) || 30) : 0,
-                        StopBrightness: Math.max(0, Math.min(100, parseInt(document.querySelector('#profileStopBrightness').value) || 0)),
+                        PlayBrightness: HuePluginConfig.editorNumber('#profilePlayBrightness', 0, 100),
+                        PauseBrightness: HuePluginConfig.editorNumber('#profilePauseBrightness', 0, 100),
+                        PauseGracePeriodSeconds: document.querySelector('#profileEnablePauseGracePeriod').checked ? HuePluginConfig.editorNumber('#profilePauseGracePeriod', 1, 600) : 0,
+                        StopBrightness: HuePluginConfig.editorNumber('#profileStopBrightness', 0, 100),
                         EnablePlayTransition: document.querySelector('#profileEnablePlayTransition').checked,
-                        PlayTransitionDuration: HuePluginConfig.parseNonNegativeInt('#profilePlayTransitionDuration'),
+                        PlayTransitionDuration: HuePluginConfig.editorNumber('#profilePlayTransitionDuration', 0, 150),
                         EnablePauseTransition: document.querySelector('#profileEnablePauseTransition').checked,
-                        PauseTransitionDuration: HuePluginConfig.parseNonNegativeInt('#profilePauseTransitionDuration'),
+                        PauseTransitionDuration: HuePluginConfig.editorNumber('#profilePauseTransitionDuration', 0, 150),
                         EnableStopTransition: document.querySelector('#profileEnableStopTransition').checked,
-                        StopTransitionDuration: HuePluginConfig.parseNonNegativeInt('#profileStopTransitionDuration'),
+                        StopTransitionDuration: HuePluginConfig.editorNumber('#profileStopTransitionDuration', 0, 150),
                         EnableOutroLights: document.querySelector('#profileEnableOutroLights').checked
                     };
                 },
@@ -2038,6 +2058,12 @@
                     // Validate at least one media type is enabled
                     if (!profile.EnableForMovies && !profile.EnableForTvShows) {
                         Dashboard.alert('At least one media type (Movies or TV Shows) must be enabled.');
+                        return;
+                    }
+
+                    var numberProblem = HuePluginConfig.validateEditorNumbers(null);
+                    if (numberProblem) {
+                        Dashboard.alert(numberProblem);
                         return;
                     }
 
@@ -2585,11 +2611,41 @@
                     return bridge;
                 },
 
-                // Number input parsed as a non-negative integer. A cleared field gives
-                // parseInt NaN, which JSON.stringify sends as null and the server rejects.
-                parseNonNegativeInt: function(selector) {
-                    var value = parseInt(document.querySelector(selector).value);
-                    return isNaN(value) ? 0 : Math.max(0, value);
+                // A number field as { value } clamped to min..max, or { blank: true } when empty or not a number
+                readNumberField: function(selector, min, max) {
+                    var value = parseInt(document.querySelector(selector).value, 10);
+                    if (isNaN(value)) return { blank: true };
+                    return { value: Math.max(min, Math.min(max, value)) };
+                },
+
+                // An editor number as saved: clamped, and a blank field read as min (validateEditorNumbers stops Save and Test first)
+                editorNumber: function(selector, min, max) {
+                    var field = HuePluginConfig.readNumberField(selector, min, max);
+                    return field.blank ? min : field.value;
+                },
+
+                // The first visible number field that is blank or not a number, as a message naming it; null when all
+                // are usable. action limits the check to one section ('Play', 'Pause', 'Stop'); null checks all.
+                validateEditorNumbers: function(action) {
+                    var fields = [
+                        { action: 'Play', input: '#profilePlayBrightness', container: '#playBrightnessContainer', name: 'Play brightness' },
+                        { action: 'Pause', input: '#profilePauseBrightness', container: '#pauseBrightnessContainer', name: 'Pause brightness' },
+                        { action: 'Stop', input: '#profileStopBrightness', container: '#stopBrightnessContainer', name: 'Stop brightness' },
+                        { action: 'Play', input: '#profilePlayTransitionDuration', container: '#playTransitionContainer', name: 'Play transition' },
+                        { action: 'Pause', input: '#profilePauseTransitionDuration', container: '#pauseTransitionContainer', name: 'Pause transition' },
+                        { action: 'Stop', input: '#profileStopTransitionDuration', container: '#stopTransitionContainer', name: 'Stop transition' },
+                        { action: 'Pause', input: '#profilePauseGracePeriod', container: '#pauseGracePeriodContainer', name: 'the pause grace period' }
+                    ];
+                    for (var i = 0; i < fields.length; i++) {
+                        var field = fields[i];
+                        if (action && field.action !== action) continue;
+                        // A hidden field is not in use: its scene is selected or its checkbox is off
+                        if (document.querySelector(field.container).style.display === 'none') continue;
+                        if (HuePluginConfig.readNumberField(field.input, 0, 0).blank) {
+                            return 'Enter a value for ' + field.name + '.';
+                        }
+                    }
+                    return null;
                 },
 
             };
@@ -2677,14 +2733,33 @@
                     });
                 }
 
-                // Close modals when clicking outside (on the overlay)
+                // Close a modal when a press both starts and ends on its backdrop. A click alone is not enough:
+                // selecting text or dragging a slider past the modal's edge ends as a click on the overlay.
                 document.querySelectorAll('.hue-modal-overlay').forEach(function(overlay) {
+                    overlay.addEventListener('pointerdown', function(e) {
+                        overlay.hueDownOnBackdrop = e.target === overlay;
+                    });
+                    overlay.addEventListener('pointerup', function(e) {
+                        overlay.hueUpOnBackdrop = e.target === overlay;
+                    });
                     overlay.addEventListener('click', function(e) {
-                        if (e.target === overlay) {
+                        if (e.target === overlay && overlay.hueDownOnBackdrop && overlay.hueUpOnBackdrop) {
                             HuePluginConfig.closeModal(overlay.id);
                         }
                     });
                 });
+
+                // Close profile menus when clicking outside them. Registered once per page load and replaced on
+                // the next, like the popstate listener, instead of once per render.
+                if (window.huePluginMenuCloser) {
+                    document.removeEventListener('click', window.huePluginMenuCloser);
+                }
+                window.huePluginMenuCloser = function(e) {
+                    if (!e.target.closest('.profile-menu')) {
+                        HuePluginConfig.closeProfileMenus();
+                    }
+                };
+                document.addEventListener('click', window.huePluginMenuCloser);
 
                 // Profile management event handlers
                 var addProfileButton = document.querySelector('#addProfileButton');
