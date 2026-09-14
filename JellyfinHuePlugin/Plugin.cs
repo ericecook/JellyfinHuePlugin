@@ -35,6 +35,14 @@ namespace JellyfinHuePlugin
             _catalog = catalog;
             _logger = logger;
 
+            // Both conversions below iterate the lists, and an older plugin page could store a null profile
+            var repaired = Configuration.RemoveInvalidEntries();
+            if (repaired > 0)
+            {
+                _logger.LogWarning("Repaired {Count} invalid entries in the stored configuration", repaired);
+                SaveConfiguration();
+            }
+
             // Migrate legacy single-bridge config to new Bridges list
             if (Configuration.MigrateLegacyConfig())
             {
@@ -85,6 +93,12 @@ namespace JellyfinHuePlugin
         public override void UpdateConfiguration(BasePluginConfiguration configuration)
         {
             var incoming = (PluginConfiguration)configuration;
+            var dropped = incoming.RemoveInvalidEntries();
+            if (dropped > 0)
+            {
+                _logger.LogWarning("Dropped {Count} invalid entries from a configuration save", dropped);
+            }
+
             var changes = BridgeChanges.Result.None;
             try
             {

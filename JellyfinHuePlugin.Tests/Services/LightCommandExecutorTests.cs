@@ -198,6 +198,26 @@ namespace JellyfinHuePlugin.Tests.Services
             _sent.Should().ContainSingle().Which.Brightness.Should().Be(sent);
         }
 
+        [Theory]
+        [InlineData(LightAction.Play, 151, 15000)]
+        [InlineData(LightAction.Pause, 99999, 15000)]
+        [InlineData(LightAction.Stop, int.MaxValue, 15000)]
+        [InlineData(LightAction.Play, -5, 0)]
+        public async Task TransitionDuration_IsClampedToFifteenSeconds(LightAction action, int storedDeciseconds, int sentMs)
+        {
+            var profile = MakeProfile();
+            profile.EnablePlayTransition = true;
+            profile.EnablePauseTransition = true;
+            profile.EnableStopTransition = true;
+            profile.PlayTransitionDuration = storedDeciseconds;
+            profile.PauseTransitionDuration = storedDeciseconds;
+            profile.StopTransitionDuration = storedDeciseconds;
+
+            (await Execute(action, profile)).Should().Be(LightCommandOutcome.Succeeded);
+
+            _sent.Should().ContainSingle().Which.DurationMs.Should().Be(sentMs);
+        }
+
         [Fact]
         public async Task BridgeUnconfigured_SendsNothing()
         {

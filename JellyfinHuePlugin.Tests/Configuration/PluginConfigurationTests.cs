@@ -531,5 +531,53 @@ namespace JellyfinHuePlugin.Tests.Configuration
 
             config.Bridges.Should().ContainSingle().Which.HardwareId.Should().Be("001788fffe123456");
         }
+
+        [Fact]
+        public void RemoveInvalidEntries_DropsNullBridgesProfilesAndDeviceIds()
+        {
+            var bridge = new HueBridge { Name = "Bridge" };
+            var profile = new LightControlProfile { Name = "p", TargetDeviceIds = new List<string> { "device-1", null! } };
+            var config = new PluginConfiguration
+            {
+                Bridges = new List<HueBridge> { null!, bridge },
+                Profiles = new List<LightControlProfile> { profile, null!, null! }
+            };
+
+            var repaired = config.RemoveInvalidEntries();
+
+            repaired.Should().Be(4);
+            config.Bridges.Should().ContainSingle().Which.Should().BeSameAs(bridge);
+            config.Profiles.Should().ContainSingle().Which.Should().BeSameAs(profile);
+            profile.TargetDeviceIds.Should().Equal("device-1");
+        }
+
+        [Fact]
+        public void RemoveInvalidEntries_ReplacesMissingListsWithEmptyOnes()
+        {
+            var profile = new LightControlProfile { Name = "p", TargetDeviceIds = null! };
+            var config = new PluginConfiguration { Bridges = null!, Profiles = new List<LightControlProfile> { profile } };
+
+            config.RemoveInvalidEntries().Should().Be(2);
+            config.Bridges.Should().NotBeNull().And.BeEmpty();
+            profile.TargetDeviceIds.Should().NotBeNull().And.BeEmpty();
+
+            var noProfiles = new PluginConfiguration { Profiles = null! };
+            noProfiles.RemoveInvalidEntries().Should().Be(1);
+            noProfiles.Profiles.Should().NotBeNull().And.BeEmpty();
+        }
+
+        [Fact]
+        public void RemoveInvalidEntries_CleanConfiguration_ReturnsZero()
+        {
+            var config = new PluginConfiguration
+            {
+                Bridges = new List<HueBridge> { new() { Name = "Bridge" } },
+                Profiles = new List<LightControlProfile> { new() { Name = "p" } }
+            };
+
+            config.RemoveInvalidEntries().Should().Be(0);
+            config.Bridges.Should().HaveCount(1);
+            config.Profiles.Should().HaveCount(1);
+        }
     }
 }

@@ -124,6 +124,44 @@ namespace JellyfinHuePlugin.Configuration
                 : Bridges.FirstOrDefault(b => b.Id == profile.BridgeId);
 
         /// <summary>
+        /// Drops entries no caller should store - a <c>null</c> bridge, profile or device id (the
+        /// plugin page before 4.0 saved a <c>null</c> profile when text was dropped on a profile
+        /// card) - and replaces missing lists with empty ones, so every consumer can iterate without
+        /// null checks. Returns how many entries were removed plus lists replaced; 0 means nothing
+        /// changed.
+        /// </summary>
+        public int RemoveInvalidEntries()
+        {
+            var repaired = 0;
+            if (Bridges == null)
+            {
+                Bridges = new List<HueBridge>();
+                repaired++;
+            }
+
+            if (Profiles == null)
+            {
+                Profiles = new List<LightControlProfile>();
+                repaired++;
+            }
+
+            repaired += Bridges.RemoveAll(b => b == null);
+            repaired += Profiles.RemoveAll(p => p == null);
+            foreach (var profile in Profiles)
+            {
+                if (profile.TargetDeviceIds == null)
+                {
+                    profile.TargetDeviceIds = new List<string>();
+                    repaired++;
+                }
+
+                repaired += profile.TargetDeviceIds.RemoveAll(id => id == null);
+            }
+
+            return repaired;
+        }
+
+        /// <summary>
         /// Converts every profile's brightness from the v1 0–254 scale to percent, once, and
         /// stamps the schema version. Returns true when something was written, including the
         /// first load of a fresh configuration.

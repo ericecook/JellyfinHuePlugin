@@ -187,6 +187,49 @@ namespace JellyfinHuePlugin.Tests
             log.Lines.Should().Contain(l => l.Contains("changed address or application key on the plugin page"));
         }
 
+        [Fact]
+        public void Constructor_RemovesNullEntriesFromTheStoredConfigurationAndSavesOnce()
+        {
+            var onDisk = Config(Bridge());
+            onDisk.Profiles = new List<LightControlProfile> { new() { Name = "kept" }, null! };
+
+            var plugin = Load(onDisk);
+
+            plugin.Configuration.Profiles.Should().ContainSingle().Which.Name.Should().Be("kept");
+            _written.Should().ContainSingle();
+        }
+
+        [Fact]
+        public void Constructor_NullProfileBeforeTheBrightnessConversion_ConvertsTheOthers()
+        {
+            var onDisk = new PluginConfiguration
+            {
+                SchemaVersion = 0,
+                Bridges = new List<HueBridge> { Bridge() },
+                Profiles = new List<LightControlProfile> { null!, new() { Name = "p", PlayBrightness = 254 } }
+            };
+
+            var plugin = Load(onDisk);
+
+            plugin.Configuration.Profiles.Should().ContainSingle().Which.PlayBrightness.Should().Be(100);
+            plugin.Configuration.SchemaVersion.Should().Be(PluginConfiguration.CurrentSchemaVersion);
+        }
+
+        [Fact]
+        public void UpdateConfiguration_DropsNullEntriesAndStillClearsAChangedBridgesPin()
+        {
+            var plugin = Load(Config(Bridge()));
+            var incoming = Config(null!, Bridge(key: "newkey"));
+            incoming.Profiles = new List<LightControlProfile> { null!, new() { Name = "p" } };
+
+            plugin.UpdateConfiguration(incoming);
+
+            _written.Should().ContainSingle().Which.Should().BeSameAs(incoming);
+            incoming.Bridges.Should().ContainSingle().Which.HardwareId.Should().BeEmpty("the key changed, so the pin is cleared");
+            incoming.Profiles.Should().ContainSingle().Which.Name.Should().Be("p");
+            _catalog.Verify(c => c.Invalidate(It.IsAny<HueBridge>()), Times.Once);
+        }
+
         private sealed class CapturingLogger : Microsoft.Extensions.Logging.ILogger<Plugin>
         {
             public List<string> Lines { get; } = new();

@@ -92,8 +92,11 @@ namespace JellyfinHuePlugin.Services
             }
         }
 
+        /// <summary>The plugin page's transition slider maximum (15 s); a larger stored value would overflow as milliseconds.</summary>
+        internal const int MaxTransitionDeciseconds = 150;
+
         /// <summary>Deciseconds in the configuration, milliseconds on the wire.</summary>
-        private static int? DurationMs(bool enabled, int deciseconds) => enabled ? deciseconds * 100 : null;
+        private static int? DurationMs(bool enabled, int deciseconds) => enabled ? Math.Clamp(deciseconds, 0, MaxTransitionDeciseconds) * 100 : null;
 
         /// <summary>The page clamps on save, but a profile can also arrive through the generic configuration save or the test endpoint.</summary>
         private static int Percent(int brightness) => Math.Clamp(brightness, 0, 100);
