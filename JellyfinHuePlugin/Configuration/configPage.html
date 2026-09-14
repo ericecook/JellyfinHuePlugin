@@ -1025,9 +1025,10 @@
                                 if (desc) desc.textContent = 'Enter a value';
                                 return;
                             }
-                            slider.value = value;
+                            var shown = Math.max(0, Math.min(100, value));
+                            slider.value = shown;
                             if (desc) {
-                                desc.textContent = HuePluginConfig.getBrightnessDescription(value) + ' (' + value + '%)';
+                                desc.textContent = HuePluginConfig.getBrightnessDescription(shown) + ' (' + shown + '%)';
                             }
                         });
                     }
@@ -1052,9 +1053,10 @@
                                 if (desc) desc.textContent = 'Enter a value';
                                 return;
                             }
-                            slider.value = value;
+                            var shown = Math.max(0, Math.min(150, value));
+                            slider.value = shown;
                             if (desc) {
-                                desc.textContent = HuePluginConfig.getTransitionDescription(value);
+                                desc.textContent = HuePluginConfig.getTransitionDescription(shown);
                             }
                         });
                     }
@@ -1297,7 +1299,7 @@
                         if (!refreshed) return null;
                         var bridge = stored();
                         if (!bridge) {
-                            HuePluginConfig.showError('Bridge not shown', 'The paired bridge is no longer in the stored configuration. Reload the page.');
+                            HuePluginConfig.showError('Bridge not shown', 'The paired bridge is not in the stored configuration, probably because another change was saved at the same moment. Pair it again.');
                             return null;
                         }
                         if (typedName === 'Bridge' || bridge.Name === typedName) return bridge;
@@ -1402,7 +1404,6 @@
                     el.style.display = 'block';
                 },
 
-                // Render bridge cards
                 // Bridge cards, then a check of every bridge that has a key. Results live in bridgeStatus by
                 // bridge Id; a result from an earlier render is ignored (see updateBridgeStatus).
                 renderBridges: function() {
@@ -1548,6 +1549,15 @@
                         var i = HuePluginConfig.indexOfId(draft.Bridges, bridgeId);
                         if (i < 0) {
                             HuePluginConfig.showError('Not saved', 'This bridge was already removed.');
+                            return false;
+                        }
+                        // Checked again on the lists being saved: a profile save that was still out may have moved a profile here
+                        var nowUsing = draft.Profiles.filter(function(p) {
+                            return p.BridgeId === bridgeId || (!p.BridgeId && draft.Bridges.length <= 2);
+                        });
+                        if (nowUsing.length > 0) {
+                            HuePluginConfig.showError('Not deleted', 'These profiles now use this bridge: ' +
+                                nowUsing.map(function(p) { return '"' + p.Name + '"'; }).join(', ') + '. Reassign or delete them first.');
                             return false;
                         }
                         draft.Bridges.splice(i, 1);
@@ -1734,7 +1744,7 @@
                     }
                     HuePluginConfig.adoptPairedBridge(result.Id, bridgeName).then(function(stored) {
                         if (!HuePluginConfig.isLiveAddBridgeSession(session)) {
-                            if (stored) Dashboard.alert('Pairing with ' + bridgeIp + ' completed; the bridge was added.');
+                            if (stored) Dashboard.alert('Pairing with ' + bridgeIp + ' completed; the bridge was saved.');
                             return;
                         }
                         HuePluginConfig.setAddBridgeBusy(false);
@@ -2502,6 +2512,8 @@
 
                     ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/groups' + query)).then(function (groups) {
                         if (!current()) return;
+                        // Keep what the select holds (the saved id, or what the user picked while loading)
+                        var chosenGroup = groupSelect.value;
                         groupSelect.innerHTML = '<option value="0">All Lights</option>';
 
                         // Keyed by grouped_light id (the value a profile stores); Type is room or zone.
@@ -2526,7 +2538,7 @@
                             groupSelect.appendChild(optgroup);
                         });
 
-                        HuePluginConfig.setSelectValuePreservingUnknown(groupSelect, saved.group);
+                        HuePluginConfig.setSelectValuePreservingUnknown(groupSelect, chosenGroup);
                     }).catch(function(error) {
                         if (!current()) return;
                         console.error('Error loading groups for profile:', error);
@@ -2539,6 +2551,7 @@
                         if (!current()) return;
                         Object.keys(sceneSelects).forEach(function(key) {
                             var select = sceneSelects[key];
+                            var chosen = select.value;
                             select.innerHTML = '<option value="">None (Use Brightness)</option>';
                             for (var id in scenes) {
                                 var option = document.createElement('option');
@@ -2546,8 +2559,8 @@
                                 option.text = scenes[id].Name + ' (Group: ' + scenes[id].GroupName + ')';
                                 select.appendChild(option);
                             }
-                            // An id this bridge does not offer is kept as a flagged option rather than falling back to "None"
-                            HuePluginConfig.setSelectValuePreservingUnknown(select, saved[key]);
+                            // Keep what the select holds (the saved id, or what the user picked while loading); an id this bridge does not offer stays as a flagged option
+                            HuePluginConfig.setSelectValuePreservingUnknown(select, chosen);
                         });
                         HuePluginConfig.updateStateVisibility();
                     }).catch(function(error) {
