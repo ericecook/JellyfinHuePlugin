@@ -48,7 +48,9 @@
                 border-bottom: 1px solid rgba(255,255,255,0.1);
             }
             .hue-modal-header h2 { margin: 0; }
-            #HuePluginConfigPage .emby-button[disabled] { opacity: 0.5; cursor: default; }
+            #HuePluginConfigPage .emby-button[disabled],
+            #addBridgeModal .emby-button[disabled],
+            #editBridgeModal .emby-button[disabled] { opacity: 0.5; cursor: default; }
             .hue-modal .hue-modal-body {
                 padding: 20px;
                 flex: 1 1 auto;
@@ -1125,8 +1127,7 @@
 
                     HuePluginConfig.resetEditorTests();
 
-                    // Show modal
-                    document.querySelector('#profileEditorModal').style.display = 'block';
+                    HuePluginConfig.openModal('profileEditorModal');
 
                     // Initialize tabs - show General tab first
                     setTimeout(function() {
@@ -1297,7 +1298,7 @@
                     document.querySelector('#editBridgeName').value = bridge.Name || '';
                     document.querySelector('#editBridgeIp').value = bridge.IpAddress || '';
                     document.querySelector('#editBridgeUsername').value = bridge.Username || '';
-                    document.querySelector('#editBridgeModal').style.display = 'block';
+                    HuePluginConfig.openModal('editBridgeModal');
                 },
 
                 saveEditBridge: function() {
@@ -1307,7 +1308,7 @@
                     bridge.Name = document.querySelector('#editBridgeName').value;
                     bridge.IpAddress = document.querySelector('#editBridgeIp').value;
                     bridge.Username = document.querySelector('#editBridgeUsername').value;
-                    document.querySelector('#editBridgeModal').style.display = 'none';
+                    HuePluginConfig.closeModal('editBridgeModal');
                     HuePluginConfig.renderBridges();
 
                     var hasAuthBridge = HuePluginConfig.bridges.some(function(b) {
@@ -1410,7 +1411,7 @@
                     document.querySelector('#newBridgeUsername').value = '';
                     document.querySelector('#addBridgeSelector').style.display = 'none';
                     document.querySelector('#addBridgeAuthProgress').style.display = 'none';
-                    document.querySelector('#addBridgeModal').style.display = 'block';
+                    HuePluginConfig.openModal('addBridgeModal');
                 },
 
                 // Discover bridges in add modal
@@ -1500,7 +1501,7 @@
                                 document.querySelector('#configSection').style.display = 'block';
                                 HuePluginConfig.saveConfiguration();
 
-                                document.querySelector('#addBridgeModal').style.display = 'none';
+                                HuePluginConfig.closeModal('addBridgeModal');
                                 Dashboard.alert('Bridge "' + savedBridge.Name + '" added and authenticated!');
                             } else if (attempt < maxAttempts) {
                                 var remaining = 3;
@@ -1572,7 +1573,7 @@
                             document.querySelector('#configSection').style.display = 'block';
                             HuePluginConfig.saveConfiguration();
 
-                            document.querySelector('#addBridgeModal').style.display = 'none';
+                            HuePluginConfig.closeModal('addBridgeModal');
                             Dashboard.alert('Bridge "' + savedBridge.Name + '" added!');
                         } else {
                             Dashboard.alert('Connection failed: ' + (result.Error || 'Unknown error'));
@@ -1742,8 +1743,7 @@
 
                     HuePluginConfig.resetEditorTests();
 
-                    // Show modal
-                    document.querySelector('#profileEditorModal').style.display = 'block';
+                    HuePluginConfig.openModal('profileEditorModal');
 
                     // Initialize tabs - show General tab first
                     setTimeout(function() {
@@ -1823,7 +1823,35 @@
                 },
 
                 closeProfileEditor: function() {
-                    document.querySelector('#profileEditorModal').style.display = 'none';
+                    HuePluginConfig.closeModal('profileEditorModal');
+                },
+
+                // An open modal owns one history entry (same URL), the way Jellyfin's own dialogs do,
+                // so Back closes the modal instead of navigating away underneath it. The entry keeps the
+                // router's state so its index stays intact. closeModal's history.back() lands
+                // asynchronously, so don't open a modal in the same task that closed one.
+                openModal: function(id) {
+                    document.querySelector('#' + id).style.display = 'block';
+                    if (!(history.state && history.state.huePluginModal === id)) {
+                        history.pushState(Object.assign({}, history.state, { huePluginModal: id }), '', location.href);
+                    }
+                },
+
+                closeModal: function(id) {
+                    document.querySelector('#' + id).style.display = 'none';
+                    if (history.state && history.state.huePluginModal === id) {
+                        history.back();
+                    }
+                },
+
+                // Hides every open modal the current history entry no longer belongs to
+                onModalPopState: function() {
+                    var current = history.state && history.state.huePluginModal;
+                    document.querySelectorAll('body > .hue-modal-overlay').forEach(function(overlay) {
+                        if (overlay.id !== current && overlay.style.display === 'block') {
+                            overlay.style.display = 'none';
+                        }
+                    });
                 },
 
                 escapeHtml: function(value) {
@@ -2256,7 +2284,35 @@
             // Initialize event listeners when page is ready
             function initializeEventListeners() {
                 console.log('Initializing event listeners...');
-                
+
+                // Move modals to document.body so position:fixed works
+                // (Jellyfin's page container creates a stacking context that traps fixed elements).
+                // A copy left there by an earlier load of this page (Jellyfin evicted the cached view)
+                // is removed first, or its duplicate ids would shadow this load's elements.
+                var page = document.querySelector('#HuePluginConfigPage');
+                page.querySelectorAll('.hue-modal-overlay').forEach(function(overlay) {
+                    document.querySelectorAll('body > #' + overlay.id).forEach(function(stale) {
+                        stale.remove();
+                    });
+                    document.body.appendChild(overlay);
+                });
+
+                // The script re-runs on every load of this page, so replace rather than stack the listener
+                if (window.huePluginModalPopState) {
+                    window.removeEventListener('popstate', window.huePluginModalPopState);
+                }
+                window.huePluginModalPopState = function() {
+                    HuePluginConfig.onModalPopState();
+                };
+                window.addEventListener('popstate', window.huePluginModalPopState);
+
+                // Leaving the page by any other route (drawer link, session expiry) must not strand a modal over the next view
+                page.addEventListener('viewbeforehide', function() {
+                    document.querySelectorAll('body > .hue-modal-overlay').forEach(function(overlay) {
+                        overlay.style.display = 'none';
+                    });
+                });
+
                 var form = document.querySelector('#HuePluginConfigForm');
                 if (form) {
                     form.addEventListener('submit', function (e) {
@@ -2293,7 +2349,7 @@
                 var cancelAddBridge = document.querySelector('#cancelAddBridge');
                 if (cancelAddBridge) {
                     cancelAddBridge.addEventListener('click', function () {
-                        document.querySelector('#addBridgeModal').style.display = 'none';
+                        HuePluginConfig.closeModal('addBridgeModal');
                     });
                 }
 
@@ -2314,7 +2370,7 @@
                 var cancelEditBridge = document.querySelector('#cancelEditBridge');
                 if (cancelEditBridge) {
                     cancelEditBridge.addEventListener('click', function () {
-                        document.querySelector('#editBridgeModal').style.display = 'none';
+                        HuePluginConfig.closeModal('editBridgeModal');
                     });
                 }
 
@@ -2322,7 +2378,7 @@
                 document.querySelectorAll('.hue-modal-overlay').forEach(function(overlay) {
                     overlay.addEventListener('click', function(e) {
                         if (e.target === overlay) {
-                            overlay.style.display = 'none';
+                            HuePluginConfig.closeModal(overlay.id);
                         }
                     });
                 });
@@ -2417,13 +2473,6 @@
                         templateMenu.style.display = 'none';
                     }
                 });
-
-                // Move modal to document.body so position:fixed works
-                // (Jellyfin's page container creates a stacking context that traps fixed elements)
-                var profileEditorModal = document.querySelector('#profileEditorModal');
-                if (profileEditorModal) {
-                    document.body.appendChild(profileEditorModal);
-                }
 
                 // Setup brightness sliders
                 HuePluginConfig.setupBrightnessSlider('profilePlayBrightnessSlider', 'profilePlayBrightness', 'profilePlayBrightnessDesc');
