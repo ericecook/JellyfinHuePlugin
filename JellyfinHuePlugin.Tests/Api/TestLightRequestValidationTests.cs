@@ -59,5 +59,14 @@ namespace JellyfinHuePlugin.Tests.Api
         {
             IsValid(new TestLightRequest { Action = LightAction.Play }).Should().BeFalse();
         }
+
+        [Fact]
+        public void AProfileWithANullStringIsInvalid()
+        {
+            // The implicit [Required] is really applied: it allows "" but not null.
+            var profile = new LightControlProfile { PlaySceneId = null! };
+
+            IsValid(new TestLightRequest { Action = LightAction.Play, Profile = profile }).Should().BeFalse();
+        }
     }
 }

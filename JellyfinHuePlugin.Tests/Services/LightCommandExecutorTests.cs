@@ -306,4 +306,3 @@ namespace JellyfinHuePlugin.Tests.Services
         }
     }
 }
-
