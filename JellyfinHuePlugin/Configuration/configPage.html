@@ -17,6 +17,7 @@
                 /* Above the dashboard's app bar (1100) and drawer (1200), below Jellyfin's own dialogs and toasts */
                 z-index: 1300;
                 overflow-y: auto;
+                overscroll-behavior: contain;
             }
             /* Capped to the viewport so the header, tabs and footer stay on screen and only the body scrolls */
             .hue-modal {
@@ -34,28 +35,32 @@
             .hue-modal > * {
                 flex-shrink: 0;
             }
-            @media (max-width: 600px), (max-height: 500px) {
-                .hue-modal {
-                    margin: 0 auto;
-                    height: 100vh;
-                    height: 100dvh;
-                    max-height: none;
-                    border-radius: 0;
-                }
-            }
             .hue-modal-header {
                 padding: 20px;
                 border-bottom: 1px solid rgba(255,255,255,0.1);
             }
             .hue-modal-header h2 { margin: 0; }
             #HuePluginConfigPage .emby-button[disabled],
-            #addBridgeModal .emby-button[disabled],
-            #editBridgeModal .emby-button[disabled] { opacity: 0.5; cursor: default; }
+            .hue-modal-overlay .emby-button[disabled] { opacity: 0.5; cursor: default; }
             .hue-modal .hue-modal-body {
                 padding: 20px;
                 flex: 1 1 auto;
                 min-height: 0;
                 overflow-y: auto;
+                overscroll-behavior: contain;
+            }
+            /* Small screens get a full-screen sheet that scrolls as one page, footer at the end */
+            @media (max-width: 600px), (max-height: 500px) {
+                .hue-modal {
+                    margin: 0 auto;
+                    min-height: 100%;
+                    max-height: none;
+                    border-radius: 0;
+                }
+                .hue-modal .hue-modal-body {
+                    flex: 1 0 auto;
+                    overflow-y: visible;
+                }
             }
             /* The inline select layout shrinks the select; keep it the size of the modal's other fields */
             #profileKnownDeviceSelect {
@@ -962,6 +967,14 @@
                     if (selectedTab) {
                         selectedTab.classList.add('active');
                     }
+
+                    // A new tab starts at its top: the body scrolls on large screens, the whole sheet on small ones
+                    var overlay = document.querySelector('#profileEditorModal');
+                    var tabBar = overlay.querySelector('.hue-tab-bar');
+                    overlay.querySelector('.hue-modal-body').scrollTop = 0;
+                    if (overlay.scrollTop > tabBar.offsetTop) {
+                        overlay.scrollTop = tabBar.offsetTop;
+                    }
                 },
 
                 // Sync brightness slider with input
@@ -1833,7 +1846,10 @@
                 // router's state so its index stays intact. closeModal's history.back() lands
                 // asynchronously, so don't open a modal in the same task that closed one.
                 openModal: function(id) {
-                    document.querySelector('#' + id).style.display = 'block';
+                    var overlay = document.querySelector('#' + id);
+                    overlay.style.display = 'block';
+                    overlay.scrollTop = 0;
+                    overlay.querySelector('.hue-modal-body').scrollTop = 0;
                     if (!(history.state && history.state.huePluginModal === id)) {
                         history.pushState(Object.assign({}, history.state, { huePluginModal: id }), '', location.href);
                     }
