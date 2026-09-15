@@ -64,7 +64,7 @@ You can also click "Authenticate" first and then press the bridge button — the
 - **Waiting too long**: The 30-second auth window expires — press the button and authenticate promptly
 - **Bridge unreachable**: Make sure the Jellyfin server can reach the bridge IP over HTTPS (port 443)
 - **Bridge too old**: the log says `Bridge {Host} is not a supported v2 bridge (software {Version})`. Update the bridge in the Hue app; software 1948086000 or newer is required. The round v1 bridge cannot be updated and is not supported
-- **Certificate rejected**: see the next section
+- **Certificate rejected**: see **Bridge Certificate Rejected** below
 
 ### Bridge Was Reset or Its Key Stopped Working
 
