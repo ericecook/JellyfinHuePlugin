@@ -21,9 +21,6 @@ namespace JellyfinHuePlugin.Tests.Api
             { typeof(HueBridgeDiscovery), new[] { "Id", "InternalIpAddress" } },                                   // discover
             { typeof(AuthenticationResult), new[] { "Success", "Username", "Id", "HardwareId", "Error" } },        // authenticate
             { typeof(VerifyConnectionResult), new[] { "Success", "Error", "HardwareId", "ModelId", "SoftwareVersion" } }, // verifyconnection
-            { typeof(MigrationReport), new[] { "Changed", "Bridges", "Profiles" } },                                // migrate
-            { typeof(ProfileMigration), new[] { "Rewritten", "Unresolved" } },
-            { typeof(BridgeMigration), new[] { "Status", "Name" } },
             { typeof(HueGroupResource), new[] { "Name", "Type" } },                                                 // groups (dictionary values)
             { typeof(HueSceneResource), new[] { "Name", "GroupName" } },                                            // scenes (dictionary values)
             { typeof(BridgeInfo), new[] { "Id", "Name", "IpAddress", "IsAuthenticated" } },                         // bridges
@@ -89,13 +86,6 @@ namespace JellyfinHuePlugin.Tests.Api
             request.Action.Should().Be(LightAction.Pause);
             request.Profile!.Name.Should().Be("x");
             request.Profile.PlaySceneId.Should().BeEmpty();
-        }
-
-        [Fact]
-        public void MigrationStatusValuesThePageComparesAgainstExist()
-        {
-            MigrationStatus.Unreachable.Should().Be("unreachable");
-            MigrationStatus.Ok.Should().Be("ok");
         }
     }
 }

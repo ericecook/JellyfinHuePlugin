@@ -346,7 +346,6 @@
 
                     <div id="configSection" class="hue-section-card" style="display:none;">
                         <h2>Light Control Profiles</h2>
-                        <div id="migrationNotice" class="fieldDescription" style="display:none; margin: 0 0 15px; padding: 8px 12px; border-left: 4px solid #4caf50;"></div>
 
                         <div class="fieldDescription" style="margin-bottom: 20px;">
                             Create multiple profiles to control different lights for different playback clients. 
@@ -1337,8 +1336,6 @@
                     });
                 },
 
-                migrationReport: null,
-
                 loadConfiguration: function () {
                     HuePluginConfig.loaded = false;
                     document.querySelector('#addBridgeButton').disabled = true;
@@ -1346,25 +1343,11 @@
                     HuePluginConfig.updateConfigSectionVisibility();
                     Dashboard.showLoadingMsg();
 
-                    // Rewrite stored v1 ids and learn bridge ids *before* reading the configuration,
-                    // so a later save from this page can never write stale ids back over the rewrite.
-                    // A failed migrate call is not fatal: the page then shows the configuration as stored.
-                    ApiClient.ajax({
-                        type: 'POST',
-                        url: ApiClient.getUrl('api/hueplugin/migrate'),
-                        dataType: 'json'
-                    }).catch(function (error) {
-                        console.warn('Migration call failed; loading configuration as stored', error);
-                        return null;
-                    }).then(function (report) {
-                        HuePluginConfig.migrationReport = report;
-                        return ApiClient.getPluginConfiguration(HuePluginConfig.pluginId);
-                    }).then(function (config) {
+                    ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function (config) {
                         HuePluginConfig.bridges = config.Bridges || [];
                         HuePluginConfig.profiles = config.Profiles || [];
                         HuePluginConfig.renderBridges();
                         HuePluginConfig.renderProfiles();
-                        HuePluginConfig.renderMigrationNotice();
                         HuePluginConfig.loaded = true;
                         HuePluginConfig.updateConfigSectionVisibility();
                         document.querySelector('#addBridgeButton').disabled = false;
@@ -1375,33 +1358,6 @@
                         Dashboard.hideLoadingMsg();
                         HuePluginConfig.renderLoadFailure(error);
                     });
-                },
-
-                // One line per thing the migrate call did or could not do. Hidden when it did nothing.
-                renderMigrationNotice: function () {
-                    var el = document.querySelector('#migrationNotice');
-                    if (!el) return;
-                    var report = HuePluginConfig.migrationReport;
-                    if (!report) { el.style.display = 'none'; return; }
-
-                    var rewritten = 0, unresolved = 0;
-                    (report.Profiles || []).forEach(function (p) {
-                        rewritten += (p.Rewritten || []).length;
-                        unresolved += (p.Unresolved || []).length;
-                    });
-                    var unreachable = (report.Bridges || []).filter(function (b) { return b.Status === 'unreachable'; });
-
-                    var lines = [];
-                    if (rewritten > 0) lines.push('Updated ' + rewritten + ' profile target(s) to Hue API v2 ids.');
-                    if (unresolved > 0) lines.push(unresolved + ' profile target(s) were not found on their bridge. Open the profile and re-select them.');
-                    unreachable.forEach(function (b) {
-                        lines.push('Bridge ' + HuePluginConfig.escapeHtml(b.Name || 'Bridge') + ' could not be reached; its profiles were not checked.');
-                    });
-
-                    if (lines.length === 0) { el.style.display = 'none'; return; }
-                    el.style.borderLeftColor = (unresolved > 0 || unreachable.length > 0) ? '#ff9800' : '#4caf50';
-                    el.innerHTML = lines.map(function (l) { return '<div>' + l + '</div>'; }).join('');
-                    el.style.display = 'block';
                 },
 
                 // Bridge cards, then a check of every bridge that has a key. Results live in bridgeStatus by

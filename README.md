@@ -109,7 +109,6 @@ All endpoints require an authenticated Jellyfin **administrator** account (the s
 | `/api/hueplugin/test` | POST | Run a profile's Play, Pause or Stop action (body: `Action`, `Profile`) |
 | `/api/hueplugin/testconnection` | POST | Test bridge connectivity |
 | `/api/hueplugin/verifyconnection` | POST | Check a stored bridge key and report the bridge's id, model and software |
-| `/api/hueplugin/migrate` | POST | Rewrite stored v1 ids to v2 ids and learn bridge ids (the plugin page calls it on load) |
 
 ## Architecture
 
@@ -119,7 +118,6 @@ PluginServiceRegistrator.cs               Composition root (Jellyfin DI + hosted
 ├── Services/HueService.cs                CLIP v2 client with certificate pinning
 ├── Services/HueResourceCatalog.cs        Rooms, zones and scenes per bridge; resolves v1 ids
 ├── Services/MdnsBridgeDiscovery.cs       Local discovery (_hue._tcp)
-├── Services/ConfigurationMigrator.cs     One-time rewrite of stored v1 ids (4.0 only)
 ├── Managers/PlaybackSessionManager.cs    Hosted service: playback events and light orchestration
 ├── Configuration/PluginConfiguration.cs  Settings models
 ├── Configuration/configPage.html         Web configuration UI

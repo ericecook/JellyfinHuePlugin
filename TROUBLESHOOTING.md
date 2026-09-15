@@ -106,18 +106,21 @@ No Hue bridge answered mDNS; trying cloud discovery
 
 ---
 
-## Profile Shows "Unresolved" After Upgrading
+## Profile Shows "Unresolved"
 
-Version 4 stores Hue API v2 ids. On each visit the plugin page rewrites older ids; a
-profile target that no longer exists on the bridge is kept as
-`Unresolved (…) — re-select` in the profile editor and the page shows how many. The log says:
+The profile editor lists the rooms, zones and scenes the bridge has now. A profile target the
+bridge does not have — deleted in the Hue app, or an id stored by a version before 4.0 that was
+never converted — is kept as `Unresolved (…) — re-select`. Open the profile and pick the room,
+zone or scene again.
+
+For an id from before 4.0, playback and Test log:
 
 ```
 Profile target {Field} '{Value}' not found on bridge {BridgeName}; re-select it on the plugin page
 ```
 
-Open the profile and pick the room, zone or scene again. If the bridge was offline during
-the page load, the banner says so and the rewrite runs again next time.
+A room or scene deleted in the Hue app shows up as a `Bridge error for ...` warning instead (see
+below). Settings from 3.x are converted only by 4.0.0.0; see **Upgrading from 3.x** in the README.
 
 ---
 

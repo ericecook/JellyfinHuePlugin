@@ -30,7 +30,6 @@ namespace JellyfinHuePlugin
                 sp.GetRequiredService<ILogger<HueService>>(),
                 sp.GetRequiredService<MdnsBridgeDiscovery>()));
             serviceCollection.AddSingleton<HueResourceCatalog>();
-            serviceCollection.AddSingleton<ConfigurationMigrator>();
             serviceCollection.AddSingleton<LightCommandExecutor>();
             serviceCollection.AddSingleton<HueConfigurationStore>();
             serviceCollection.AddSingleton<IHueConfiguration>(sp => sp.GetRequiredService<HueConfigurationStore>());

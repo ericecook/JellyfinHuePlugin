@@ -25,7 +25,6 @@ namespace JellyfinHuePlugin.Api
         private readonly ILogger<HueController> _logger;
         private readonly HueService _hueService;
         private readonly HueResourceCatalog _catalog;
-        private readonly ConfigurationMigrator _migrator;
         private readonly IHueConfiguration _configuration;
         private readonly LightCommandExecutor _executor;
 
@@ -33,14 +32,12 @@ namespace JellyfinHuePlugin.Api
             ILogger<HueController> logger,
             HueService hueService,
             HueResourceCatalog catalog,
-            ConfigurationMigrator migrator,
             IHueConfiguration configuration,
             LightCommandExecutor executor)
         {
             _logger = logger;
             _hueService = hueService;
             _catalog = catalog;
-            _migrator = migrator;
             _configuration = configuration;
             _executor = executor;
         }
@@ -129,32 +126,6 @@ namespace JellyfinHuePlugin.Api
             _logger.LogInformation("Deleted bridge {BridgeName} ({BridgeId})", bridge.Name, bridgeId);
 
             return Ok();
-        }
-
-        /// <summary>
-        /// Rewrites stored v1 group and scene ids to v2 ids, learns missing bridge ids and refreshes
-        /// the resource cache. The page calls it before reading the configuration, so nothing it
-        /// later saves can carry a stale id.
-        /// </summary>
-        [HttpPost("migrate")]
-        public async Task<ActionResult<MigrationReport>> Migrate(CancellationToken cancellationToken)
-        {
-            var config = _configuration.Current;
-
-            var report = await _migrator.MigrateAsync(config, cancellationToken);
-            if (report.Changed)
-            {
-                _configuration.Save();
-            }
-
-            var rewritten = report.Profiles.Sum(p => p.Rewritten.Count);
-            var unresolved = report.Profiles.Sum(p => p.Unresolved.Count);
-            if (rewritten > 0 || unresolved > 0)
-            {
-                _logger.LogInformation("Migration rewrote {Rewritten} profile target(s); {Unresolved} unresolved", rewritten, unresolved);
-            }
-
-            return Ok(report);
         }
 
         [HttpPost("authenticate")]

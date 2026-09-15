@@ -37,7 +37,6 @@ namespace JellyfinHuePlugin.Tests.Api
 
         private readonly Mock<HueService> _hue;
         private readonly Mock<HueResourceCatalog> _catalog;
-        private readonly Mock<ConfigurationMigrator> _migrator;
         private readonly Mock<LightCommandExecutor> _executor;
         private readonly CapturingLogger _log = new();
         private readonly PluginConfiguration _config;
@@ -51,11 +50,10 @@ namespace JellyfinHuePlugin.Tests.Api
         {
             _hue = new Mock<HueService>(new NullLogger<HueService>(), new MdnsBridgeDiscovery(NullLogger<MdnsBridgeDiscovery>.Instance)) { CallBase = false };
             _catalog = new Mock<HueResourceCatalog>(_hue.Object, NullLogger<HueResourceCatalog>.Instance) { CallBase = false };
-            _migrator = new Mock<ConfigurationMigrator>(_hue.Object, _catalog.Object, NullLogger<ConfigurationMigrator>.Instance) { CallBase = false };
             _executor = new Mock<LightCommandExecutor>(_hue.Object, _catalog.Object, NullLogger<LightCommandExecutor>.Instance) { CallBase = false };
             _config = new PluginConfiguration { EnablePlugin = true, Bridges = new List<HueBridge> { Bridge() } };
             _store = new FakeHueConfiguration(_config);
-            _controller = new HueController(_log, _hue.Object, _catalog.Object, _migrator.Object, _store, _executor.Object);
+            _controller = new HueController(_log, _hue.Object, _catalog.Object, _store, _executor.Object);
         }
 
         private static T Value<T>(ActionResult<T> result) => ((OkObjectResult)result.Result!).Value.Should().BeOfType<T>().Subject;
@@ -106,20 +104,6 @@ namespace JellyfinHuePlugin.Tests.Api
 
             _config.Bridges.Should().BeEmpty();
             _catalog.Verify(c => c.Invalidate(bridge), Times.Once);
-            _store.SaveCount.Should().Be(1);
-        }
-
-        [Fact]
-        public async Task Migrate_SavesOnlyWhenChanged()
-        {
-            var report = new MigrationReport { Changed = false };
-            _migrator.Setup(m => m.MigrateAsync(_config, It.IsAny<CancellationToken>())).ReturnsAsync(report);
-
-            Value(await _controller.Migrate(CancellationToken.None)).Should().BeSameAs(report);
-            _store.SaveCount.Should().Be(0);
-
-            report.Changed = true;
-            await _controller.Migrate(CancellationToken.None);
             _store.SaveCount.Should().Be(1);
         }
 
