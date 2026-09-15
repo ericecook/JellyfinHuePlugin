@@ -2398,11 +2398,11 @@
                 },
 
                 // Select savedValue, keeping it even when the bridge offers no such option.
-                // A legacy v1 id (or a resource that has since been renamed away) matches nothing,
+                // A room or scene deleted on the bridge (or an id stored before 4.0) matches nothing,
                 // and the browser then reports the select as empty - which the next save would
                 // write back, silently retargeting the profile at All Lights or no scene. Carry
                 // the stored value in an option of its own, flagged so it is obvious it needs
-                // attention; resolving legacy ids is a separate job.
+                // attention.
                 setSelectValuePreservingUnknown: function(select, savedValue, label) {
                     if (!savedValue) return;
 

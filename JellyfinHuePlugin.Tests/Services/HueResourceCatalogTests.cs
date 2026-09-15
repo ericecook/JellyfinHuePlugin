@@ -34,15 +34,20 @@ namespace JellyfinHuePlugin.Tests.Services
 
         private static readonly IReadOnlyList<HueGroupResource> Groups = new[]
         {
-            new HueGroupResource("room-1", "gl-1", "Theater", "room", "/groups/1"),
-            new HueGroupResource("zone-5", "gl-5", "Downstairs", "zone", "/groups/5"),
-            new HueGroupResource("home-1", "gl-0", "All Lights", "bridge_home", "/groups/0")
+            new HueGroupResource("room-1", "gl-1", "Theater", "room"),
+            new HueGroupResource("zone-5", "gl-5", "Downstairs", "zone"),
+            new HueGroupResource("home-1", "gl-0", "All Lights", "bridge_home")
+        };
+
+        private static readonly IReadOnlyList<HueGroupResource> GroupsWithoutHome = new[]
+        {
+            new HueGroupResource("room-1", "gl-1", "Theater", "room")
         };
 
         private static readonly IReadOnlyList<HueSceneResource> Scenes = new[]
         {
-            new HueSceneResource("sc-1", "Movie", "room-1", "/scenes/abc123"),
-            new HueSceneResource("sc-2", "Bright", "zone-5", null)
+            new HueSceneResource("sc-1", "Movie", "room-1"),
+            new HueSceneResource("sc-2", "Bright", "zone-5")
         };
 
         public HueResourceCatalogTests()
@@ -75,22 +80,29 @@ namespace JellyfinHuePlugin.Tests.Services
             id.Should().Be("gl-0");
         }
 
-        [Theory]
-        [InlineData("1", "gl-1")]
-        [InlineData("5", "gl-5")]
-        public async Task ResolveGroupedLight_V1Number_MapsThroughIdV1(string target, string expected)
+        [Fact]
+        public async Task ResolveGroupedLight_NotAUuidOrZero_ReturnsNullWithReselectAdviceWithoutFetching()
         {
-            var id = await _catalog.ResolveGroupedLightAsync(_bridge, target, CancellationToken.None);
+            // A group number stored before 4.0 is no longer looked up through id_v1.
+            var id = await _catalog.ResolveGroupedLightAsync(_bridge, "9", CancellationToken.None);
 
-            id.Should().Be(expected);
+            id.Should().BeNull();
+            _log.Lines.Should().ContainSingle()
+                .Which.Should().Be("Profile target group '9' not found on bridge Test Bridge; re-select it on the plugin page");
+            VerifyGroupFetches(Times.Never());
         }
 
         [Fact]
-        public async Task ResolveScene_V1Id_MapsThroughIdV1()
+        public async Task ResolveGroupedLight_ZeroWithoutBridgeHome_ReturnsNullAfterOneFetch()
         {
-            var id = await _catalog.ResolveSceneAsync(_bridge, "abc123", CancellationToken.None);
+            _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(GroupsWithoutHome);
 
-            id.Should().Be("sc-1");
+            var id = await _catalog.ResolveGroupedLightAsync(_bridge, "0", CancellationToken.None);
+
+            id.Should().BeNull();
+            _log.Lines.Should().ContainSingle()
+                .Which.Should().Be("Profile target group '0' not found on bridge Test Bridge; re-select it on the plugin page");
+            VerifyGroupFetches(Times.Once()); // a miss no longer triggers a second, refreshing fetch
         }
 
         [Fact]
@@ -103,12 +115,16 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
-        public async Task Resolve_Miss_RefreshesOnceThenReturnsNull()
+        public async Task ResolveScene_NotAUuid_ReturnsNullWithReselectAdviceWithoutFetching()
         {
-            var id = await _catalog.ResolveGroupedLightAsync(_bridge, "9", CancellationToken.None);
+            // A scene id stored before 4.0 is no longer looked up through id_v1.
+            var id = await _catalog.ResolveSceneAsync(_bridge, "abc123", CancellationToken.None);
 
             id.Should().BeNull();
-            VerifyGroupFetches(Times.Exactly(2));
+            _log.Lines.Should().ContainSingle()
+                .Which.Should().Be("Profile target scene 'abc123' not found on bridge Test Bridge; re-select it on the plugin page");
+            VerifyGroupFetches(Times.Never());
+            _hue.Verify(h => h.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>()), Times.Never());
         }
 
         [Fact]
@@ -116,19 +132,9 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlyList<HueGroupResource>?)null);
 
-            var id = await _catalog.ResolveGroupedLightAsync(_bridge, "1", CancellationToken.None);
+            var id = await _catalog.ResolveGroupedLightAsync(_bridge, "0", CancellationToken.None);
 
             id.Should().BeNull();
-        }
-
-        [Fact]
-        public async Task Resolve_TargetMissingFromAReachableBridge_KeepsTheReselectAdvice()
-        {
-            var id = await _catalog.ResolveGroupedLightAsync(_bridge, "9", CancellationToken.None);
-
-            id.Should().BeNull();
-            _log.Lines.Should().ContainSingle()
-                .Which.Should().Be("Profile target group '9' not found on bridge Test Bridge; re-select it on the plugin page");
         }
 
         [Fact]
@@ -136,7 +142,7 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlyList<HueGroupResource>?)null);
 
-            var id = await _catalog.ResolveGroupedLightAsync(_bridge, "1", CancellationToken.None);
+            var id = await _catalog.ResolveGroupedLightAsync(_bridge, "0", CancellationToken.None);
 
             id.Should().BeNull();
             var line = _log.Lines.Should().ContainSingle().Subject;
@@ -145,53 +151,12 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
-        public async Task ResolveGroupedLight_DuplicateIdV1_WarnsAndStillResolvesToTheFirstMatch()
+        public async Task ResolveGroupedLight_WhenTheSceneFetchFails_SaysTheBridgeIsUnreachable()
         {
-            // A factory reset can make the bridge hand back two rooms with the same v1 group
-            // number. Resolution must still pick the first one; only the warning is new.
-            var duplicateGroups = new[]
-            {
-                new HueGroupResource("room-a", "gl-a", "Theater", "room", "/groups/7"),
-                new HueGroupResource("room-b", "gl-b", "Theater (post-reset)", "room", "/groups/7")
-            };
-            _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(duplicateGroups);
-
-            var id = await _catalog.ResolveGroupedLightAsync(_bridge, "7", CancellationToken.None);
-
-            id.Should().Be("gl-a", "the first match must keep winning; only visibility into the ambiguity changes");
-            _log.Entries.Should().ContainSingle(e =>
-                e.Level == LogLevel.Warning &&
-                e.Message.Contains("Test Bridge") &&
-                e.Message.Contains("room-a") &&
-                e.Message.Contains("room-b"));
-        }
-
-        [Fact]
-        public async Task ResolveScene_DuplicateIdV1_WarnsAndStillResolvesToTheFirstMatch()
-        {
-            var duplicateScenes = new[]
-            {
-                new HueSceneResource("scene-a", "Movie", "room-1", "/scenes/dup"),
-                new HueSceneResource("scene-b", "Movie (post-reset)", "room-1", "/scenes/dup")
-            };
-            _hue.Setup(h => h.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(duplicateScenes);
-
-            var id = await _catalog.ResolveSceneAsync(_bridge, "dup", CancellationToken.None);
-
-            id.Should().Be("scene-a", "the first match must keep winning; only visibility into the ambiguity changes");
-            _log.Entries.Should().ContainSingle(e =>
-                e.Level == LogLevel.Warning &&
-                e.Message.Contains("Test Bridge") &&
-                e.Message.Contains("scene-a") &&
-                e.Message.Contains("scene-b"));
-        }
-
-        [Fact]
-        public async Task ResolveScene_WhenTheSceneFetchFails_SaysTheBridgeIsUnreachable()
-        {
+            // Groups and scenes load together, so a failed scene fetch leaves no bridge home either.
             _hue.Setup(h => h.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlyList<HueSceneResource>?)null);
 
-            var id = await _catalog.ResolveSceneAsync(_bridge, "abc123", CancellationToken.None);
+            var id = await _catalog.ResolveGroupedLightAsync(_bridge, "0", CancellationToken.None);
 
             id.Should().BeNull();
             var line = _log.Lines.Should().ContainSingle().Subject;
@@ -202,8 +167,8 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task SecondResolve_UsesTheCache()
         {
-            await _catalog.ResolveGroupedLightAsync(_bridge, "1", CancellationToken.None);
-            await _catalog.ResolveSceneAsync(_bridge, "abc123", CancellationToken.None);
+            await _catalog.ResolveGroupedLightAsync(_bridge, "0", CancellationToken.None);
+            await _catalog.ResolveGroupedLightAsync(_bridge, "", CancellationToken.None);
 
             VerifyGroupFetches(Times.Once());
         }
@@ -214,56 +179,36 @@ namespace JellyfinHuePlugin.Tests.Services
             var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
             _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).Returns(gate.Task);
 
-            var first = _catalog.ResolveGroupedLightAsync(_bridge, "1", CancellationToken.None);
-            var second = _catalog.ResolveGroupedLightAsync(_bridge, "5", CancellationToken.None);
+            var first = _catalog.ResolveGroupedLightAsync(_bridge, "0", CancellationToken.None);
+            var second = _catalog.ResolveGroupedLightAsync(_bridge, "", CancellationToken.None);
             gate.SetResult(Groups);
             var ids = await Task.WhenAll(first, second);
 
-            ids.Should().Equal("gl-1", "gl-5");
+            ids.Should().Equal("gl-0", "gl-0");
             VerifyGroupFetches(Times.Once());
-        }
-
-        [Fact]
-        public async Task ConcurrentResolves_OnAMiss_RefreshOnlyOnce()
-        {
-            // Seed the cache so both resolves start from a populated snapshot that misses for
-            // both target ids, forcing each into the refresh path.
-            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
-
-            var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
-            _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).Returns(gate.Task);
-
-            var first = _catalog.ResolveGroupedLightAsync(_bridge, "9", CancellationToken.None);
-            var second = _catalog.ResolveGroupedLightAsync(_bridge, "10", CancellationToken.None);
-            gate.SetResult(Groups);
-            var ids = await Task.WhenAll(first, second);
-
-            ids.Should().Equal(new string?[] { null, null });
-            VerifyGroupFetches(Times.Exactly(2)); // 1 seed load + 1 shared refresh, not 2 refreshes
         }
 
         [Fact]
         public async Task Invalidate_DuringInFlightRefresh_IsNotSilentlyUndone()
         {
-            // Seed the cache so the "9" lookup below takes the miss -> refresh path rather than
-            // the very first cold load.
+            // Seed the cache so the call below is a refresh of a populated snapshot.
             await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
 
             var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
             _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).Returns(gate.Task);
 
-            // "9" isn't in Groups, so this refreshes once and blocks on the gated fetch.
-            var resolve = _catalog.ResolveGroupedLightAsync(_bridge, "9", CancellationToken.None);
+            // The editor's refresh blocks on the gated fetch.
+            var inFlight = _catalog.GetGroupsAsync(_bridge, refresh: true, CancellationToken.None);
 
             // Invalidate lands while that refresh is still in flight, waiting on the gate.
             _catalog.Invalidate(_bridge);
 
             // Let the in-flight (now stale-relative-to-the-invalidate) refresh finish.
             gate.SetResult(Groups);
-            await resolve;
+            await inFlight;
 
             // The invalidate must stick: the next read has to hit the bridge again rather than
-            // serve the snapshot the in-flight refresh wrote after the invalidate landed.
+            // serve the snapshot the in-flight refresh would have written after the invalidate landed.
             await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
 
             VerifyGroupFetches(Times.Exactly(3)); // seed + in-flight refresh + forced-by-invalidate refetch
@@ -272,18 +217,14 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task Resolve_WhenInvalidateLandsDuringTheInFlightFetch_LogsDebugInsteadOfReselect()
         {
-            // Seed the cache so the "9" lookup below takes the miss -> refresh path rather than
-            // the very first cold load.
-            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
-
             var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
             _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).Returns(gate.Task);
 
-            // "9" isn't in Groups, so this refreshes once and blocks on the gated fetch.
-            var resolve = _catalog.ResolveGroupedLightAsync(_bridge, "9", CancellationToken.None);
+            // A cold cache: resolving the bridge home loads it and blocks on the gated fetch.
+            var resolve = _catalog.ResolveGroupedLightAsync(_bridge, "0", CancellationToken.None);
 
-            // Invalidate lands while that refresh is still in flight: the fetch's eventual
-            // result is discarded, and the resolve must not blame "9" for that.
+            // Invalidate lands while that load is still in flight: the fetch's eventual
+            // result is discarded, and the resolve must not blame "0" for that.
             _catalog.Invalidate(_bridge);
 
             gate.SetResult(Groups);
@@ -293,38 +234,35 @@ namespace JellyfinHuePlugin.Tests.Services
             _log.Entries.Should().ContainSingle();
             var entry = _log.Entries[0];
             entry.Level.Should().Be(LogLevel.Debug, "nothing is wrong - the cache clear is transient and the next resolve retries on its own");
-            entry.Message.Should().NotContain("re-select", "the target '9' was never actually looked up against real bridge data");
+            entry.Message.Should().NotContain("re-select", "the bridge home was never actually looked up against real bridge data");
             entry.Message.Should().Contain("Test Bridge");
         }
 
         [Fact]
         public async Task Invalidate_WhileAPeerRefreshIsQueuedOnTheGate_QueuedCallStillFetches()
         {
-            // Seed the cache so "9" and "10" below both take the miss -> refresh path.
+            // Seed the cache so both calls below are refreshes of a populated snapshot.
             await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
 
             var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
             _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).Returns(gate.Task);
 
-            // "9" misses, refreshes, and blocks on the gate holding it the whole time.
-            var holder = _catalog.ResolveGroupedLightAsync(_bridge, "9", CancellationToken.None);
+            // The holder refreshes and blocks on the gate holding it the whole time.
+            var holder = _catalog.GetGroupsAsync(_bridge, refresh: true, CancellationToken.None);
 
-            // "10" also misses; its own refresh has to queue behind the holder's gate.
-            var queued = _catalog.ResolveGroupedLightAsync(_bridge, "10", CancellationToken.None);
+            // A second refresh has to queue behind the holder's gate.
+            var queued = _catalog.GetGroupsAsync(_bridge, refresh: true, CancellationToken.None);
 
-            // Invalidate lands while "10" is queued, i.e. after it captured the generation but
+            // Invalidate lands while the second is queued, i.e. after it captured the generation but
             // before it ever reached the gate-holding refresh's post-fetch check.
             _catalog.Invalidate(_bridge);
 
             gate.SetResult(Groups);
-            var ids = await Task.WhenAll(holder, queued);
+            await Task.WhenAll(holder, queued);
 
-            ids.Should().Equal(new string?[] { null, null });
-
-            // The queued call's own reason for refreshing (a genuine miss for "10") was never
-            // satisfied by the holder's (discarded) fetch, so it must still hit the bridge itself
-            // rather than reuse the invalidate's null result: seed + holder's discarded refresh +
-            // the queued call's own refresh.
+            // The holder's fetch was discarded, so the queued call must not reuse the invalidate's
+            // null result: seed + holder's discarded refresh + the queued call's own refresh.
+            (await queued).Should().NotBeNull();
             VerifyGroupFetches(Times.Exactly(3));
         }
 
@@ -440,7 +378,7 @@ namespace JellyfinHuePlugin.Tests.Services
     public class HueResourceCatalogEntryTests
     {
         private static HueResourceCatalog.Snapshot MakeSnapshot(string tag) =>
-            new(new[] { new HueGroupResource(tag, tag, tag, "room", null) }, Array.Empty<HueSceneResource>());
+            new(new[] { new HueGroupResource(tag, tag, tag, "room") }, Array.Empty<HueSceneResource>());
 
         [Fact]
         public void TryStore_WithAStaleGeneration_IsRejectedAndWritesNothing()

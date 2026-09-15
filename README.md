@@ -116,7 +116,7 @@ All endpoints require an authenticated Jellyfin **administrator** account (the s
 Plugin.cs                                 Identity, configuration file, page-save hook
 PluginServiceRegistrator.cs               Composition root (Jellyfin DI + hosted service)
 ├── Services/HueService.cs                CLIP v2 client with certificate pinning
-├── Services/HueResourceCatalog.cs        Rooms, zones and scenes per bridge; resolves v1 ids
+├── Services/HueResourceCatalog.cs        Rooms, zones and scenes per bridge
 ├── Services/MdnsBridgeDiscovery.cs       Local discovery (_hue._tcp)
 ├── Managers/PlaybackSessionManager.cs    Hosted service: playback events and light orchestration
 ├── Configuration/PluginConfiguration.cs  Settings models

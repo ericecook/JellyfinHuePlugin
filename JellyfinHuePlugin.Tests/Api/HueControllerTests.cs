@@ -198,9 +198,9 @@ namespace JellyfinHuePlugin.Tests.Api
         {
             _catalog.Setup(c => c.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(new[]
             {
-                new HueGroupResource("room-1", "gl-1", "Theater", "room", "/groups/1"),
-                new HueGroupResource("zone-5", "gl-5", "Downstairs", "zone", "/groups/5"),
-                new HueGroupResource("home-1", "gl-0", "All Lights", "bridge_home", "/groups/0")
+                new HueGroupResource("room-1", "gl-1", "Theater", "room"),
+                new HueGroupResource("zone-5", "gl-5", "Downstairs", "zone"),
+                new HueGroupResource("home-1", "gl-0", "All Lights", "bridge_home")
             });
 
             var groups = Value(await _controller.GetGroups("b1", false, CancellationToken.None));
@@ -239,7 +239,7 @@ namespace JellyfinHuePlugin.Tests.Api
         {
             _catalog.Setup(c => c.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(new[]
             {
-                new HueSceneResource("sc-1", "Movie", "room-1", "/scenes/abc") { GroupName = "Theater" }
+                new HueSceneResource("sc-1", "Movie", "room-1") { GroupName = "Theater" }
             });
 
             var scenes = Value(await _controller.GetScenes("b1", false, CancellationToken.None));
@@ -373,7 +373,7 @@ namespace JellyfinHuePlugin.Tests.Api
             HueBridge? probe = null;
             _hue.Setup(h => h.GetLightsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>()))
                 .Callback<HueBridge, CancellationToken>((b, _) => probe = b)
-                .ReturnsAsync(new[] { new HueLightResource("l1", "Lamp", true, 50, null) });
+                .ReturnsAsync(new[] { new HueLightResource("l1", "Lamp", true, 50) });
 
             var result = Value(await _controller.VerifyConnection(new VerifyConnectionRequest { BridgeIp = "192.168.1.50", Username = Key }, CancellationToken.None));
 

@@ -345,9 +345,9 @@ namespace JellyfinHuePlugin.Tests.Services
 
             groups.Should().BeEquivalentTo(new[]
             {
-                new HueGroupResource("room-1", "gl-1", "Theater", "room", "/groups/1"),
-                new HueGroupResource("zone-1", "gl-5", "Downstairs", "zone", "/groups/5"),
-                new HueGroupResource("home-1", "gl-0", "All Lights", "bridge_home", "/groups/0")
+                new HueGroupResource("room-1", "gl-1", "Theater", "room"),
+                new HueGroupResource("zone-1", "gl-5", "Downstairs", "zone"),
+                new HueGroupResource("home-1", "gl-0", "All Lights", "bridge_home")
             });
             _handler.Requests.Should().OnlyContain(r => r.Header == Key && r.ExpectedBridgeId == BridgeId);
         }
@@ -364,14 +364,14 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
-        public async Task GetScenes_ParsesGroupAndIdV1()
+        public async Task GetScenes_ParsesGroup()
         {
             _handler.Responses["/clip/v2/resource/scene"] = (HttpStatusCode.OK,
                 @"{""errors"":[],""data"":[{""id"":""sc-1"",""id_v1"":""/scenes/abc123"",""metadata"":{""name"":""Movie""},""group"":{""rid"":""room-1"",""rtype"":""room""}}]}");
 
             var scenes = await _service.GetScenesAsync(Bridge());
 
-            scenes.Should().ContainSingle().Which.Should().Be(new HueSceneResource("sc-1", "Movie", "room-1", "/scenes/abc123"));
+            scenes.Should().ContainSingle().Which.Should().Be(new HueSceneResource("sc-1", "Movie", "room-1"));
         }
 
         [Fact]
@@ -384,8 +384,8 @@ namespace JellyfinHuePlugin.Tests.Services
 
             lights.Should().BeEquivalentTo(new[]
             {
-                new HueLightResource("l-1", "Lamp", true, 42.5, "/lights/8"),
-                new HueLightResource("l-2", "Plug", false, null, null)
+                new HueLightResource("l-1", "Lamp", true, 42.5),
+                new HueLightResource("l-2", "Plug", false, null)
             });
         }
 

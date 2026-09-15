@@ -11,9 +11,9 @@ namespace JellyfinHuePlugin.Services
 {
     /// <summary>
     /// Rooms, zones, the bridge home and scenes of each bridge, fetched on first use and
-    /// cached until a miss or Invalidate. Resolves the ids a profile stores: a v2 UUID is
-    /// used as is; "0" means the bridge home; a v1 number or scene id is looked up through
-    /// id_v1. Nothing here writes configuration.
+    /// cached until a refresh or Invalidate. Resolves the ids a profile stores: a v2 UUID is
+    /// used as is and "0" (or empty) means the bridge home; nothing else resolves. Nothing
+    /// here writes configuration.
     /// </summary>
     public class HueResourceCatalog
     {
@@ -107,9 +107,9 @@ namespace JellyfinHuePlugin.Services
             => (await LoadAsync(bridge, refresh, cancellationToken)).Snapshot?.Scenes;
 
         /// <summary>
-        /// "0" (or empty) → the bridge home's grouped light; a UUID → itself; a v1 number N → the
-        /// room or zone whose id_v1 is "/groups/N". Null, after one refresh and one warning,
-        /// when nothing matches.
+        /// A UUID → itself, without reading the bridge; "0" (or empty) → the bridge home's grouped
+        /// light. Null, with one log line, for any other value (such as a group number stored before
+        /// 4.0) or when the bridge home cannot be read.
         /// </summary>
         public virtual async Task<string?> ResolveGroupedLightAsync(HueBridge bridge, string targetGroupId, CancellationToken cancellationToken)
         {
@@ -118,34 +118,32 @@ namespace JellyfinHuePlugin.Services
                 return targetGroupId;
             }
 
-            var (resolved, fetchFailed, invalidated) = await ResolveAsync(bridge, snapshot => FindGroupedLight(snapshot, targetGroupId, bridge), cancellationToken);
-            if (resolved == null)
+            if (!string.IsNullOrWhiteSpace(targetGroupId) && targetGroupId != "0")
             {
-                LogUnresolved("group", targetGroupId, bridge, fetchFailed, invalidated);
+                LogUnresolved("group", targetGroupId, bridge, fetchFailed: false, invalidated: false);
+                return null;
             }
 
-            return resolved;
+            var load = await LoadAsync(bridge, refresh: false, cancellationToken);
+            var home = load.Snapshot?.Groups.FirstOrDefault(g => g.Type == "bridge_home")?.GroupedLightId;
+            if (home == null)
+            {
+                LogUnresolved("group", targetGroupId, bridge, load.FetchFailed, load.Invalidated);
+            }
+
+            return home;
         }
 
-        /// <summary>A UUID → itself; otherwise the scene whose id_v1 is "/scenes/{id}". Null after one refresh and one warning.</summary>
-        public virtual async Task<string?> ResolveSceneAsync(HueBridge bridge, string sceneId, CancellationToken cancellationToken)
+        /// <summary>A UUID → itself, without reading the bridge. Null, with one warning, for any other value (such as a scene id stored before 4.0).</summary>
+        public virtual Task<string?> ResolveSceneAsync(HueBridge bridge, string sceneId, CancellationToken cancellationToken)
         {
             if (IsUuid(sceneId))
             {
-                return sceneId;
+                return Task.FromResult<string?>(sceneId);
             }
 
-            var idV1 = "/scenes/" + sceneId;
-            var (resolved, fetchFailed, invalidated) = await ResolveAsync(
-                bridge,
-                snapshot => FirstByIdV1OrWarn(snapshot.Scenes, idV1, s => s.IdV1, s => $"{s.Name} ({s.Id})", bridge, "scene")?.Id,
-                cancellationToken);
-            if (resolved == null)
-            {
-                LogUnresolved("scene", sceneId, bridge, fetchFailed, invalidated);
-            }
-
-            return resolved;
+            LogUnresolved("scene", sceneId, bridge, fetchFailed: false, invalidated: false);
+            return Task.FromResult<string?>(null);
         }
 
         /// <summary>Drops the cached resources for the bridge; the next call fetches again.</summary>
@@ -175,49 +173,6 @@ namespace JellyfinHuePlugin.Services
         private static string EntryKey(HueBridge bridge) =>
             $"{bridge.Id.Length}:{bridge.Id}|{bridge.IpAddress.Length}:{bridge.IpAddress}|{bridge.Username.Length}:{bridge.Username}";
 
-        private string? FindGroupedLight(Snapshot snapshot, string targetGroupId, HueBridge bridge)
-        {
-            if (string.IsNullOrWhiteSpace(targetGroupId) || targetGroupId == "0")
-            {
-                return snapshot.Groups.FirstOrDefault(g => g.Type == "bridge_home")?.GroupedLightId;
-            }
-
-            return FirstByIdV1OrWarn(snapshot.Groups, "/groups/" + targetGroupId, g => g.IdV1, g => $"{g.Name} ({g.Id})", bridge, "room or zone")?.GroupedLightId;
-        }
-
-        /// <summary>
-        /// FirstOrDefault by id_v1, except that when a second resource also matches - only
-        /// possible after a factory reset reuses a v1 number - it logs a warning naming both
-        /// resources and stops looking any further. The first match still wins either way;
-        /// only the operator's visibility into the ambiguity changes. Costs one pass over
-        /// <paramref name="items"/> in the common (no-duplicate) case, never two.
-        /// </summary>
-        private T? FirstByIdV1OrWarn<T>(IEnumerable<T> items, string idV1, Func<T, string?> selectIdV1, Func<T, string> describe, HueBridge bridge, string resourceKind)
-            where T : class
-        {
-            T? first = null;
-            foreach (var item in items)
-            {
-                if (selectIdV1(item) != idV1)
-                {
-                    continue;
-                }
-
-                if (first == null)
-                {
-                    first = item;
-                    continue;
-                }
-
-                _logger.LogWarning(
-                    "Bridge {BridgeName} has more than one {ResourceKind} with id_v1 {IdV1}; using {Chosen} and ignoring {Ignored}",
-                    bridge.Name, resourceKind, idV1, describe(first), describe(item));
-                break;
-            }
-
-            return first;
-        }
-
         /// <summary>A target that could not be resolved, told apart from a bridge that could not be
         /// asked and from a resolve that lost a race with a concurrent Invalidate: only the
         /// genuinely-missing case is something the user can fix by re-selecting on the plugin
@@ -245,25 +200,6 @@ namespace JellyfinHuePlugin.Services
                 field, value, bridge.Name);
         }
 
-        private async Task<(string? Resolved, bool FetchFailed, bool Invalidated)> ResolveAsync(HueBridge bridge, Func<Snapshot, string?> find, CancellationToken cancellationToken)
-        {
-            var load = await LoadAsync(bridge, refresh: false, cancellationToken);
-            if (load.Snapshot == null)
-            {
-                return (null, load.FetchFailed, load.Invalidated);
-            }
-
-            var found = find(load.Snapshot);
-            if (found != null)
-            {
-                return (found, false, false);
-            }
-
-            // The bridge may have changed since the cache was built: refresh once.
-            load = await LoadAsync(bridge, refresh: true, cancellationToken);
-            return load.Snapshot == null ? (null, load.FetchFailed, load.Invalidated) : (find(load.Snapshot), false, false);
-        }
-
         private async Task<LoadResult> LoadAsync(HueBridge bridge, bool refresh, CancellationToken cancellationToken)
         {
             var entry = _entries.GetOrAdd(EntryKey(bridge), _ => new Entry());
@@ -280,8 +216,8 @@ namespace JellyfinHuePlugin.Services
 
                 // A peer changed the state while we were queued for the gate, and there is data:
                 // it must have been a refresh (an Invalidate always leaves the snapshot null), so
-                // use it instead of hitting the bridge again. Keeps "one refresh on a miss" true
-                // under concurrency.
+                // use it instead of hitting the bridge again. Keeps concurrent refreshes - the
+                // profile editor asks for groups and scenes at once - to one bridge fetch.
                 if (currentSnapshot is { } peerRefreshed && currentGeneration != generation)
                 {
                     return new LoadResult(peerRefreshed, false, false);

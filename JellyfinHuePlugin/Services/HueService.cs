@@ -553,7 +553,7 @@ namespace JellyfinHuePlugin.Services
                         }
 
                         var name = type == "bridge_home" ? "All Lights" : (GetString(item, "metadata", "name") ?? type);
-                        groups.Add(new HueGroupResource(id, groupedLightId, name, type, GetString(item, "id_v1")));
+                        groups.Add(new HueGroupResource(id, groupedLightId, name, type));
                     }
                 }
 
@@ -590,7 +590,7 @@ namespace JellyfinHuePlugin.Services
                         continue;
                     }
 
-                    scenes.Add(new HueSceneResource(id, GetString(item, "metadata", "name") ?? id, groupId, GetString(item, "id_v1")));
+                    scenes.Add(new HueSceneResource(id, GetString(item, "metadata", "name") ?? id, groupId));
                 }
 
                 return scenes;
@@ -629,7 +629,7 @@ namespace JellyfinHuePlugin.Services
                     double? brightness = item.TryGetProperty("dimming", out var dimming) && dimming.TryGetProperty("brightness", out var b) && b.ValueKind == JsonValueKind.Number
                         ? b.GetDouble()
                         : null;
-                    lights.Add(new HueLightResource(id, GetString(item, "metadata", "name") ?? id, on, brightness, GetString(item, "id_v1")));
+                    lights.Add(new HueLightResource(id, GetString(item, "metadata", "name") ?? id, on, brightness));
                 }
 
                 return lights;

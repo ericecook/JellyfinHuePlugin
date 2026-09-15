@@ -18,10 +18,10 @@ namespace JellyfinHuePlugin.Services
     public sealed record AuthenticationOutcome(string Username, string HardwareId);
 
     /// <summary>A room, zone or the bridge home, with the grouped_light service that controls it.</summary>
-    public sealed record HueGroupResource(string Id, string GroupedLightId, string Name, string Type, string? IdV1);
+    public sealed record HueGroupResource(string Id, string GroupedLightId, string Name, string Type);
 
     /// <summary>A scene. GroupId is the room or zone it belongs to; the catalog fills GroupName.</summary>
-    public sealed record HueSceneResource(string Id, string Name, string GroupId, string? IdV1)
+    public sealed record HueSceneResource(string Id, string Name, string GroupId)
     {
         public string GroupName { get; init; } = string.Empty;
 
@@ -30,7 +30,7 @@ namespace JellyfinHuePlugin.Services
         public string Group => GroupName;
     }
 
-    public sealed record HueLightResource(string Id, string Name, bool On, double? Brightness, string? IdV1);
+    public sealed record HueLightResource(string Id, string Name, bool On, double? Brightness);
 
     /// <summary>Body of PUT /clip/v2/resource/grouped_light/{id}: only the set fields are sent.</summary>
     public sealed class GroupedLightState
