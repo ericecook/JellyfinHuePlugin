@@ -826,7 +826,7 @@ export default function HueConfigPage(view) {
             buttonText.textContent = 'Save';
         };
 
-        const store = hardwareId => {
+        const store = (hardwareId, verified) => {
             buttonText.textContent = 'Saving…';
             let storedName = name;
             commit(draft => {
@@ -844,7 +844,13 @@ export default function HueConfigPage(view) {
                     showError('Not saved', 'Another bridge already uses this address.');
                     return false;
                 }
-                Object.assign(draft.Bridges[i], { Name: name, IpAddress: ip, Username: key });
+                // Unchanged address and key: only the name was possibly edited, so only the name is written here.
+                // A pairing stores its own key and pin server-side and this must never overwrite that.
+                if (verified) {
+                    Object.assign(draft.Bridges[i], { Name: name, IpAddress: ip, Username: key });
+                } else {
+                    draft.Bridges[i].Name = name;
+                }
             }).then(saved => {
                 // A save already sent completes even if the modal was cancelled meanwhile
                 if (!live()) {
@@ -879,7 +885,7 @@ export default function HueConfigPage(view) {
                 Dashboard.alert('Connection failed: ' + (result.Error || 'Unknown error'));
                 return;
             }
-            store(result.HardwareId);
+            store(result.HardwareId, true);
         }).catch(error => {
             console.error('Verify connection failed:', error);
             if (!live()) return;
