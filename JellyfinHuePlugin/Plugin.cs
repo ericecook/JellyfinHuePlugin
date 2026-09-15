@@ -11,10 +11,10 @@ using JellyfinHuePlugin.Services;
 namespace JellyfinHuePlugin
 {
     /// <summary>
-    /// Jellyfin's handle on the plugin: identity, the configuration page, the configuration file,
-    /// and the two one-time conversions of older configurations. Every service is created by the
-    /// container (see <see cref="PluginServiceRegistrator"/>); this class only binds the
-    /// configuration store to itself and reacts to configuration saves made from the page.
+    /// Jellyfin's handle on the plugin: identity, the configuration page and the configuration
+    /// file. Every service is created by the container (see <see cref="PluginServiceRegistrator"/>);
+    /// this class only repairs invalid stored entries, binds the configuration store to itself and
+    /// reacts to configuration saves made from the page.
     /// </summary>
     public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages
     {
@@ -35,25 +35,11 @@ namespace JellyfinHuePlugin
             _catalog = catalog;
             _logger = logger;
 
-            // Both conversions below iterate the lists, and an older plugin page could store a null profile
+            // A stored null bridge or profile would break every consumer that iterates the lists
             var repaired = Configuration.RemoveInvalidEntries();
             if (repaired > 0)
             {
                 _logger.LogWarning("Repaired {Count} invalid entries in the stored configuration", repaired);
-                SaveConfiguration();
-            }
-
-            // Migrate legacy single-bridge config to new Bridges list
-            if (Configuration.MigrateLegacyConfig())
-            {
-                _logger.LogInformation("Migrated legacy single-bridge config to Bridges list");
-                SaveConfiguration();
-            }
-
-            // One-time conversion of brightness from 0-254 to percent (schema version 2)
-            if (Configuration.MigrateBrightnessToPercent())
-            {
-                _logger.LogInformation("Converted profile brightness to percent (schema version 2)");
                 SaveConfiguration();
             }
 
@@ -82,7 +68,7 @@ namespace JellyfinHuePlugin
         /// <summary>
         /// The web client's generic configuration save lands here (the plugin's own API writes
         /// through <see cref="BasePlugin{T}.SaveConfiguration()"/> and never does). Null bridges
-        /// and profiles, which a plugin page before 4.0 could post, are dropped first. A bridge whose
+        /// and profiles, which any client can post, are dropped first. A bridge whose
         /// address or application key changed on the page still carries the previous bridge's
         /// pinned id and cached rooms, so the pin is cleared before the single write and the
         /// caches dropped after it. <see cref="HueBridge.HardwareId"/> is server-owned on this

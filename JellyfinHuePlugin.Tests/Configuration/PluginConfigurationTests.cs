@@ -218,20 +218,31 @@ namespace JellyfinHuePlugin.Tests.Configuration
         }
 
         [Fact]
-        public void XmlDeserialization_OldConfigFormat_ShouldPreserveAllSettings()
+        public void XmlDeserialization_PreV4File_LoadsAndDropsRemovedElements()
         {
-            // Simulate a config XML from before the TransitionDuration refactor
+            // Nothing converts settings from before 4.0 any more (4.0.0.0 is the upgrade path), but
+            // such a file must still load: a deserialization failure would disable the plugin.
             var oldXml = @"<?xml version=""1.0"" encoding=""utf-8""?>
 <PluginConfiguration xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xmlns:xsd=""http://www.w3.org/2001/XMLSchema"">
   <BridgeIpAddress>192.168.1.50</BridgeIpAddress>
   <BridgeId>001788FFFE123456</BridgeId>
   <Username>abc123</Username>
+  <Bridges>
+    <HueBridge>
+      <Id>bridge1</Id>
+      <Name>Living Room</Name>
+      <IpAddress>192.168.1.60</IpAddress>
+      <Username>key1</Username>
+      <BridgeId>001788fffe654321</BridgeId>
+    </HueBridge>
+  </Bridges>
   <EnablePlugin>true</EnablePlugin>
   <UseLightGroups>true</UseLightGroups>
   <Profiles>
     <LightControlProfile>
       <Id>test-id-1</Id>
       <Name>Living Room</Name>
+      <BridgeId>bridge1</BridgeId>
       <EnableForMovies>true</EnableForMovies>
       <EnableForTvShows>true</EnableForTvShows>
       <TargetClientName>Roku</TargetClientName>
@@ -240,6 +251,7 @@ namespace JellyfinHuePlugin.Tests.Configuration
       </TargetDeviceIds>
       <TargetIpAddress>192.168.1.100</TargetIpAddress>
       <TargetGroupId>1</TargetGroupId>
+      <PlaySceneId>abc123</PlaySceneId>
       <PlayBrightness>10</PlayBrightness>
       <PauseBrightness>80</PauseBrightness>
       <StopBrightness>200</StopBrightness>
@@ -250,72 +262,51 @@ namespace JellyfinHuePlugin.Tests.Configuration
 </PluginConfiguration>";
 
             var serializer = new XmlSerializer(typeof(PluginConfiguration));
-            using var reader = new StringReader(oldXml);
-            var config = (PluginConfiguration)serializer.Deserialize(reader)!;
+            PluginConfiguration config;
+            using (var reader = new StringReader(oldXml))
+            {
+                config = (PluginConfiguration)serializer.Deserialize(reader)!;
+            }
 
-            // Legacy bridge fields should be absorbed; migrate to Bridges list
-            config.MigrateLegacyConfig();
-            config.Bridges.Should().HaveCount(1);
-            config.Bridges[0].IpAddress.Should().Be("192.168.1.50");
-            config.Bridges[0].Username.Should().Be("abc123");
+            config.SchemaVersion.Should().Be(PluginConfiguration.CurrentSchemaVersion);
             config.EnablePlugin.Should().BeTrue();
-            config.Profiles.Should().HaveCount(1);
-            config.Profiles[0].BridgeId.Should().Be(config.Bridges[0].Id);
+            var bridge = config.Bridges.Should().ContainSingle().Subject;
+            bridge.IpAddress.Should().Be("192.168.1.60");
+            bridge.Username.Should().Be("key1");
+            bridge.HardwareId.Should().Be("001788fffe654321");
 
-            // Profile settings preserved
-            var p = config.Profiles[0];
+            var p = config.Profiles.Should().ContainSingle().Subject;
             p.Id.Should().Be("test-id-1");
-            p.Name.Should().Be("Living Room");
-            p.EnableForMovies.Should().BeTrue();
+            p.BridgeId.Should().Be("bridge1");
             p.EnableForTvShows.Should().BeTrue();
             p.TargetClientName.Should().Be("Roku");
-            p.TargetDeviceIds.Should().ContainSingle("device-123");
+            p.TargetDeviceIds.Should().Equal("device-123");
             p.TargetIpAddress.Should().Be("192.168.1.100");
-            p.TargetGroupId.Should().Be("1");
+            p.TargetGroupId.Should().Be("1", "a group number from before 4.0 is kept as stored, not converted");
+            p.PlaySceneId.Should().Be("abc123", "a scene id from before 4.0 is kept as stored, not converted");
             p.PlayBrightness.Should().Be(10);
             p.PauseBrightness.Should().Be(80);
-            p.StopBrightness.Should().Be(200);
+            p.StopBrightness.Should().Be(200, "brightness is read as stored, not rescaled");
             p.EnableOutroLights.Should().BeTrue();
 
-            // Legacy TransitionDuration migrated to per-state settings
-            p.PlayTransitionDuration.Should().Be(8);
-            p.PauseTransitionDuration.Should().Be(8);
-            p.StopTransitionDuration.Should().Be(8);
-            p.EnablePlayTransition.Should().BeTrue();
-            p.EnablePauseTransition.Should().BeTrue();
-            p.EnableStopTransition.Should().BeTrue();
-        }
+            var defaults = new LightControlProfile();
+            p.PlayTransitionDuration.Should().Be(defaults.PlayTransitionDuration, "the single TransitionDuration element is ignored");
+            p.PauseTransitionDuration.Should().Be(defaults.PauseTransitionDuration);
+            p.StopTransitionDuration.Should().Be(defaults.StopTransitionDuration);
+            p.EnablePlayTransition.Should().Be(defaults.EnablePlayTransition);
+            p.EnablePauseTransition.Should().Be(defaults.EnablePauseTransition);
+            p.EnableStopTransition.Should().Be(defaults.EnableStopTransition);
 
-        [Fact]
-        public void XmlSerialization_ShouldNotWriteLegacyElements()
-        {
-            // Jellyfin persists config with XmlSerializer; the ShouldSerialize* methods must
-            // keep suppressing the legacy elements alongside the [JsonIgnore] attributes.
-            var config = new PluginConfiguration();
-            var bridge = new HueBridge { Name = "B", IpAddress = "10.0.0.5", Username = "u" };
-            config.Bridges.Add(bridge);
-            config.Profiles.Add(new LightControlProfile { Name = "P", BridgeId = bridge.Id, EnablePlayTransition = true, PlayTransitionDuration = 30 });
-
-            var serializer = new XmlSerializer(typeof(PluginConfiguration));
             using var writer = new StringWriter();
             serializer.Serialize(writer, config);
-            var xml = writer.ToString();
-
-            var doc = XDocument.Parse(xml);
-            var topLevel = doc.Root!.Elements().Select(e => e.Name.LocalName).ToList();
-            topLevel.Should().NotContain(new[] { "BridgeIpAddress", "Username", "BridgeId", "UseLightGroups" });
-            topLevel.Should().Contain(new[] { "Bridges", "Profiles", "EnablePlugin" });
-
-            var profile = doc.Root.Element("Profiles")!.Elements().Single();
-            var profileElements = profile.Elements().Select(e => e.Name.LocalName).ToList();
-            profileElements.Should().NotContain("TransitionDuration");
-            profile.Element("PlayTransitionDuration")!.Value.Should().Be("30");
-
-            using var reader = new StringReader(xml);
-            var restored = (PluginConfiguration)serializer.Deserialize(reader)!;
-            restored.Profiles[0].PlayTransitionDuration.Should().Be(30);
-            restored.Profiles[0].BridgeId.Should().Be(bridge.Id);
-            restored.Bridges[0].Username.Should().Be("u");
+            var doc = XDocument.Parse(writer.ToString());
+            doc.Root!.Elements().Select(e => e.Name.LocalName).Should()
+                .NotContain(new[] { "BridgeIpAddress", "Username", "BridgeId", "UseLightGroups" })
+                .And.Contain(new[] { "Bridges", "Profiles", "EnablePlugin", "SchemaVersion" });
+            doc.Root.Element("Profiles")!.Elements().Single().Elements().Select(e => e.Name.LocalName).Should()
+                .NotContain("TransitionDuration");
+            doc.Root.Element("Bridges")!.Elements().Single().Element("BridgeId")!.Value
+                .Should().Be("001788fffe654321", "HueBridge.HardwareId keeps its element name");
         }
 
         [Fact]
@@ -324,8 +315,13 @@ namespace JellyfinHuePlugin.Tests.Configuration
             // Config XML with the new per-state transition properties
             var newXml = @"<?xml version=""1.0"" encoding=""utf-8""?>
 <PluginConfiguration xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xmlns:xsd=""http://www.w3.org/2001/XMLSchema"">
-  <BridgeIpAddress>10.0.0.5</BridgeIpAddress>
-  <Username>newuser</Username>
+  <Bridges>
+    <HueBridge>
+      <Id>bridge1</Id>
+      <IpAddress>10.0.0.5</IpAddress>
+      <Username>newuser</Username>
+    </HueBridge>
+  </Bridges>
   <EnablePlugin>true</EnablePlugin>
   <Profiles>
     <LightControlProfile>
@@ -344,8 +340,6 @@ namespace JellyfinHuePlugin.Tests.Configuration
             using var reader = new StringReader(newXml);
             var config = (PluginConfiguration)serializer.Deserialize(reader)!;
 
-            // Legacy bridge fields migrated
-            config.MigrateLegacyConfig();
             config.Bridges.Should().HaveCount(1);
             config.Bridges[0].IpAddress.Should().Be("10.0.0.5");
             config.Profiles.Should().HaveCount(1);
@@ -357,56 +351,8 @@ namespace JellyfinHuePlugin.Tests.Configuration
             p.PauseTransitionDuration.Should().Be(4);
         }
 
-        [Theory]
-        [InlineData(0, 0)]
-        [InlineData(1, 0)]
-        [InlineData(10, 4)]
-        [InlineData(20, 8)]
-        [InlineData(80, 31)]
-        [InlineData(100, 39)]
-        [InlineData(127, 50)]
-        [InlineData(200, 79)]
-        [InlineData(254, 100)]
-        [InlineData(300, 100)]
-        public void ToPercent_ScalesAndClamps(int v1, int expected)
-        {
-            PluginConfiguration.ToPercent(v1).Should().Be(expected);
-        }
-
         [Fact]
-        public void MigrateBrightnessToPercent_ConvertsEveryProfileOnce()
-        {
-            var config = new PluginConfiguration();
-            config.Profiles.Add(new LightControlProfile { PlayBrightness = 20, PauseBrightness = 100, StopBrightness = 254 });
-            config.Profiles.Add(new LightControlProfile { PlayBrightness = 0, PauseBrightness = 127, StopBrightness = 200 });
-
-            config.MigrateBrightnessToPercent().Should().BeTrue();
-
-            config.SchemaVersion.Should().Be(2);
-            config.Profiles[0].PlayBrightness.Should().Be(8);
-            config.Profiles[0].PauseBrightness.Should().Be(39);
-            config.Profiles[0].StopBrightness.Should().Be(100);
-            config.Profiles[1].PlayBrightness.Should().Be(0);
-            config.Profiles[1].PauseBrightness.Should().Be(50);
-            config.Profiles[1].StopBrightness.Should().Be(79);
-
-            config.MigrateBrightnessToPercent().Should().BeFalse();
-            config.Profiles[0].PlayBrightness.Should().Be(8); // not scaled twice
-        }
-
-        [Fact]
-        public void MigrateBrightnessToPercent_FreshConfiguration_StampsTheVersionOnce()
-        {
-            var config = new PluginConfiguration();
-
-            config.SchemaVersion.Should().Be(0);
-            config.MigrateBrightnessToPercent().Should().BeTrue();
-            config.SchemaVersion.Should().Be(2);
-            config.MigrateBrightnessToPercent().Should().BeFalse();
-        }
-
-        [Fact]
-        public void XmlDeserialization_WithoutSchemaVersion_ReadsAsZero()
+        public void XmlDeserialization_WithoutSchemaVersion_ReadsAsCurrent()
         {
             const string xml = @"<?xml version=""1.0"" encoding=""utf-8""?>
 <PluginConfiguration xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance"" xmlns:xsd=""http://www.w3.org/2001/XMLSchema"">
@@ -426,15 +372,14 @@ namespace JellyfinHuePlugin.Tests.Configuration
 
             var config = (PluginConfiguration)serializer.Deserialize(reader)!;
 
-            config.SchemaVersion.Should().Be(0);
-            config.MigrateBrightnessToPercent().Should().BeTrue();
-            config.Profiles[0].StopBrightness.Should().Be(100);
+            config.SchemaVersion.Should().Be(PluginConfiguration.CurrentSchemaVersion);
+            config.Profiles[0].StopBrightness.Should().Be(254, "nothing rescales brightness any more");
         }
 
         [Fact]
         public void XmlRoundTrip_KeepsSchemaVersion()
         {
-            var config = new PluginConfiguration { SchemaVersion = 2 };
+            var config = new PluginConfiguration { SchemaVersion = 3 };
             var serializer = new System.Xml.Serialization.XmlSerializer(typeof(PluginConfiguration));
             using var writer = new System.IO.StringWriter();
             serializer.Serialize(writer, config);
@@ -442,8 +387,7 @@ namespace JellyfinHuePlugin.Tests.Configuration
 
             var back = (PluginConfiguration)serializer.Deserialize(reader)!;
 
-            back.SchemaVersion.Should().Be(2);
-            back.MigrateBrightnessToPercent().Should().BeFalse();
+            back.SchemaVersion.Should().Be(3);
         }
 
         [Fact]

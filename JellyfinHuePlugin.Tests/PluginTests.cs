@@ -68,7 +68,7 @@ namespace JellyfinHuePlugin.Tests
         }
 
         private static PluginConfiguration Config(params HueBridge[] bridges) =>
-            new() { SchemaVersion = PluginConfiguration.CurrentSchemaVersion, EnablePlugin = true, Bridges = new List<HueBridge>(bridges) };
+            new() { EnablePlugin = true, Bridges = new List<HueBridge>(bridges) };
 
         [Fact]
         public void Constructor_AttachesTheStore()
@@ -81,20 +81,20 @@ namespace JellyfinHuePlugin.Tests
         }
 
         [Fact]
-        public void Constructor_RunsTheBrightnessConversionOnce()
+        public void Constructor_DoesNotConvertOrSaveAPre40Configuration()
         {
-            var onDisk = new PluginConfiguration
-            {
-                SchemaVersion = 0,
-                Bridges = new List<HueBridge> { Bridge() },
-                Profiles = new List<LightControlProfile> { new() { Name = "p", PlayBrightness = 254, PauseBrightness = 127, StopBrightness = 0 } }
-            };
+            var onDisk = Config(Bridge());
+            onDisk.SchemaVersion = 0;
+            onDisk.Profiles = new List<LightControlProfile> { new() { Name = "p", PlayBrightness = 254, TargetGroupId = "1", PlaySceneId = "abc123" } };
 
             var plugin = Load(onDisk);
 
-            plugin.Configuration.SchemaVersion.Should().Be(PluginConfiguration.CurrentSchemaVersion);
-            plugin.Configuration.Profiles[0].PlayBrightness.Should().Be(100);
-            _written.Should().ContainSingle();
+            var profile = plugin.Configuration.Profiles.Should().ContainSingle().Subject;
+            profile.PlayBrightness.Should().Be(254);
+            profile.TargetGroupId.Should().Be("1");
+            profile.PlaySceneId.Should().Be("abc123");
+            plugin.Configuration.SchemaVersion.Should().Be(0);
+            _written.Should().BeEmpty();
         }
 
         [Fact]
@@ -224,22 +224,6 @@ namespace JellyfinHuePlugin.Tests
 
             plugin.Configuration.Profiles.Should().ContainSingle().Which.Name.Should().Be("kept");
             _written.Should().ContainSingle();
-        }
-
-        [Fact]
-        public void Constructor_NullProfileBeforeTheBrightnessConversion_ConvertsTheOthers()
-        {
-            var onDisk = new PluginConfiguration
-            {
-                SchemaVersion = 0,
-                Bridges = new List<HueBridge> { Bridge() },
-                Profiles = new List<LightControlProfile> { null!, new() { Name = "p", PlayBrightness = 254 } }
-            };
-
-            var plugin = Load(onDisk);
-
-            plugin.Configuration.Profiles.Should().ContainSingle().Which.PlayBrightness.Should().Be(100);
-            plugin.Configuration.SchemaVersion.Should().Be(PluginConfiguration.CurrentSchemaVersion);
         }
 
         [Fact]
