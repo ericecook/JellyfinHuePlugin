@@ -992,6 +992,7 @@ export default function HueConfigPage(view) {
         Array.from($('#profilesList').querySelectorAll('.profile-card')).find(card => card.dataset.profileId === profileId) || null;
 
     function renderProfiles() {
+        try {
         const container = $('#profilesList');
         const profiles = state.profiles;
         if (profiles.length === 0) {
@@ -1024,6 +1025,10 @@ export default function HueConfigPage(view) {
                 <ul class="hue-card-summary">${profileSummary(profile, state.bridges).map(line => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
             </div>`;
         }).join('') + '</div>';
+        } catch (error) {
+            console.error('Error rendering profiles:', error);
+            Dashboard.alert('Error rendering profiles: ' + error.message);
+        }
     }
 
     function closeProfileMenus() {
