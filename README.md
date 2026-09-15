@@ -82,9 +82,9 @@ When playback starts, the plugin decides what to do in this order:
 
 Put more specific profiles first (device ID > client name > no filter).
 
-## Upgrading from 3.x
+## Upgrading from a version before 4.0
 
-Install 4.0.0.0 first, start Jellyfin and open the plugin page once: 4.0 is the only version that converts 3.x settings (the brightness scale and stored room and scene ids). Later versions load 3.x settings as they are — a 3.x brightness value is read as a percentage, and a 3.x room or scene id shows as **Unresolved** in the profile editor and must be re-selected. Version 4 talks only Hue's CLIP v2 API, and scenes light the room or zone they belong to rather than the profile's light group.
+Install 4.0.0.0 first, start Jellyfin and open the plugin page once: 4.0 is the only version that converts settings from 3.x and 2.x (the brightness scale and stored room and scene ids) and from the older, single-bridge versions (the bridge's address and key, which those versions stored outside any bridge list). Skip that step and a later version loads 3.x or 2.x settings as they are — a pre-4.0 brightness value is read as a percentage, with anything above 100 counted as 100, and a 3.x or 2.x room or scene id shows as **Unresolved** in the profile editor and must be re-selected — while a single-bridge version's settings lose the bridge and its key entirely, since later versions ignore those old fields and drop them on the next save. Version 4 talks only Hue's CLIP v2 API, and scenes light the room or zone they belong to rather than the profile's light group.
 
 Editing a bridge's address or key on the plugin page clears its certificate pin; authenticate again afterwards.
 

@@ -119,8 +119,11 @@ For an id from before 4.0, playback and Test log:
 Profile target {Field} '{Value}' not found on bridge {BridgeName}; re-select it on the plugin page
 ```
 
-A room or scene deleted in the Hue app shows up as a `Bridge error for ...` warning instead (see
-below). Settings from 3.x are converted only by 4.0.0.0; see **Upgrading from 3.x** in the README.
+A room or scene deleted in the Hue app shows up as a `Bridge returned {Status} for ...` warning
+instead — the bridge answers a command against an id it no longer has with a non-2xx status,
+typically 404 (see below). `Bridge error for ...` warnings are a different case: a 2xx response
+that carries its own error list. Settings from before 4.0 are converted only by 4.0.0.0; see
+**Upgrading from a version before 4.0** in the README.
 
 ---
 
@@ -130,10 +133,11 @@ below). Settings from 3.x are converted only by 4.0.0.0; see **Upgrading from 3.
 - Check that your profile's client/device/IP filters match your playback device
 - Use **Test** on the Play, Pause or Stop section of the profile editor (it uses the values on screen, saved or not), or Test Play / Test Pause / Test Stop in the profile card's menu. A failed test says why under the button
 - Check Jellyfin logs for profile matching debug messages
-- Look for `Bridge error for ...` warnings from `HueService` in the Jellyfin log. The bridge
-  answers every light command with a per-parameter result; a rejected parameter, a revoked
-  API key (`unauthorized user`) or an unknown room, zone or scene id shows up there with the
-  bridge's own error description
+- Look for `Bridge error for ...` and `Bridge returned {Status} for ...` warnings from
+  `HueService` in the Jellyfin log. A rejected parameter — a 2xx response that still carries
+  an error — shows as `Bridge error for ...` with the bridge's own error description; a
+  revoked API key (`unauthorized user`) or an unknown room, zone or scene id fails the whole
+  request with a non-2xx status and shows as `Bridge returned {Status} for ...` instead
 - `Could not reach bridge {BridgeName} to resolve profile target ...` means the bridge was
   offline or its key was revoked when a playback event arrived
 

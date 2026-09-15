@@ -1,9 +1,11 @@
 using System;
 using System.Linq;
+using System.Reflection;
 using System.Text.Json;
 using FluentAssertions;
 using JellyfinHuePlugin.Api;
 using JellyfinHuePlugin.Services;
+using Microsoft.AspNetCore.Mvc;
 using Xunit;
 
 namespace JellyfinHuePlugin.Tests.Api
@@ -74,6 +76,22 @@ namespace JellyfinHuePlugin.Tests.Api
             // The dictionary key is what a profile stores as TargetGroupId; HueControllerTests
             // proves the keying, this pins the property the key comes from still exists.
             typeof(HueGroupResource).GetProperty("GroupedLightId").Should().NotBeNull();
+        }
+
+        [Theory]
+        [InlineData(nameof(HueController.GetGroups))]
+        [InlineData(nameof(HueController.GetScenes))]
+        public void RefreshIsABoolFromQueryParameter(string methodName)
+        {
+            // configPage.html builds the query string by hand ("&refresh=true"); a rename here
+            // would still bind (to false, silently) instead of failing, so pin the name, type
+            // and source explicitly.
+            var parameter = typeof(HueController).GetMethod(methodName)!.GetParameters()
+                .FirstOrDefault(p => p.Name == "refresh");
+
+            parameter.Should().NotBeNull(because: "{0} must keep a parameter literally named 'refresh'", methodName);
+            parameter!.ParameterType.Should().Be(typeof(bool));
+            parameter.GetCustomAttribute<FromQueryAttribute>().Should().NotBeNull();
         }
 
         [Fact]
