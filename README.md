@@ -99,15 +99,9 @@ All endpoints require an authenticated Jellyfin **administrator** account (the s
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
 | `/api/hueplugin/discover` | GET | Discover Hue bridges |
-| `/api/hueplugin/bridges` | GET | List configured bridges |
-| `/api/hueplugin/bridges` | POST | Add a new bridge |
-| `/api/hueplugin/bridges/{bridgeId}` | DELETE | Delete a bridge |
 | `/api/hueplugin/authenticate` | POST | Authenticate with bridge |
-| `/api/hueplugin/lights` | GET | List all lights |
-| `/api/hueplugin/groups` | GET | List all groups (`refresh=true` reads the bridge instead of the cache) |
-| `/api/hueplugin/scenes` | GET | List all scenes (`refresh=true` reads the bridge instead of the cache) |
+| `/api/hueplugin/targets` | GET | Rooms, zones and scenes of a bridge (`bridgeId`); always reads the bridge |
 | `/api/hueplugin/test` | POST | Run a profile's Play, Pause or Stop action (body: `Action`, `Profile`) |
-| `/api/hueplugin/testconnection` | POST | Test bridge connectivity |
 | `/api/hueplugin/verifyconnection` | POST | Check a stored bridge key and report the bridge's id, model and software |
 
 ## Architecture
@@ -116,7 +110,7 @@ All endpoints require an authenticated Jellyfin **administrator** account (the s
 Plugin.cs                                 Identity, configuration file, page-save hook
 PluginServiceRegistrator.cs               Composition root (Jellyfin DI + hosted service)
 ├── Services/HueService.cs                CLIP v2 client with certificate pinning
-├── Services/HueResourceCatalog.cs        Rooms, zones and scenes per bridge
+├── Services/HueResourceCatalog.cs        Resolves profile targets; reads rooms, zones and scenes
 ├── Services/MdnsBridgeDiscovery.cs       Local discovery (_hue._tcp)
 ├── Managers/PlaybackSessionManager.cs    Hosted service: playback events and light orchestration
 ├── Configuration/PluginConfiguration.cs  Settings models

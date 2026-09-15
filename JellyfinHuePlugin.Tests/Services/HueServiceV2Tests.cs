@@ -26,6 +26,7 @@ namespace JellyfinHuePlugin.Tests.Services
         private const string Key = "Qn74cB7YlKursSzMYyPL4pr5oLWxayBqhKyjFD10";
         private const string ConfigBody = @"{""name"":""Hue"",""swversion"":""1968004000"",""apiversion"":""1.68.0"",""modelid"":""BSB002"",""bridgeid"":""001788FFFE123456""}";
         private const string Empty = @"{""errors"":[],""data"":[]}";
+        private static readonly string[] AllGroupTypes = { "room", "zone", "bridge_home" };
 
         private sealed record Captured(HttpMethod Method, string Path, string? Header, bool HasOption, string? ExpectedBridgeId, string? Body);
 
@@ -341,7 +342,7 @@ namespace JellyfinHuePlugin.Tests.Services
             _handler.Responses["/clip/v2/resource/bridge_home"] = (HttpStatusCode.OK,
                 @"{""errors"":[],""data"":[{""id"":""home-1"",""id_v1"":""/groups/0"",""services"":[{""rid"":""gl-0"",""rtype"":""grouped_light""}]}]}");
 
-            var groups = await _service.GetGroupsAsync(Bridge());
+            var groups = await _service.GetGroupsAsync(Bridge(), AllGroupTypes);
 
             groups.Should().BeEquivalentTo(new[]
             {
@@ -358,9 +359,21 @@ namespace JellyfinHuePlugin.Tests.Services
             _handler.Responses["/clip/v2/resource/room"] = (HttpStatusCode.OK, Empty);
             // zone is unrouted → 404
 
-            var groups = await _service.GetGroupsAsync(Bridge());
+            var groups = await _service.GetGroupsAsync(Bridge(), AllGroupTypes);
 
             groups.Should().BeNull();
+        }
+
+        [Fact]
+        public async Task GetGroups_ReadsOnlyTheRequestedTypes()
+        {
+            _handler.Responses["/clip/v2/resource/bridge_home"] = (HttpStatusCode.OK,
+                @"{""errors"":[],""data"":[{""id"":""home-1"",""id_v1"":""/groups/0"",""services"":[{""rid"":""gl-0"",""rtype"":""grouped_light""}]}]}");
+
+            var groups = await _service.GetGroupsAsync(Bridge(), new[] { "bridge_home" });
+
+            groups.Should().Equal(new HueGroupResource("home-1", "gl-0", "All Lights", "bridge_home"));
+            _handler.Requests.Should().ContainSingle().Which.Path.Should().Be("/clip/v2/resource/bridge_home");
         }
 
         [Fact]
@@ -390,14 +403,6 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
-        public async Task TestBridgeConnection_DescribesTheBridge()
-        {
-            var text = await _service.TestBridgeConnectionAsync("192.168.1.50");
-
-            text.Should().Contain(BridgeId).And.Contain("BSB002").And.Contain("supports API v2");
-        }
-
-        [Fact]
         public async Task CancelledToken_PropagatesFromEveryBridgeMethod()
         {
             using var cts = new CancellationTokenSource();
@@ -406,7 +411,7 @@ namespace JellyfinHuePlugin.Tests.Services
 
             await FluentActions.Awaiting(() => _service.GetBridgeInfoAsync("192.168.1.50", cts.Token)).Should().ThrowAsync<OperationCanceledException>();
             await FluentActions.Awaiting(() => _service.AuthenticateAsync("192.168.1.50", cts.Token)).Should().ThrowAsync<OperationCanceledException>();
-            await FluentActions.Awaiting(() => _service.GetGroupsAsync(bridge, cts.Token)).Should().ThrowAsync<OperationCanceledException>();
+            await FluentActions.Awaiting(() => _service.GetGroupsAsync(bridge, AllGroupTypes, cts.Token)).Should().ThrowAsync<OperationCanceledException>();
             await FluentActions.Awaiting(() => _service.GetScenesAsync(bridge, cts.Token)).Should().ThrowAsync<OperationCanceledException>();
             await FluentActions.Awaiting(() => _service.GetLightsAsync(bridge, cts.Token)).Should().ThrowAsync<OperationCanceledException>();
             await FluentActions.Awaiting(() => _service.SetGroupedLightAsync(bridge, "gl-1", new GroupedLightState { On = true }, cts.Token)).Should().ThrowAsync<OperationCanceledException>();

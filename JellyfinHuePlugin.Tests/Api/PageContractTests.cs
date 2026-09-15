@@ -23,9 +23,9 @@ namespace JellyfinHuePlugin.Tests.Api
             { typeof(HueBridgeDiscovery), new[] { "Id", "InternalIpAddress" } },                                   // discover
             { typeof(AuthenticationResult), new[] { "Success", "Username", "Id", "HardwareId", "Error" } },        // authenticate
             { typeof(VerifyConnectionResult), new[] { "Success", "Error", "HardwareId", "ModelId", "SoftwareVersion" } }, // verifyconnection
-            { typeof(HueGroupResource), new[] { "Name", "Type" } },                                                 // groups (dictionary values)
-            { typeof(HueSceneResource), new[] { "Name", "GroupName" } },                                            // scenes (dictionary values)
-            { typeof(BridgeInfo), new[] { "Id", "Name", "IpAddress", "IsAuthenticated" } },                         // bridges
+            { typeof(TargetsResult), new[] { "Groups", "Scenes" } },                                                // targets
+            { typeof(HueGroupResource), new[] { "Name", "Type" } },                                                 // targets (Groups values)
+            { typeof(HueSceneResource), new[] { "Name", "GroupName" } },                                            // targets (Scenes values)
             { typeof(TestLightResult), new[] { "Success", "Error" } },                                              // test
         };
 
@@ -78,19 +78,17 @@ namespace JellyfinHuePlugin.Tests.Api
             typeof(HueGroupResource).GetProperty("GroupedLightId").Should().NotBeNull();
         }
 
-        [Theory]
-        [InlineData(nameof(HueController.GetGroups))]
-        [InlineData(nameof(HueController.GetScenes))]
-        public void RefreshIsABoolFromQueryParameter(string methodName)
+        [Fact]
+        public void BridgeIdIsAStringFromQueryParameter()
         {
-            // configPage.html builds the query string by hand ("&refresh=true"); a rename here
-            // would still bind (to false, silently) instead of failing, so pin the name, type
-            // and source explicitly.
-            var parameter = typeof(HueController).GetMethod(methodName)!.GetParameters()
-                .FirstOrDefault(p => p.Name == "refresh");
+            // configPage.html builds the query string by hand ("?bridgeId="); a rename here would
+            // still bind (to null, answering 400) instead of failing, so pin the name, type and
+            // source explicitly.
+            var parameter = typeof(HueController).GetMethod(nameof(HueController.GetTargets))!.GetParameters()
+                .FirstOrDefault(p => p.Name == "bridgeId");
 
-            parameter.Should().NotBeNull(because: "{0} must keep a parameter literally named 'refresh'", methodName);
-            parameter!.ParameterType.Should().Be(typeof(bool));
+            parameter.Should().NotBeNull(because: "GetTargets must keep a parameter literally named 'bridgeId'");
+            parameter!.ParameterType.Should().Be(typeof(string));
             parameter.GetCustomAttribute<FromQueryAttribute>().Should().NotBeNull();
         }
 

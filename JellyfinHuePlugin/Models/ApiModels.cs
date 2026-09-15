@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using JellyfinHuePlugin.Configuration;
 using JellyfinHuePlugin.Services;
@@ -43,20 +44,14 @@ namespace JellyfinHuePlugin.Api
         public string? Error { get; set; }
     }
 
-    public class AddBridgeRequest
+    /// <summary>
+    /// GET api/hueplugin/targets. Groups holds the bridge's rooms and zones keyed by grouped_light
+    /// id, the value a profile stores as TargetGroupId; Scenes holds its scenes keyed by scene id.
+    /// </summary>
+    public class TargetsResult
     {
-        [Required]
-        [BridgeAddress]
-        public string IpAddress { get; set; } = string.Empty;
-        public string Name { get; set; } = "Bridge";
-    }
-
-    public class BridgeInfo
-    {
-        public string Id { get; set; } = string.Empty;
-        public string Name { get; set; } = string.Empty;
-        public string IpAddress { get; set; } = string.Empty;
-        public bool IsAuthenticated { get; set; }
+        public Dictionary<string, HueGroupResource> Groups { get; set; } = new();
+        public Dictionary<string, HueSceneResource> Scenes { get; set; } = new();
     }
 
     /// <summary>
@@ -78,13 +73,6 @@ namespace JellyfinHuePlugin.Api
     {
         public bool Success { get; set; }
         public string? Error { get; set; }
-    }
-
-    public class TestConnectionRequest
-    {
-        [Required]
-        [BridgeAddress]
-        public string BridgeIp { get; set; } = string.Empty;
     }
 
     public class VerifyConnectionRequest

@@ -9,41 +9,47 @@ using Microsoft.Extensions.Logging;
 
 namespace JellyfinHuePlugin.Services
 {
+    /// <summary>A bridge's rooms and zones, and its scenes with GroupName filled, as the plugin page lists them.</summary>
+    public sealed record HueTargets(IReadOnlyList<HueGroupResource> Groups, IReadOnlyList<HueSceneResource> Scenes);
+
     /// <summary>
-    /// Rooms, zones, the bridge home and scenes of each bridge, fetched on first use and
-    /// cached until a refresh or Invalidate. Resolves the ids a profile stores: a v2 UUID is
-    /// used as is and "0" (or empty) means the bridge home; nothing else resolves. Nothing
-    /// here writes configuration.
+    /// Resolves the ids a profile stores: a v2 UUID is used as is, and "0" (or empty) means the
+    /// bridge home, whose grouped_light id is cached per bridge; nothing else resolves. Also reads
+    /// a bridge's rooms, zones and scenes for the plugin page, uncached. Nothing here writes
+    /// configuration.
     /// </summary>
     public class HueResourceCatalog
     {
-        // Internal rather than private so the (Snapshot, Generation) synchronization contract -
-        // the exact mechanism that keeps Invalidate from racing a write - can be unit-tested
+        /// <summary>The group types the plugin page lists.</summary>
+        internal static readonly string[] RoomAndZone = { "room", "zone" };
+
+        /// <summary>The group type "0" resolves to.</summary>
+        internal static readonly string[] BridgeHome = { "bridge_home" };
+
+        // Internal rather than private so the (Home, Generation) synchronization contract - the
+        // exact mechanism that keeps Invalidate from racing a write - can be unit-tested
         // directly, the same way HueService exposes ShouldAcceptBridgeCertificate for its own
         // narrow, otherwise-untestable concurrency/security seam.
-        internal sealed record Snapshot(IReadOnlyList<HueGroupResource> Groups, IReadOnlyList<HueSceneResource> Scenes);
-
         internal sealed class Entry
         {
             // Serializes the actual bridge fetch (at most one in flight per bridge).
             public readonly SemaphoreSlim Gate = new(1, 1);
 
-            // Guards (Snapshot, Generation) as a single unit. Invalidate touches neither Gate nor
+            // Guards (Home, Generation) as a single unit. Invalidate touches neither Gate nor
             // an await, so only a plain lock - held briefly, never across an await - can make
-            // "check the generation, then write the snapshot" atomic against a concurrent
+            // "check the generation, then write the home" atomic against a concurrent
             // Invalidate. Generation increments on every state change (a store and a clear both
-            // count), which is what lets LoadAsync tell "a peer already refreshed" (snapshot
-            // present, generation moved) apart from "invalidated" (snapshot absent) after
-            // reacquiring the gate.
+            // count), which is what lets TryStore tell a home read before an Invalidate landed
+            // from one read after it.
             private readonly object _stateLock = new();
-            private Snapshot? _snapshot;
+            private string? _home;
             private int _generation;
 
-            public (Snapshot? Snapshot, int Generation) ReadState()
+            public (string? Home, int Generation) ReadState()
             {
                 lock (_stateLock)
                 {
-                    return (_snapshot, _generation);
+                    return (_home, _generation);
                 }
             }
 
@@ -51,16 +57,16 @@ namespace JellyfinHuePlugin.Services
             {
                 lock (_stateLock)
                 {
-                    _snapshot = null;
+                    _home = null;
                     _generation++;
                 }
             }
 
-            /// <summary>Stores <paramref name="snapshot"/> unless the generation has moved past
+            /// <summary>Stores <paramref name="home"/> unless the generation has moved past
             /// <paramref name="expectedGeneration"/> - meaning an Invalidate, or another caller's
-            /// store, happened since this snapshot was built - in which case nothing is written.
+            /// store, happened since this home was read - in which case nothing is written.
             /// </summary>
-            public bool TryStore(Snapshot snapshot, int expectedGeneration)
+            public bool TryStore(string home, int expectedGeneration)
             {
                 lock (_stateLock)
                 {
@@ -69,7 +75,7 @@ namespace JellyfinHuePlugin.Services
                         return false;
                     }
 
-                    _snapshot = snapshot;
+                    _home = home;
                     _generation++;
                     return true;
                 }
@@ -91,20 +97,33 @@ namespace JellyfinHuePlugin.Services
         // discarded the result before it could be stored; or (the residual case, once those two
         // are ruled out) the target genuinely is not on the bridge. Each needs different advice,
         // so none of the three may collapse into either of the others.
-        private readonly record struct LoadResult(Snapshot? Snapshot, bool FetchFailed, bool Invalidated);
+        private readonly record struct LoadResult(string? Home, bool FetchFailed, bool Invalidated);
 
         /// <summary>
-        /// The bridge's rooms, zones and bridge home; null when the bridge could not be read.
-        /// <paramref name="refresh"/> reads the bridge even when they are cached - the plugin page's
-        /// profile editor asks for that each time it opens - unless another caller's refresh lands
-        /// while this one waits its turn, which is then used instead of a second fetch.
+        /// The bridge's rooms and zones, then its scenes with GroupName filled, read from the bridge
+        /// on every call; nothing is cached. Null when either read fails.
         /// </summary>
-        public virtual async Task<IReadOnlyList<HueGroupResource>?> GetGroupsAsync(HueBridge bridge, bool refresh, CancellationToken cancellationToken)
-            => (await LoadAsync(bridge, refresh, cancellationToken)).Snapshot?.Groups;
+        public virtual async Task<HueTargets?> ReadTargetsAsync(HueBridge bridge, CancellationToken cancellationToken)
+        {
+            var groups = await _hueService.GetGroupsAsync(bridge, RoomAndZone, cancellationToken);
+            if (groups == null)
+            {
+                return null;
+            }
 
-        /// <summary>The bridge's scenes, with GroupName filled; <paramref name="refresh"/> as for <see cref="GetGroupsAsync"/>.</summary>
-        public virtual async Task<IReadOnlyList<HueSceneResource>?> GetScenesAsync(HueBridge bridge, bool refresh, CancellationToken cancellationToken)
-            => (await LoadAsync(bridge, refresh, cancellationToken)).Snapshot?.Scenes;
+            var scenes = await _hueService.GetScenesAsync(bridge, cancellationToken);
+            if (scenes == null)
+            {
+                return null;
+            }
+
+            var groupsById = groups.ToDictionary(g => g.Id, StringComparer.Ordinal);
+            var enriched = scenes
+                .Select(s => groupsById.TryGetValue(s.GroupId, out var g) ? s with { GroupName = g.Name } : s)
+                .ToList();
+
+            return new HueTargets(groups, enriched);
+        }
 
         /// <summary>
         /// A UUID → itself, without reading the bridge; "0" (or empty) → the bridge home's grouped
@@ -124,14 +143,13 @@ namespace JellyfinHuePlugin.Services
                 return null;
             }
 
-            var load = await LoadAsync(bridge, refresh: false, cancellationToken);
-            var home = load.Snapshot?.Groups.FirstOrDefault(g => g.Type == "bridge_home")?.GroupedLightId;
-            if (home == null)
+            var load = await LoadHomeAsync(bridge, cancellationToken);
+            if (load.Home == null)
             {
                 LogUnresolved("group", targetGroupId, bridge, load.FetchFailed, load.Invalidated);
             }
 
-            return home;
+            return load.Home;
         }
 
         /// <summary>A UUID → itself, without reading the bridge. Null, with one warning, for any other value (such as a scene id stored before 4.0).</summary>
@@ -146,12 +164,12 @@ namespace JellyfinHuePlugin.Services
             return Task.FromResult<string?>(null);
         }
 
-        /// <summary>Drops the cached resources for the bridge; the next call fetches again.</summary>
+        /// <summary>Drops the cached bridge home for the bridge; the next resolve of "0" reads it again.</summary>
         public virtual void Invalidate(HueBridge bridge)
         {
             // Never takes Gate: a caller that just wants to drop the cache must not block on a
             // slow bridge call. The short, await-free lock inside Entry.Invalidate is enough to
-            // make this atomic with LoadAsync's own state reads and writes.
+            // make this atomic with LoadHomeAsync's own state reads and writes.
             //
             // Must compose the key exactly as the load path does, or invalidation silently stops
             // finding anything: hence the shared EntryKey.
@@ -163,10 +181,10 @@ namespace JellyfinHuePlugin.Services
 
         /// <summary>
         /// The cache key for a bridge's entry. The configuration id alone is not the identity the
-        /// cached rooms and scenes depend on - editing a bridge's address (or its application key)
+        /// cached bridge home depends on - editing a bridge's address (or its application key)
         /// keeps the id but points it at a different bridge entirely - so the address and key are
         /// part of the key too. Repointing a bridge is then a plain cache miss, and serving the
-        /// previous bridge's catalog stops being possible rather than merely needing an
+        /// previous bridge's home stops being possible rather than merely needing an
         /// invalidation someone has to remember. Each component is length-prefixed, so no two
         /// different bridges can compose one key whatever their values happen to contain.
         /// </summary>
@@ -188,7 +206,7 @@ namespace JellyfinHuePlugin.Services
 
             if (invalidated)
             {
-                // Self-healing: the cache was cleared mid-refresh, so the very next resolve
+                // Self-healing: the cache was cleared mid-read, so the very next resolve
                 // starts from a clean cache and tries again. Nothing is wrong with the target,
                 // so this is not a warning.
                 _logger.LogDebug("Cache for bridge {BridgeName} was invalidated while resolving profile target {Field} '{Value}'; the next resolve will retry",
@@ -200,11 +218,10 @@ namespace JellyfinHuePlugin.Services
                 field, value, bridge.Name);
         }
 
-        private async Task<LoadResult> LoadAsync(HueBridge bridge, bool refresh, CancellationToken cancellationToken)
+        private async Task<LoadResult> LoadHomeAsync(HueBridge bridge, CancellationToken cancellationToken)
         {
             var entry = _entries.GetOrAdd(EntryKey(bridge), _ => new Entry());
-            var (snapshot, generation) = entry.ReadState();
-            if (!refresh && snapshot is { } cached)
+            if (entry.ReadState().Home is { } cached)
             {
                 return new LoadResult(cached, false, false);
             }
@@ -212,53 +229,40 @@ namespace JellyfinHuePlugin.Services
             await entry.Gate.WaitAsync(cancellationToken);
             try
             {
-                var (currentSnapshot, currentGeneration) = entry.ReadState();
+                var (home, generation) = entry.ReadState();
 
-                // A peer changed the state while we were queued for the gate, and there is data:
-                // it must have been a refresh (an Invalidate always leaves the snapshot null), so
-                // use it instead of hitting the bridge again. Keeps concurrent refreshes - the
-                // profile editor asks for groups and scenes at once - to one bridge fetch.
-                if (currentSnapshot is { } peerRefreshed && currentGeneration != generation)
+                // Stored by the caller that held the gate while this one waited: concurrent
+                // resolves of "0" share one bridge read.
+                if (home != null)
                 {
-                    return new LoadResult(peerRefreshed, false, false);
+                    return new LoadResult(home, false, false);
                 }
 
-                if (!refresh && currentSnapshot is { } loadedMeanwhile)
-                {
-                    return new LoadResult(loadedMeanwhile, false, false);
-                }
-
-                var groups = await _hueService.GetGroupsAsync(bridge, cancellationToken);
+                var groups = await _hueService.GetGroupsAsync(bridge, BridgeHome, cancellationToken);
                 if (groups == null)
                 {
                     return new LoadResult(null, true, false);
                 }
 
-                var scenes = await _hueService.GetScenesAsync(bridge, cancellationToken);
-                if (scenes == null)
+                // No bridge home with a grouped_light service: not cached, so the next resolve reads again.
+                var fresh = groups.FirstOrDefault(g => g.Type == "bridge_home")?.GroupedLightId;
+                if (fresh == null)
                 {
-                    return new LoadResult(null, true, false);
+                    return new LoadResult(null, false, false);
                 }
 
-                var groupsById = groups.ToDictionary(g => g.Id, StringComparer.Ordinal);
-                var enriched = scenes
-                    .Select(s => groupsById.TryGetValue(s.GroupId, out var g) ? s with { GroupName = g.Name } : s)
-                    .ToList();
-
-                var freshSnapshot = new Snapshot(groups, enriched);
-
-                if (entry.TryStore(freshSnapshot, currentGeneration))
+                if (entry.TryStore(fresh, generation))
                 {
-                    return new LoadResult(freshSnapshot, false, false);
+                    return new LoadResult(fresh, false, false);
                 }
 
-                // An Invalidate landed while the bridge calls above were in flight (the gate we
+                // An Invalidate landed while the bridge call above was in flight (the gate we
                 // are still holding rules out any other cause of TryStore's refusal), so this
                 // fetch's result is stale by definition and was deliberately discarded - the
-                // snapshot Invalidate leaves behind is always null. This is neither a bridge
+                // home Invalidate leaves behind is always null. This is neither a bridge
                 // failure nor a missing target: the next resolve sees the cleared cache and
                 // retries on its own.
-                return new LoadResult(entry.ReadState().Snapshot, false, true);
+                return new LoadResult(entry.ReadState().Home, false, true);
             }
             finally
             {

@@ -2431,7 +2431,6 @@
                     };
                     // Nothing loads without a bridge, so saved ids then say they are not loaded
                     var loadingLabel = bridgeId ? 'Saved selection (loading…)' : 'Saved selection (not loaded)';
-                    var failures = { groups: null, scenes: null };
 
                     groupSelect.innerHTML = '<option value="0">All Lights</option>';
                     HuePluginConfig.setSelectValuePreservingUnknown(groupSelect, saved.group, loadingLabel);
@@ -2449,8 +2448,6 @@
 
                     var bridgeIndex = HuePluginConfig.indexOfId(HuePluginConfig.bridges, bridgeId);
                     var bridgeName = bridgeIndex >= 0 ? HuePluginConfig.bridges[bridgeIndex].Name : 'this bridge';
-                    // refresh=true reads the bridge, so a room or scene made in the Hue app since the last open is listed
-                    var query = '?bridgeId=' + encodeURIComponent(bridgeId) + '&refresh=true';
 
                     function current() {
                         return generation === HuePluginConfig.editorTargetsGeneration;
@@ -2460,15 +2457,12 @@
                             if (select.options[i].text === loadingLabel) select.options[i].text = 'Saved selection (not loaded)';
                         }
                     }
-                    function showFailures() {
-                        var what = failures.groups && failures.scenes ? 'rooms, zones and scenes'
-                            : failures.groups ? 'rooms and zones' : 'scenes';
-                        HuePluginConfig.renderTargetsStatus('Could not load ' + what + ' from ' + bridgeName + ': ' +
-                            (failures.groups || failures.scenes) + '. The saved selections are kept.');
-                    }
 
-                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/groups' + query)).then(function (groups) {
+                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/targets?bridgeId=' + encodeURIComponent(bridgeId))).then(function (result) {
                         if (!current()) return;
+                        var groups = result.Groups;
+                        var scenes = result.Scenes;
+
                         // Keep what the select holds (the saved id, or what the user picked while loading)
                         var chosenGroup = groupSelect.value;
                         groupSelect.innerHTML = '<option value="0">All Lights</option>';
@@ -2496,16 +2490,7 @@
                         });
 
                         HuePluginConfig.setSelectValuePreservingUnknown(groupSelect, chosenGroup);
-                    }).catch(function(error) {
-                        if (!current()) return;
-                        console.error('Error loading groups for profile:', error);
-                        keepSaved(groupSelect);
-                        failures.groups = HuePluginConfig.describeError(error);
-                        showFailures();
-                    });
 
-                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/scenes' + query)).then(function (scenes) {
-                        if (!current()) return;
                         Object.keys(sceneSelects).forEach(function(key) {
                             var select = sceneSelects[key];
                             var chosen = select.value;
@@ -2522,12 +2507,13 @@
                         HuePluginConfig.updateStateVisibility();
                     }).catch(function(error) {
                         if (!current()) return;
-                        console.error('Error loading scenes for profile:', error);
+                        console.error('Error loading rooms, zones and scenes for profile:', error);
+                        keepSaved(groupSelect);
                         Object.keys(sceneSelects).forEach(function(key) {
                             keepSaved(sceneSelects[key]);
                         });
-                        failures.scenes = HuePluginConfig.describeError(error);
-                        showFailures();
+                        HuePluginConfig.renderTargetsStatus('Could not load rooms, zones and scenes from ' + bridgeName + ': ' +
+                            HuePluginConfig.describeError(error) + '. The saved selections are kept.');
                     });
                 },
 

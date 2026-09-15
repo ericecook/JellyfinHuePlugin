@@ -529,13 +529,17 @@ namespace JellyfinHuePlugin.Services
             }
         }
 
-        /// <summary>Rooms, zones and the bridge home (named "All Lights"), each with its grouped_light service. Null on any failure.</summary>
-        public virtual async Task<IReadOnlyList<HueGroupResource>?> GetGroupsAsync(HueBridge bridge, CancellationToken cancellationToken = default)
+        /// <summary>
+        /// The groups of the types the caller names (<c>room</c>, <c>zone</c>, <c>bridge_home</c>),
+        /// read in that order, each with its grouped_light service. The bridge home is named
+        /// "All Lights". Null on any failure.
+        /// </summary>
+        public virtual async Task<IReadOnlyList<HueGroupResource>?> GetGroupsAsync(HueBridge bridge, IReadOnlyList<string> types, CancellationToken cancellationToken = default)
         {
             try
             {
                 var groups = new List<HueGroupResource>();
-                foreach (var type in new[] { "room", "zone", "bridge_home" })
+                foreach (var type in types)
                 {
                     var data = await GetResourcesAsync(bridge, type, cancellationToken);
                     if (data == null)
@@ -787,19 +791,6 @@ namespace JellyfinHuePlugin.Services
                 _logger.LogError(ex, "Error discovering Hue bridges");
                 return new List<HueBridgeDiscovery>();
             }
-        }
-
-        // Test connection to bridge - returns the raw response for diagnostics
-        public virtual async Task<string> TestBridgeConnectionAsync(string bridgeIp, CancellationToken cancellationToken = default)
-        {
-            var info = await GetBridgeInfoAsync(bridgeIp, cancellationToken);
-            if (info == null)
-            {
-                return "Error: the bridge did not answer /api/0/config with a bridge id. See the Jellyfin log for the reason.";
-            }
-
-            return $"Bridge {info.HardwareId} (model {info.ModelId}, software {info.SoftwareVersion}, API {info.ApiVersion}) — "
-                + (info.SupportsV2 ? "supports API v2." : $"does NOT support API v2; bridge software {MinimumV2SoftwareVersion} or newer is required.");
         }
 
         public void Dispose()

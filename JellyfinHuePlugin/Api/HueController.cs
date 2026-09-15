@@ -42,19 +42,6 @@ namespace JellyfinHuePlugin.Api
             _executor = executor;
         }
 
-        private HueBridge? GetBridge(string? bridgeId)
-        {
-            var config = _configuration.Current;
-
-            if (!string.IsNullOrWhiteSpace(bridgeId))
-            {
-                return config.Bridges.FirstOrDefault(b => b.Id == bridgeId);
-            }
-
-            // Fallback to first bridge
-            return config.Bridges.FirstOrDefault();
-        }
-
         [HttpGet("discover")]
         public async Task<ActionResult<List<HueBridgeDiscovery>>> DiscoverBridges(CancellationToken cancellationToken)
         {
@@ -63,69 +50,6 @@ namespace JellyfinHuePlugin.Api
             var bridges = await _hueService.DiscoverBridgesAsync(cancellationToken);
 
             return Ok(bridges);
-        }
-
-        [HttpGet("bridges")]
-        public ActionResult<List<BridgeInfo>> GetBridges()
-        {
-            var config = _configuration.Current;
-
-            var bridges = config.Bridges.Select(b => new BridgeInfo
-            {
-                Id = b.Id,
-                Name = b.Name,
-                IpAddress = b.IpAddress,
-                IsAuthenticated = !string.IsNullOrWhiteSpace(b.Username)
-            }).ToList();
-
-            return Ok(bridges);
-        }
-
-        [HttpPost("bridges")]
-        public ActionResult<BridgeInfo> AddBridge([FromBody][Required] AddBridgeRequest request)
-        {
-            var config = _configuration.Current;
-
-            var bridge = new HueBridge
-            {
-                IpAddress = request.IpAddress,
-                Name = request.Name
-            };
-            config.Bridges.Add(bridge);
-            _configuration.Save();
-
-            _logger.LogInformation("Added bridge {BridgeName} at {IpAddress}", bridge.Name, bridge.IpAddress);
-
-            return Ok(new BridgeInfo
-            {
-                Id = bridge.Id,
-                Name = bridge.Name,
-                IpAddress = bridge.IpAddress,
-                IsAuthenticated = false
-            });
-        }
-
-        [HttpDelete("bridges/{bridgeId}")]
-        public ActionResult DeleteBridge(string bridgeId)
-        {
-            var config = _configuration.Current;
-
-            var bridge = config.Bridges.FirstOrDefault(b => b.Id == bridgeId);
-            if (bridge == null)
-            {
-                return NotFound("Bridge not found");
-            }
-
-            config.Bridges.Remove(bridge);
-            // The entry is keyed by the configuration GUID, so a bridge later re-added at the same
-            // address gets a fresh key anyway - but nothing should keep serving a deleted bridge's
-            // rooms and scenes until the next Jellyfin restart.
-            _catalog.Invalidate(bridge);
-            _configuration.Save();
-
-            _logger.LogInformation("Deleted bridge {BridgeName} ({BridgeId})", bridge.Name, bridgeId);
-
-            return Ok();
         }
 
         [HttpPost("authenticate")]
@@ -169,9 +93,9 @@ namespace JellyfinHuePlugin.Api
                     // key on it. HueBridge.HardwareId is the 16-hex id the TLS certificate is
                     // pinned to (not the configuration GUID in HueBridge.Id); the assignment
                     // below re-learns it from this authentication, so the old pin never
-                    // survives. The cached rooms and scenes describe the old bridge just as
-                    // much, so drop those here - the catalog keys by id + address + key, which
-                    // the assignments below change.
+                    // survives. The cached bridge home describes the old bridge just as much,
+                    // so drop it here - the catalog keys by id + address + key, which the
+                    // assignments below change.
                     _logger.LogInformation("Bridge {BridgeName} changed address or application key; dropping its cached resources and re-learning its bridge id", bridge.Name);
                     _catalog.Invalidate(bridge);
                 }
@@ -191,77 +115,35 @@ namespace JellyfinHuePlugin.Api
             });
         }
 
-        [HttpGet("lights")]
-        public async Task<ActionResult<Dictionary<string, HueLightResource>>> GetLights(
+        // Rooms and zones are keyed by grouped_light id, which is what a profile stores as
+        // TargetGroupId, and scenes by scene id. The bridge home isn't listed: the page adds its
+        // own "All Lights" option with value "0".
+        [HttpGet("targets")]
+        public async Task<ActionResult<TargetsResult>> GetTargets(
             [FromQuery] string? bridgeId,
             CancellationToken cancellationToken)
         {
-            var bridge = GetBridge(bridgeId);
+            var bridge = string.IsNullOrWhiteSpace(bridgeId)
+                ? null
+                : _configuration.Current.Bridges.FirstOrDefault(b => b.Id == bridgeId);
             if (bridge == null || string.IsNullOrWhiteSpace(bridge.IpAddress) || string.IsNullOrWhiteSpace(bridge.Username))
             {
                 return BadRequest("Bridge not configured");
             }
 
-            _logger.LogInformation("API: Getting lights from bridge {BridgeName}", bridge.Name);
+            _logger.LogInformation("API: Getting rooms, zones and scenes from bridge {BridgeName}", bridge.Name);
 
-            var lights = await _hueService.GetLightsAsync(bridge, cancellationToken);
-            if (lights == null)
+            var targets = await _catalog.ReadTargetsAsync(bridge, cancellationToken);
+            if (targets == null)
             {
-                return StatusCode(500, "Failed to retrieve lights");
+                return StatusCode(500, "Failed to retrieve rooms, zones and scenes");
             }
 
-            return Ok(lights.ToDictionary(l => l.Id));
-        }
-
-        // Keyed by grouped_light id, which is what a profile stores as TargetGroupId. The bridge
-        // home is left out: the page adds its own "All Lights" option with value "0".
-        // refresh=true reads the bridge instead of the cache; the profile editor sends it on every
-        // open. A missing value binds false (no C# default: it would have to follow the token).
-        [HttpGet("groups")]
-        public async Task<ActionResult<Dictionary<string, HueGroupResource>>> GetGroups(
-            [FromQuery] string? bridgeId,
-            [FromQuery] bool refresh,
-            CancellationToken cancellationToken)
-        {
-            var bridge = GetBridge(bridgeId);
-            if (bridge == null || string.IsNullOrWhiteSpace(bridge.IpAddress) || string.IsNullOrWhiteSpace(bridge.Username))
+            return Ok(new TargetsResult
             {
-                return BadRequest("Bridge not configured");
-            }
-
-            _logger.LogInformation("API: Getting groups from bridge {BridgeName}", bridge.Name);
-
-            var groups = await _catalog.GetGroupsAsync(bridge, refresh, cancellationToken);
-            if (groups == null)
-            {
-                return StatusCode(500, "Failed to retrieve groups");
-            }
-
-            return Ok(groups.Where(g => g.Type != "bridge_home").ToDictionary(g => g.GroupedLightId));
-        }
-
-        // refresh as for GetGroups.
-        [HttpGet("scenes")]
-        public async Task<ActionResult<Dictionary<string, HueSceneResource>>> GetScenes(
-            [FromQuery] string? bridgeId,
-            [FromQuery] bool refresh,
-            CancellationToken cancellationToken)
-        {
-            var bridge = GetBridge(bridgeId);
-            if (bridge == null || string.IsNullOrWhiteSpace(bridge.IpAddress) || string.IsNullOrWhiteSpace(bridge.Username))
-            {
-                return BadRequest("Bridge not configured");
-            }
-
-            _logger.LogInformation("API: Getting scenes from bridge {BridgeName}", bridge.Name);
-
-            var scenes = await _catalog.GetScenesAsync(bridge, refresh, cancellationToken);
-            if (scenes == null)
-            {
-                return StatusCode(500, "Failed to retrieve scenes");
-            }
-
-            return Ok(scenes.ToDictionary(s => s.Id));
+                Groups = targets.Groups.ToDictionary(g => g.GroupedLightId),
+                Scenes = targets.Scenes.ToDictionary(s => s.Id)
+            });
         }
 
         [HttpPost("test")]
@@ -295,18 +177,6 @@ namespace JellyfinHuePlugin.Api
             LightCommandOutcome.GroupUnresolved => "Target group not found on the bridge, or the bridge could not be reached; re-select it or check the server logs",
             _ => "The bridge did not accept the command; check the server logs"
         };
-
-        [HttpPost("testconnection")]
-        public async Task<ActionResult<string>> TestBridgeConnection(
-            [FromBody][Required] TestConnectionRequest request,
-            CancellationToken cancellationToken)
-        {
-            _logger.LogInformation("API: Testing bridge connection to {BridgeIp}", request.BridgeIp);
-
-            var result = await _hueService.TestBridgeConnectionAsync(request.BridgeIp, cancellationToken);
-
-            return Ok(new { result });
-        }
 
         [HttpPost("verifyconnection")]
         public async Task<ActionResult<VerifyConnectionResult>> VerifyConnection(

@@ -57,54 +57,12 @@ namespace JellyfinHuePlugin.Tests.Api
         }
 
         private static T Value<T>(ActionResult<T> result) => ((OkObjectResult)result.Result!).Value.Should().BeOfType<T>().Subject;
-        private static int Status(ActionResult result) => ((IStatusCodeActionResult)result).StatusCode!.Value;
         private static int Status<T>(ActionResult<T> result) => ((IStatusCodeActionResult)result.Result!).StatusCode!.Value;
 
         /// <summary>Every fact's log lines are checked here, not just the dedicated Authenticate test.</summary>
         public void Dispose()
         {
             _log.Lines.Should().NotContain(l => l.Contains(Key) || l.Contains("SECRET"));
-        }
-
-        [Fact]
-        public void GetBridges_ReportsAuthenticationWithoutTheKey()
-        {
-            _config.Bridges.Add(Bridge(id: "b2", key: ""));
-
-            var bridges = Value(_controller.GetBridges());
-
-            bridges.Select(b => (b.Id, b.IsAuthenticated)).Should().Equal(("b1", true), ("b2", false));
-            typeof(BridgeInfo).GetProperty("Username").Should().BeNull();
-        }
-
-        [Fact]
-        public void AddBridge_AppendsSavesAndReturnsTheNewEntry()
-        {
-            var info = Value(_controller.AddBridge(new AddBridgeRequest { IpAddress = "192.168.1.60", Name = "Upstairs" }));
-
-            _config.Bridges.Should().HaveCount(2);
-            info.Id.Should().Be(_config.Bridges[1].Id).And.NotBeNullOrEmpty();
-            info.IsAuthenticated.Should().BeFalse();
-            _store.SaveCount.Should().Be(1);
-        }
-
-        [Fact]
-        public void DeleteBridge_Unknown_Is404AndDoesNotSave()
-        {
-            Status(_controller.DeleteBridge("nope")).Should().Be(404);
-            _store.SaveCount.Should().Be(0);
-        }
-
-        [Fact]
-        public void DeleteBridge_Known_RemovesInvalidatesAndSaves()
-        {
-            var bridge = _config.Bridges[0];
-
-            Status(_controller.DeleteBridge("b1")).Should().Be(200);
-
-            _config.Bridges.Should().BeEmpty();
-            _catalog.Verify(c => c.Invalidate(bridge), Times.Once);
-            _store.SaveCount.Should().Be(1);
         }
 
         [Fact]
@@ -177,82 +135,47 @@ namespace JellyfinHuePlugin.Tests.Api
             _log.Lines.Should().NotContain(l => l.Contains("SECRET") || l.Contains(Key));
         }
 
-        [Fact]
-        public async Task GetGroups_Unconfigured_Is400()
-        {
-            _config.Bridges[0].Username = "";
-
-            Status(await _controller.GetGroups("b1", false, CancellationToken.None)).Should().Be(400);
-        }
-
-        [Fact]
-        public async Task GetGroups_CatalogFailure_Is500()
-        {
-            _catalog.Setup(c => c.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlyList<HueGroupResource>?)null);
-
-            Status(await _controller.GetGroups("b1", false, CancellationToken.None)).Should().Be(500);
-        }
-
-        [Fact]
-        public async Task GetGroups_KeysByGroupedLightIdAndDropsBridgeHome()
-        {
-            _catalog.Setup(c => c.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(new[]
-            {
-                new HueGroupResource("room-1", "gl-1", "Theater", "room"),
-                new HueGroupResource("zone-5", "gl-5", "Downstairs", "zone"),
-                new HueGroupResource("home-1", "gl-0", "All Lights", "bridge_home")
-            });
-
-            var groups = Value(await _controller.GetGroups("b1", false, CancellationToken.None));
-
-            groups.Keys.Should().BeEquivalentTo(new[] { "gl-1", "gl-5" });
-            groups["gl-1"].Name.Should().Be("Theater");
-            groups["gl-5"].Type.Should().Be("zone");
-        }
-
         [Theory]
-        [InlineData(true)]
-        [InlineData(false)]
-        public async Task GetGroups_PassesRefreshToTheCatalog(bool refresh)
+        [InlineData("")]
+        [InlineData("nope")]
+        [InlineData("b2")]
+        public async Task GetTargets_MissingUnknownOrKeylessBridge_Is400AndReadsNothing(string bridgeId)
         {
-            _catalog.Setup(c => c.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<HueGroupResource>());
+            _config.Bridges.Add(Bridge(id: "b2", key: ""));
 
-            Status(await _controller.GetGroups("b1", refresh, CancellationToken.None)).Should().Be(200);
+            Status(await _controller.GetTargets(bridgeId, CancellationToken.None)).Should().Be(400);
 
-            _catalog.Verify(c => c.GetGroupsAsync(It.Is<HueBridge>(b => b.Id == "b1"), refresh, It.IsAny<CancellationToken>()), Times.Once);
-        }
-
-        [Theory]
-        [InlineData(true)]
-        [InlineData(false)]
-        public async Task GetScenes_PassesRefreshToTheCatalog(bool refresh)
-        {
-            _catalog.Setup(c => c.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<HueSceneResource>());
-
-            Status(await _controller.GetScenes("b1", refresh, CancellationToken.None)).Should().Be(200);
-
-            _catalog.Verify(c => c.GetScenesAsync(It.Is<HueBridge>(b => b.Id == "b1"), refresh, It.IsAny<CancellationToken>()), Times.Once);
+            _catalog.Verify(c => c.ReadTargetsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact]
-        public async Task GetScenes_KeysBySceneId()
+        public async Task GetTargets_ReadFailure_Is500()
         {
-            _catalog.Setup(c => c.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(new[]
-            {
-                new HueSceneResource("sc-1", "Movie", "room-1") { GroupName = "Theater" }
-            });
+            _catalog.Setup(c => c.ReadTargetsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync((HueTargets?)null);
 
-            var scenes = Value(await _controller.GetScenes("b1", false, CancellationToken.None));
-
-            scenes.Should().ContainKey("sc-1").WhoseValue.GroupName.Should().Be("Theater");
+            Status(await _controller.GetTargets("b1", CancellationToken.None)).Should().Be(500);
         }
 
         [Fact]
-        public async Task GetScenes_CatalogFailure_Is500()
+        public async Task GetTargets_KeysRoomsAndZonesByGroupedLightIdAndScenesById()
         {
-            _catalog.Setup(c => c.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlyList<HueSceneResource>?)null);
+            using var cts = new CancellationTokenSource();
+            _catalog.Setup(c => c.ReadTargetsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(new HueTargets(
+                new[]
+                {
+                    new HueGroupResource("room-1", "gl-1", "Theater", "room"),
+                    new HueGroupResource("zone-5", "gl-5", "Downstairs", "zone")
+                },
+                new[] { new HueSceneResource("sc-1", "Movie", "room-1") { GroupName = "Theater" } }));
 
-            Status(await _controller.GetScenes("b1", false, CancellationToken.None)).Should().Be(500);
+            var targets = Value(await _controller.GetTargets("b1", cts.Token));
+
+            targets.Groups.Keys.Should().BeEquivalentTo(new[] { "gl-1", "gl-5" });
+            targets.Groups["gl-1"].Name.Should().Be("Theater");
+            targets.Groups["gl-5"].Type.Should().Be("zone");
+            targets.Scenes.Should().ContainKey("sc-1").WhoseValue.GroupName.Should().Be("Theater");
+            _catalog.Verify(c => c.ReadTargetsAsync(_config.Bridges[0], cts.Token), Times.Once);
+            _log.Lines.Should().Contain("API: Getting rooms, zones and scenes from bridge Bridge");
         }
 
         private static LightControlProfile TestProfile(string bridgeId = "b1") =>
@@ -403,16 +326,6 @@ namespace JellyfinHuePlugin.Tests.Api
             _hue.Setup(h => h.DiscoverBridgesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(found);
 
             Value(await _controller.DiscoverBridges(CancellationToken.None)).Should().BeSameAs(found);
-        }
-
-        [Fact]
-        public async Task TestBridgeConnection_PassesThrough()
-        {
-            _hue.Setup(h => h.TestBridgeConnectionAsync("192.168.1.50", It.IsAny<CancellationToken>())).ReturnsAsync("Bridge ok");
-
-            var ok = (OkObjectResult)(await _controller.TestBridgeConnection(new TestConnectionRequest { BridgeIp = "192.168.1.50" }, CancellationToken.None)).Result!;
-
-            ok.Value!.ToString().Should().Contain("Bridge ok");
         }
     }
 }
