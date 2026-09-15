@@ -86,7 +86,18 @@ Put more specific profiles first (device ID > client name > no filter).
 
 ## Upgrading from a version before 4.0
 
-Install 4.0.0.0 first, start Jellyfin and open the plugin page once: 4.0 is the only version that converts settings from 3.x and 2.x (the brightness scale and stored room and scene ids) and from the older, single-bridge versions (the bridge's address and key, which those versions stored outside any bridge list). Skip that step and a later version loads 3.x or 2.x settings as they are — a pre-4.0 brightness value is read as a percentage, with anything above 100 counted as 100, and a 3.x or 2.x room or scene id shows as **Unresolved** in the profile editor and must be re-selected — while a single-bridge version's settings lose the bridge and its key entirely, since later versions ignore those old fields and drop them on the next save. Version 4 talks only Hue's CLIP v2 API, and scenes light the room or zone they belong to rather than the profile's light group.
+Install 4.0.0.0 first, start Jellyfin and open the plugin page once. Then update to the latest version.
+
+4.0 is the only version that converts older settings:
+- **3.x and 2.x:** brightness values, and stored room and scene ids.
+- **Older single-bridge versions:** the bridge's address and key.
+
+If you skip 4.0, later versions load those settings unconverted:
+- Brightness is read as a percentage. Anything above 100 counts as 100.
+- Room and scene ids show as **Unresolved** in the profile editor until you re-select them.
+- A single-bridge version's bridge and key are lost.
+
+Version 4 uses only Hue's CLIP v2 API. A scene lights the room or zone it belongs to, not the profile's light group.
 
 ### Testing against a non-Signify bridge
 
