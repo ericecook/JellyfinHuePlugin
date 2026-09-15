@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using JellyfinHuePlugin.Configuration;
 using JellyfinHuePlugin.Services;
@@ -248,6 +249,40 @@ namespace JellyfinHuePlugin.Tests
             public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
             public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
                 => Lines.Add(formatter(state, exception));
+        }
+
+        [Fact]
+        public void GetPages_ThePageControllerIsARegisteredPage()
+        {
+            var plugin = Load(new PluginConfiguration());
+            var html = ReadResource(typeof(Plugin).Namespace + ".Configuration.configPage.html");
+
+            var controller = Regex.Match(html, "data-controller=\"__plugin/([^\"]+)\"");
+
+            controller.Success.Should().BeTrue(because: "configPage.html names its controller module in data-controller");
+            plugin.GetPages().Select(p => p.Name).Should().Contain(controller.Groups[1].Value);
+        }
+
+        [Fact]
+        public void GetPages_EveryPageResourceExistsAndTheHtmlPageIsFirst()
+        {
+            var pages = Load(new PluginConfiguration()).GetPages().ToList();
+
+            // The dashboard opens a plugin's first page as its settings page
+            pages[0].Name.Should().Be("Hue Lighting Control");
+            pages[0].EmbeddedResourcePath.Should().EndWith(".html");
+            foreach (var page in pages)
+            {
+                using var stream = typeof(Plugin).Assembly.GetManifestResourceStream(page.EmbeddedResourcePath);
+                stream.Should().NotBeNull(because: "the dashboard serves {0} from that resource", page.Name);
+            }
+        }
+
+        private static string ReadResource(string name)
+        {
+            using var stream = typeof(Plugin).Assembly.GetManifestResourceStream(name)!;
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
         }
     }
 }

@@ -115,6 +115,7 @@ PluginServiceRegistrator.cs               Composition root (Jellyfin DI + hosted
 ├── Managers/PlaybackSessionManager.cs    Hosted service: playback events and light orchestration
 ├── Configuration/PluginConfiguration.cs  Settings models
 ├── Configuration/configPage.html         Web configuration UI
+├── Configuration/configPage.js           Page controller module
 ├── Api/HueController.cs                  REST API for the config UI
 └── Models/                               Hue API data models
 ```

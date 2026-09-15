@@ -5,7 +5,7 @@
     <title>Hue Lighting Control</title>
 </head>
 <body>
-    <div id="HuePluginConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+    <div id="HuePluginConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-controller="__plugin/HueLightingControl.js">
         <style>
             /* Modal */
             .hue-modal-overlay {
@@ -31,6 +31,9 @@
                 padding: 0;
                 border-radius: 8px;
                 overflow: hidden;
+            }
+            .hue-modal--narrow {
+                max-width: 600px;
             }
             .hue-modal > * {
                 flex-shrink: 0;
@@ -76,6 +79,55 @@
                 justify-content: flex-end;
             }
 
+            /* Rows of fields and buttons */
+            .hue-section-intro {
+                margin-bottom: 15px;
+            }
+            .hue-field-row {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+            }
+            .hue-field-row > input,
+            .hue-field-row > .selectContainer {
+                flex: 1;
+                min-width: 0;
+            }
+            #HuePluginConfigPage .hue-button-row {
+                display: flex;
+                gap: 10px;
+            }
+            .hue-slider-row {
+                display: flex;
+                align-items: center;
+                gap: 15px;
+            }
+            .hue-slider-row input[type="range"] {
+                flex: 1;
+            }
+            .hue-subfield .hue-slider-row {
+                gap: 10px;
+            }
+            .hue-modal-overlay input.hue-number {
+                width: 80px;
+            }
+            .hue-modal-overlay .inputContainer.hue-subfield {
+                margin-top: 0;
+            }
+            .hue-modal-overlay .checkboxContainer.hue-check-tight {
+                margin-top: 5px;
+            }
+            .hue-modal-overlay .hue-key-input {
+                font-family: monospace;
+            }
+            .hue-modal-overlay .hue-field-row > .hue-key-input {
+                min-height: 40px;
+            }
+            /* A button beside a text field, padded to the field's height */
+            .hue-modal-overlay .hue-inline-button {
+                padding: 0.68em 1em;
+            }
+
             /* Tabs */
             .hue-tab-bar {
                 display: flex;
@@ -98,7 +150,18 @@
                 border-bottom-color: #00a4dc;
             }
 
-            /* Profile cards */
+            /* Cards (bridges and profiles) */
+            #bridgesList {
+                margin-bottom: 15px;
+            }
+            #profilesList {
+                margin-bottom: 20px;
+            }
+            .hue-card-stack {
+                display: flex;
+                flex-direction: column;
+                gap: 8px;
+            }
             .hue-card {
                 background: rgba(255,255,255,0.06);
                 padding: 12px;
@@ -110,15 +173,83 @@
             .hue-card:hover {
                 background: rgba(255,255,255,0.10);
             }
-
-            /* Badges */
-            .hue-badge {
-                background: rgba(255,255,255,0.08);
-                padding: 4px 10px;
-                border-radius: 12px;
-                border: 1px solid rgba(255,255,255,0.15);
-                font-size: 0.9em;
+            .hue-card-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 10px;
             }
+            .hue-card-main {
+                flex: 1;
+                min-width: 0;
+            }
+            .hue-card-title {
+                margin: 0;
+                flex: 1;
+            }
+            .hue-card-subtitle {
+                font-size: 0.88em;
+                opacity: 0.6;
+                margin-top: 4px;
+            }
+            .hue-card-flag {
+                font-size: 0.7em;
+                color: #ff9800;
+                font-weight: normal;
+            }
+            .hue-card-actions {
+                display: flex;
+                gap: 8px;
+            }
+            .hue-card-summary {
+                margin: 6px 0 0 0;
+                padding-left: 20px;
+                font-size: 0.88em;
+                opacity: 0.6;
+            }
+            #HuePluginConfigPage .hue-button-quiet {
+                opacity: 0.7;
+            }
+            .profile-card.is-disabled,
+            .profile-card.hue-dragging {
+                opacity: 0.5;
+            }
+            .profile-card.hue-drop-before {
+                border-top: 3px solid rgba(255,255,255,0.4);
+            }
+            .profile-card.hue-drop-after {
+                border-bottom: 3px solid rgba(255,255,255,0.4);
+            }
+            .hue-load-error {
+                margin-bottom: 10px;
+            }
+
+            /* Bridge status: the dot and the text take the state's colour */
+            .bridge-info {
+                font-size: 0.85em;
+                opacity: 0.6;
+                margin-top: 2px;
+            }
+            .bridge-status {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                margin-top: 6px;
+                color: #888;
+            }
+            .bridge-status-dot {
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: currentColor;
+                display: inline-block;
+            }
+            .bridge-status-text {
+                font-size: 0.85em;
+            }
+            .bridge-status--nokey { color: #ff9800; }
+            .bridge-status--ok { color: #4caf50; }
+            .bridge-status--failed { color: #f44336; }
 
             /* State section cards (Play/Pause/Stop) */
             .hue-state-section {
@@ -177,14 +308,13 @@
                 to { transform: rotate(360deg); }
             }
 
-            /* Dividers */
-            .hue-divider {
-                height: 1px;
-                background: rgba(255,255,255,0.08);
-                margin: 10px 0;
+            /* Profile card menu */
+            .profile-menu {
+                position: relative;
             }
-
-            /* Dropdown menus */
+            #profilesList .profile-menu-button {
+                padding: 4px 12px;
+            }
             .hue-dropdown {
                 display: none;
                 position: absolute;
@@ -199,6 +329,9 @@
                 box-shadow: 0 4px 12px rgba(0,0,0,0.4);
                 overflow: hidden;
                 padding: 4px 0;
+            }
+            .hue-dropdown.is-open {
+                display: block;
             }
             .hue-dropdown-item {
                 padding: 8px 16px;
@@ -228,6 +361,9 @@
             .hue-section-card h2 {
                 margin-top: 0;
             }
+            #configSection > .hue-section-intro {
+                margin-bottom: 20px;
+            }
 
             /* Template menu */
             .hue-template-menu {
@@ -238,2619 +374,352 @@
                 margin-top: 10px;
                 border: 1px solid rgba(255,255,255,0.08);
             }
+            .hue-template-title {
+                font-weight: bold;
+                margin-bottom: 10px;
+                padding-bottom: 8px;
+                border-bottom: 1px solid rgba(255,255,255,0.1);
+            }
+            #HuePluginConfigPage .hue-template-option {
+                width: 100%;
+                margin-bottom: 8px;
+                text-align: left;
+            }
+            #HuePluginConfigPage .hue-template-option:last-child {
+                margin-bottom: 0;
+            }
+
+            /* Pairing progress */
+            .hue-auth-progress {
+                margin-top: 10px;
+                padding: 10px;
+                background: rgba(255,255,255,0.05);
+                border-radius: 6px;
+            }
+            .hue-auth-progress-text {
+                font-weight: 600;
+            }
+            .hue-auth-countdown {
+                font-size: 0.85em;
+                opacity: 0.7;
+                margin-top: 4px;
+            }
+
+            /* Device picker */
+            #profileDeviceIdList {
+                margin-bottom: 10px;
+            }
+            .hue-device-manual {
+                margin-top: 10px;
+            }
+            .hue-modal-overlay #profileShowAddDeviceId {
+                margin-top: 5px;
+            }
+            .hue-device-row {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                margin-bottom: 5px;
+                padding: 8px;
+                background: rgba(0,0,0,0.3);
+                border-radius: 4px;
+            }
+            .hue-device-name {
+                flex: 1;
+                min-width: 0;
+                overflow-wrap: break-word;
+            }
+            .hue-device-id {
+                font-family: monospace;
+                font-size: 0.85em;
+                opacity: 0.7;
+            }
+            .hue-device-id--only {
+                font-size: 1em;
+                opacity: 1;
+            }
+            .hue-empty-note {
+                font-style: italic;
+                opacity: 0.6;
+            }
         </style>
         <div data-role="content">
             <div class="content-primary">
-                <form id="HuePluginConfigForm">
-                    
-                    <div class="hue-section-card">
-                        <h2>Hue Bridges</h2>
-                        <div class="fieldDescription" style="margin-bottom: 15px;">
-                            Manage your Hue bridges. Each lighting profile can be assigned to a specific bridge.
-                        </div>
+                <div id="bridgesSection" class="hue-section-card">
+                    <h2>Hue Bridges</h2>
+                    <div class="fieldDescription hue-section-intro">
+                        Manage your Hue bridges. Each lighting profile can be assigned to a specific bridge.
+                    </div>
 
-                        <div id="bridgesList" style="margin-bottom: 15px;">
-                            <!-- Bridge cards rendered here -->
-                        </div>
+                    <div id="bridgesList">
+                        <!-- Bridge cards, built by configPage.js -->
+                    </div>
 
-                        <button is="emby-button" type="button" class="raised button-submit" id="addBridgeButton">
-                            <span>+ Add Bridge</span>
+                    <button is="emby-button" type="button" class="raised button-submit" id="addBridgeButton">
+                        <span>+ Add Bridge</span>
+                    </button>
+                </div>
+
+                <!-- Add Bridge Modal -->
+                <div id="addBridgeModal" class="hue-modal-overlay">
+                    <div class="hue-modal hue-modal--narrow">
+                        <div class="hue-modal-header">
+                            <h2>Add Hue Bridge</h2>
+                        </div>
+                        <div class="hue-modal-body">
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="newBridgeName">Bridge Name</label>
+                                <input type="text" id="newBridgeName" is="emby-input" placeholder="e.g., Living Room Bridge" value="Bridge" />
+                            </div>
+
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="newBridgeIp">Bridge IP Address</label>
+                                <div class="hue-field-row">
+                                    <input type="text" id="newBridgeIp" is="emby-input" placeholder="Discover or enter manually" />
+                                    <button is="emby-button" type="button" class="raised hue-inline-button" id="discoverBridgeInModal">
+                                        <span>Discover</span>
+                                    </button>
+                                </div>
+                                <div class="fieldDescription">Use Discover or enter your bridge's IP address manually</div>
+                            </div>
+
+                            <div id="addBridgeSelector" class="selectContainer" style="display:none;">
+                                <select id="addBridgeSelect" is="emby-select" label="Multiple bridges found — select one:"></select>
+                            </div>
+
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="newBridgeUsername">API Key</label>
+                                <div class="hue-field-row">
+                                    <input type="text" id="newBridgeUsername" is="emby-input" class="hue-key-input"
+                                           placeholder="Press link button on bridge, then click Authenticate" />
+                                    <button is="emby-button" type="button" class="raised hue-inline-button" id="authBridgeInModal">
+                                        <span id="authBridgeInModalText">Authenticate</span>
+                                    </button>
+                                </div>
+                                <div class="fieldDescription">Authenticate to get an API key automatically, or paste one manually</div>
+                                <div id="addBridgeAuthProgress" class="hue-auth-progress" style="display:none;">
+                                    <div id="addBridgeAuthProgressText" class="hue-auth-progress-text"></div>
+                                    <div id="addBridgeAuthCountdown" class="hue-auth-countdown"></div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="hue-modal-footer">
+                            <button is="emby-button" type="button" class="raised" id="cancelAddBridge">
+                                <span>Cancel</span>
+                            </button>
+                            <button is="emby-button" type="button" class="raised button-submit" id="saveAddBridge">
+                                <span>Save</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Edit Bridge Modal -->
+                <div id="editBridgeModal" class="hue-modal-overlay">
+                    <div class="hue-modal hue-modal--narrow">
+                        <div class="hue-modal-header">
+                            <h2>Edit Bridge</h2>
+                        </div>
+                        <div class="hue-modal-body">
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="editBridgeName">Bridge Name</label>
+                                <input type="text" id="editBridgeName" is="emby-input" />
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="editBridgeIp">IP Address</label>
+                                <input type="text" id="editBridgeIp" is="emby-input" />
+                            </div>
+                            <div class="inputContainer">
+                                <label class="inputLabel" for="editBridgeUsername">API Key</label>
+                                <input type="text" id="editBridgeUsername" is="emby-input" class="hue-key-input" placeholder="Auto-filled on authenticate" />
+                            </div>
+                        </div>
+                        <div class="hue-modal-footer">
+                            <button is="emby-button" type="button" class="raised" id="cancelEditBridge">
+                                <span>Cancel</span>
+                            </button>
+                            <button is="emby-button" type="button" class="raised button-submit" id="saveEditBridge">
+                                <span>Save</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="configSection" class="hue-section-card" style="display:none;">
+                    <h2>Light Control Profiles</h2>
+
+                    <div class="fieldDescription hue-section-intro">
+                        Create multiple profiles to control different lights for different playback clients.
+                        Profiles are checked in order - the first matching profile will be used.
+                    </div>
+
+                    <div id="profilesList">
+                        <!-- Profile cards, built by configPage.js -->
+                    </div>
+
+                    <div class="inputContainer hue-button-row">
+                        <button is="emby-button" type="button" class="raised button-submit" id="addProfileButton">
+                            <span>+ Add New Profile</span>
+                        </button>
+                        <button is="emby-button" type="button" class="raised" id="addProfileTemplateButton">
+                            <span>From Template ▼</span>
                         </button>
                     </div>
 
-                    <!-- Add Bridge Modal -->
-                    <div id="addBridgeModal" class="hue-modal-overlay">
-                        <div class="hue-modal" style="max-width: 600px;">
-                            <div class="hue-modal-header">
-                                <h2 style="margin: 0;">Add Hue Bridge</h2>
-                            </div>
-                            <div class="hue-modal-body">
+                    <!-- Template menu: its buttons are built by configPage.js from TEMPLATES -->
+                    <div id="templateMenu" class="hue-template-menu"></div>
+                </div>
+
+                <!-- Profile Editor Modal -->
+                <div id="profileEditorModal" class="hue-modal-overlay">
+                    <div class="hue-modal">
+                        <div class="hue-modal-header">
+                            <h2 id="profileEditorTitle">Add Profile</h2>
+                        </div>
+
+                        <!-- Tabs -->
+                        <div class="hue-tab-bar">
+                            <button type="button" class="hue-tab profile-tab active" data-tab="general">General</button>
+                            <button type="button" class="hue-tab profile-tab" data-tab="filters">Filters</button>
+                            <button type="button" class="hue-tab profile-tab" data-tab="lights">Lights</button>
+                            <button type="button" class="hue-tab profile-tab" data-tab="advanced">Advanced</button>
+                        </div>
+
+                        <div class="hue-modal-body">
+                            <!-- General Tab -->
+                            <div id="tab-general" class="profile-tab-content">
                                 <div class="inputContainer">
-                                    <label class="inputLabel" for="newBridgeName">Bridge Name</label>
-                                    <input type="text" id="newBridgeName" is="emby-input" placeholder="e.g., Living Room Bridge" value="Bridge" />
+                                    <label class="inputLabel" for="profileName">Profile Name</label>
+                                    <input type="text" id="profileName" is="emby-input" placeholder="e.g., Living Room Roku" />
+                                </div>
+
+                                <div class="checkboxContainer checkboxContainer-withDescription">
+                                    <label>
+                                        <input type="checkbox" is="emby-checkbox" id="profileEnabled" checked />
+                                        <span>Profile Enabled</span>
+                                    </label>
+                                    <div class="fieldDescription">Disabled profiles are skipped during playback matching</div>
+                                </div>
+
+                                <h3>Media Type Filters</h3>
+                                <div class="fieldDescription hue-section-intro">
+                                    Choose which media types will trigger this profile. At least one must be enabled.
+                                </div>
+
+                                <div class="checkboxContainer checkboxContainer-withDescription">
+                                    <label>
+                                        <input type="checkbox" is="emby-checkbox" id="profileEnableForMovies" checked />
+                                        <span>Enable for Movies</span>
+                                    </label>
+                                    <div class="fieldDescription">Control lights when playing movies</div>
+                                </div>
+
+                                <div class="checkboxContainer checkboxContainer-withDescription">
+                                    <label>
+                                        <input type="checkbox" is="emby-checkbox" id="profileEnableForTvShows" />
+                                        <span>Enable for TV Shows</span>
+                                    </label>
+                                    <div class="fieldDescription">Control lights when playing TV episodes</div>
+                                </div>
+                            </div>
+
+                            <!-- Filters Tab -->
+                            <div id="tab-filters" class="profile-tab-content" style="display:none;">
+                                <h3>Client Filters (AND logic)</h3>
+                                <div class="fieldDescription hue-section-intro">
+                                    Leave all filters empty to match ALL clients. Otherwise, the device must match ALL specified filters.
                                 </div>
 
                                 <div class="inputContainer">
-                                    <label class="inputLabel" for="newBridgeIp">Bridge IP Address</label>
-                                    <div style="display: flex; align-items: center;">
-                                        <input type="text" id="newBridgeIp" is="emby-input" placeholder="Discover or enter manually" style="flex: 1;" />
-                                        <button is="emby-button" type="button" class="raised" id="discoverBridgeInModal" style="margin-left: 10px; padding: 0.68em 1em;">
-                                            <span>Discover</span>
-                                        </button>
-                                    </div>
-                                    <div class="fieldDescription">Use Discover or enter your bridge's IP address manually</div>
-                                </div>
-
-                                <div id="addBridgeSelector" class="selectContainer" style="display:none;">
-                                    <select id="addBridgeSelect" is="emby-select" label="Multiple bridges found — select one:"></select>
+                                    <label class="inputLabel" for="profileClientName">Target Client Name (Optional)</label>
+                                    <input type="text" id="profileClientName" is="emby-input" placeholder="e.g., Roku, Web, Android" />
+                                    <div class="fieldDescription">Substring match - filters by client type</div>
                                 </div>
 
                                 <div class="inputContainer">
-                                    <label class="inputLabel" for="newBridgeUsername">API Key</label>
-                                    <div style="display: flex; align-items: center;">
-                                        <input type="text" id="newBridgeUsername" is="emby-input"
-                                               style="flex: 1; font-family: monospace; min-height: 40px;" placeholder="Press link button on bridge, then click Authenticate" />
-                                        <button is="emby-button" type="button" class="raised" id="authBridgeInModal" style="margin-left: 10px; padding: 0.68em 1em;">
-                                            <span id="authBridgeInModalText">Authenticate</span>
-                                        </button>
+                                    <label class="inputLabel">Target Device IDs (Optional)</label>
+                                    <div id="profileDeviceIdList"></div>
+                                    <div id="profileDeviceIdInputRow" style="display:none;">
+                                        <div class="hue-field-row">
+                                            <div class="selectContainer selectContainer-inline">
+                                                <select id="profileKnownDeviceSelect" is="emby-select" aria-label="Known device">
+                                                    <!-- Populated from the server's device list -->
+                                                </select>
+                                            </div>
+                                            <button is="emby-button" type="button" class="raised" id="profileAddKnownDeviceButton">
+                                                <span>Add</span>
+                                            </button>
+                                        </div>
+                                        <div id="profileKnownDeviceStatus" class="fieldDescription"></div>
+                                        <div class="hue-field-row hue-device-manual">
+                                            <input type="text" id="profileNewDeviceId" is="emby-input" placeholder="Or enter a Device ID manually" />
+                                            <button is="emby-button" type="button" class="raised" id="profileAddDeviceIdButton">
+                                                <span>Add</span>
+                                            </button>
+                                        </div>
                                     </div>
-                                    <div class="fieldDescription">Authenticate to get an API key automatically, or paste one manually</div>
-                                    <div id="addBridgeAuthProgress" style="display:none; margin-top: 10px; padding: 10px; background: rgba(255,255,255,0.05); border-radius: 6px;">
-                                        <div id="addBridgeAuthProgressText" style="font-weight: 600;"></div>
-                                        <div id="addBridgeAuthCountdown" style="font-size: 0.85em; opacity: 0.7; margin-top: 4px;"></div>
-                                    </div>
+                                    <button is="emby-button" type="button" class="raised button-submit" id="profileShowAddDeviceId">
+                                        <span>Add Device ID</span>
+                                    </button>
+                                    <div class="fieldDescription">Pick from devices that have signed in to this server. Each app and each browser on the same physical device has its own ID, so add every one that should trigger this profile.</div>
+                                </div>
+
+                                <div class="inputContainer">
+                                    <label class="inputLabel" for="profileIpAddress">Target IP Address (Optional)</label>
+                                    <input type="text" id="profileIpAddress" is="emby-input" placeholder="192.168.1.100" />
+                                    <div class="fieldDescription">Most specific filter - matches exact IP address</div>
                                 </div>
                             </div>
-                            <div class="hue-modal-footer">
-                                <button is="emby-button" type="button" class="raised" id="cancelAddBridge">
-                                    <span>Cancel</span>
-                                </button>
-                                <button is="emby-button" type="button" class="raised button-submit" id="saveAddBridge">
-                                    <span>Save</span>
-                                </button>
+
+                            <!-- Lights Tab -->
+                            <div id="tab-lights" class="profile-tab-content" style="display:none;">
+                                <h3>Light Control</h3>
+
+                                <div class="selectContainer">
+                                    <select id="profileBridgeId" is="emby-select" label="Hue Bridge">
+                                        <!-- Populated from config.Bridges -->
+                                    </select>
+                                    <div class="fieldDescription">Select which bridge this profile controls. Changing the bridge will reload available groups and scenes.</div>
+                                </div>
+
+                                <div class="selectContainer">
+                                    <select id="profileTargetGroupId" is="emby-select" label="Target Light Group">
+                                        <option value="0">All Lights</option>
+                                    </select>
+                                    <div class="hue-test-error" id="profileTargetsStatus" style="display:none;"></div>
+                                </div>
+
+                                <!-- Play, Pause and Stop sections, built by configPage.js from STATES -->
+                                <div id="stateSections"></div>
                             </div>
+
+                            <!-- Advanced Tab -->
+                            <div id="tab-advanced" class="profile-tab-content" style="display:none;">
+                                <h3>Advanced Options</h3>
+
+                                <div class="checkboxContainer checkboxContainer-withDescription">
+                                    <label>
+                                        <input type="checkbox" is="emby-checkbox" id="profileEnableOutroLights" />
+                                        <span>Enable Outro Detection</span>
+                                    </label>
+                                    <div class="fieldDescription">Automatically trigger Stop Scene/Brightness when end credits (outro segment) begin. Requires media to have outro segments detected by Jellyfin.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Modal Footer -->
+                        <div class="hue-modal-footer">
+                            <button is="emby-button" type="button" class="raised" id="cancelProfileButton">
+                                <span>Cancel</span>
+                            </button>
+                            <button is="emby-button" type="button" class="raised button-submit" id="saveProfileButton">
+                                <span>Save Profile</span>
+                            </button>
                         </div>
                     </div>
-
-                    <!-- Edit Bridge Modal -->
-                    <div id="editBridgeModal" class="hue-modal-overlay">
-                        <div class="hue-modal" style="max-width: 600px;">
-                            <div class="hue-modal-header">
-                                <h2 style="margin: 0;">Edit Bridge</h2>
-                            </div>
-                            <div class="hue-modal-body">
-                                <div class="inputContainer">
-                                    <label class="inputLabel" for="editBridgeName">Bridge Name</label>
-                                    <input type="text" id="editBridgeName" is="emby-input" />
-                                </div>
-                                <div class="inputContainer">
-                                    <label class="inputLabel" for="editBridgeIp">IP Address</label>
-                                    <input type="text" id="editBridgeIp" is="emby-input" />
-                                </div>
-                                <div class="inputContainer">
-                                    <label class="inputLabel" for="editBridgeUsername">API Key</label>
-                                    <input type="text" id="editBridgeUsername" is="emby-input"
-                                           style="font-family: monospace;" placeholder="Auto-filled on authenticate" />
-                                </div>
-                            </div>
-                            <div class="hue-modal-footer">
-                                <button is="emby-button" type="button" class="raised" id="cancelEditBridge">
-                                    <span>Cancel</span>
-                                </button>
-                                <button is="emby-button" type="button" class="raised button-submit" id="saveEditBridge">
-                                    <span>Save</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div id="configSection" class="hue-section-card" style="display:none;">
-                        <h2>Light Control Profiles</h2>
-
-                        <div class="fieldDescription" style="margin-bottom: 20px;">
-                            Create multiple profiles to control different lights for different playback clients. 
-                            Profiles are checked in order - the first matching profile will be used.
-                        </div>
-
-                        <div id="profilesList" style="margin-bottom: 20px;">
-                            <!-- Profiles will be rendered here -->
-                        </div>
-
-                        <div class="inputContainer" style="display: flex; gap: 10px;">
-                            <button is="emby-button" type="button" class="raised button-submit" id="addProfileButton">
-                                <span>+ Add New Profile</span>
-                            </button>
-                            <button is="emby-button" type="button" class="raised" id="addProfileTemplateButton">
-                                <span>From Template ▼</span>
-                            </button>
-                        </div>
-                        
-                        <!-- Template Selection Menu (hidden by default) -->
-                        <div id="templateMenu" class="hue-template-menu">
-                            <div style="font-weight: bold; margin-bottom: 10px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1);">Select a Template:</div>
-                            <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('movie-theater')" style="width: 100%; margin-bottom: 8px; text-align: left;">
-                                <span>Movie Theater - Complete darkness with outro detection</span>
-                            </button>
-                            <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('tv-viewing')" style="width: 100%; margin-bottom: 8px; text-align: left;">
-                                <span>TV Viewing - Moderate dimming, no outro</span>
-                            </button>
-                            <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('bedroom-casual')" style="width: 100%; margin-bottom: 8px; text-align: left;">
-                                <span>Bedroom Casual - Gentle dimming for comfort</span>
-                            </button>
-                            <button is="emby-button" type="button" class="raised block" onclick="HuePluginConfig.createFromTemplate('gaming')" style="width: 100%; text-align: left;">
-                                <span>Gaming Setup - Minimal dim, fast response</span>
-                            </button>
-                        </div>
-
-                    </div> <!-- End of configSection -->
-
-                    <!-- Profile Editor Modal -->
-                    <div id="profileEditorModal" class="hue-modal-overlay">
-                        <div class="hue-modal">
-                            <div class="hue-modal-header">
-                                <h2 id="profileEditorTitle" style="margin: 0;">Add Profile</h2>
-                            </div>
-
-                            <!-- Tabs -->
-                            <div class="hue-tab-bar">
-                                <button type="button" class="hue-tab profile-tab active" data-tab="general">General</button>
-                                <button type="button" class="hue-tab profile-tab" data-tab="filters">Filters</button>
-                                <button type="button" class="hue-tab profile-tab" data-tab="lights">Lights</button>
-                                <button type="button" class="hue-tab profile-tab" data-tab="advanced">Advanced</button>
-                            </div>
-
-                            <div class="hue-modal-body">
-                                <!-- General Tab -->
-                                <div id="tab-general" class="profile-tab-content">
-                                    <div class="inputContainer">
-                                        <label class="inputLabel" for="profileName">Profile Name</label>
-                                        <input type="text" id="profileName" is="emby-input" placeholder="e.g., Living Room Roku" />
-                                    </div>
-
-                                    <div class="checkboxContainer checkboxContainer-withDescription">
-                                        <label>
-                                            <input type="checkbox" is="emby-checkbox" id="profileEnabled" checked />
-                                            <span>Profile Enabled</span>
-                                        </label>
-                                        <div class="fieldDescription">Disabled profiles are skipped during playback matching</div>
-                                    </div>
-
-                                    <h3>Media Type Filters</h3>
-                                    <div class="fieldDescription" style="margin-bottom: 15px;">
-                                        Choose which media types will trigger this profile. At least one must be enabled.
-                                    </div>
-
-                                    <div class="checkboxContainer checkboxContainer-withDescription">
-                                        <label>
-                                            <input type="checkbox" is="emby-checkbox" id="profileEnableForMovies" checked />
-                                            <span>Enable for Movies</span>
-                                        </label>
-                                        <div class="fieldDescription">Control lights when playing movies</div>
-                                    </div>
-
-                                    <div class="checkboxContainer checkboxContainer-withDescription">
-                                        <label>
-                                            <input type="checkbox" is="emby-checkbox" id="profileEnableForTvShows" />
-                                            <span>Enable for TV Shows</span>
-                                        </label>
-                                        <div class="fieldDescription">Control lights when playing TV episodes</div>
-                                    </div>
-                                </div>
-
-                                <!-- Filters Tab -->
-                                <div id="tab-filters" class="profile-tab-content" style="display:none;">
-                                    <h3>Client Filters (AND logic)</h3>
-                                    <div class="fieldDescription" style="margin-bottom: 15px;">
-                                        Leave all filters empty to match ALL clients. Otherwise, the device must match ALL specified filters.
-                                    </div>
-
-                                    <div class="inputContainer">
-                                        <label class="inputLabel" for="profileClientName">Target Client Name (Optional)</label>
-                                        <input type="text" id="profileClientName" is="emby-input" placeholder="e.g., Roku, Web, Android" />
-                                        <div class="fieldDescription">Substring match - filters by client type</div>
-                                    </div>
-
-                                    <div class="inputContainer">
-                                        <label class="inputLabel">Target Device IDs (Optional)</label>
-                                        <div id="profileDeviceIdList" style="margin-bottom: 10px;"></div>
-                                        <div id="profileDeviceIdInputRow" style="display: none;">
-                                            <div style="display: flex; gap: 10px; align-items: center;">
-                                                <div class="selectContainer selectContainer-inline" style="flex: 1; min-width: 0;">
-                                                    <select id="profileKnownDeviceSelect" is="emby-select" aria-label="Known device">
-                                                        <!-- Populated from the server's device list -->
-                                                    </select>
-                                                </div>
-                                                <button is="emby-button" type="button" class="raised" id="profileAddKnownDeviceButton">
-                                                    <span>Add</span>
-                                                </button>
-                                            </div>
-                                            <div id="profileKnownDeviceStatus" class="fieldDescription"></div>
-                                            <div style="display: flex; gap: 10px; margin-top: 10px;">
-                                                <input type="text" id="profileNewDeviceId" is="emby-input" placeholder="Or enter a Device ID manually" style="flex: 1;" />
-                                                <button is="emby-button" type="button" class="raised" id="profileAddDeviceIdButton">
-                                                    <span>Add</span>
-                                                </button>
-                                            </div>
-                                        </div>
-                                        <button is="emby-button" type="button" class="raised button-submit" id="profileShowAddDeviceId" style="margin-top: 5px;">
-                                            <span>Add Device ID</span>
-                                        </button>
-                                        <div class="fieldDescription">Pick from devices that have signed in to this server. Each app and each browser on the same physical device has its own ID, so add every one that should trigger this profile.</div>
-                                    </div>
-
-                                    <div class="inputContainer">
-                                        <label class="inputLabel" for="profileIpAddress">Target IP Address (Optional)</label>
-                                        <input type="text" id="profileIpAddress" is="emby-input" placeholder="192.168.1.100" />
-                                        <div class="fieldDescription">Most specific filter - matches exact IP address</div>
-                                    </div>
-                                </div>
-
-                                <!-- Lights Tab -->
-                                <div id="tab-lights" class="profile-tab-content" style="display:none;">
-                                    <h3>Light Control</h3>
-
-                                    <div class="selectContainer">
-                                        <select id="profileBridgeId" is="emby-select" label="Hue Bridge">
-                                            <!-- Populated from config.Bridges -->
-                                        </select>
-                                        <div class="fieldDescription">Select which bridge this profile controls. Changing the bridge will reload available groups and scenes.</div>
-                                    </div>
-
-                                    <div class="selectContainer">
-                                        <select id="profileTargetGroupId" is="emby-select" label="Target Light Group">
-                                            <option value="0">All Lights</option>
-                                        </select>
-                                        <div class="hue-test-error" id="profileTargetsStatus" style="display:none;"></div>
-                                    </div>
-
-                                    <!-- Play Section -->
-                                    <div class="hue-state-section">
-                                        <div class="hue-state-header">
-                                            <h3>Play</h3>
-                                            <button is="emby-button" type="button" class="raised hue-test-button" data-test-action="Play">Test</button>
-                                        </div>
-                                        <div class="hue-test-error" id="profileTestPlayError" style="display:none;"></div>
-
-                                        <div class="selectContainer">
-                                            <select id="profilePlaySceneId" is="emby-select" label="Scene">
-                                                <option value="">None (Use Brightness)</option>
-                                            </select>
-                                        </div>
-
-                                        <div class="checkboxContainer checkboxContainer-withDescription" id="playTurnOffContainer">
-                                            <label>
-                                                <input type="checkbox" is="emby-checkbox" id="profileTurnOffLightsOnPlay" />
-                                                <span>Turn Off Lights</span>
-                                            </label>
-                                            <div class="fieldDescription">Completely turn off lights during playback</div>
-                                        </div>
-
-                                        <div id="playBrightnessContainer" class="inputContainer">
-                                            <label class="inputLabel" for="profilePlayBrightness">Brightness</label>
-                                            <div style="display: flex; align-items: center; gap: 15px;">
-                                                <input type="range" id="profilePlayBrightnessSlider" min="0" max="100" value="8" style="flex: 1;" />
-                                                <input type="number" id="profilePlayBrightness" is="emby-input" min="0" max="100" value="8" style="width: 80px;" />
-                                            </div>
-                                            <div id="profilePlayBrightnessDesc" class="fieldDescription">Very Dim (8%)</div>
-                                        </div>
-
-                                        <div class="checkboxContainer" style="margin-top: 5px;">
-                                            <label>
-                                                <input type="checkbox" is="emby-checkbox" id="profileEnablePlayTransition" />
-                                                <span>Custom Transition Duration</span>
-                                            </label>
-                                        </div>
-                                        <div id="playTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
-                                            <div style="display: flex; align-items: center; gap: 10px;">
-                                                <input type="range" id="profilePlayTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
-                                                <input type="number" id="profilePlayTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
-                                            </div>
-                                            <div id="profilePlayTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Pause Section -->
-                                    <div class="hue-state-section">
-                                        <div class="hue-state-header">
-                                            <h3>Pause</h3>
-                                            <button is="emby-button" type="button" class="raised hue-test-button" data-test-action="Pause">Test</button>
-                                        </div>
-                                        <div class="hue-test-error" id="profileTestPauseError" style="display:none;"></div>
-
-                                        <div class="selectContainer">
-                                            <select id="profilePauseSceneId" is="emby-select" label="Scene">
-                                                <option value="">None (Use Brightness)</option>
-                                            </select>
-                                        </div>
-
-                                        <div id="pauseBrightnessContainer" class="inputContainer">
-                                            <label class="inputLabel" for="profilePauseBrightness">Brightness</label>
-                                            <div style="display: flex; align-items: center; gap: 15px;">
-                                                <input type="range" id="profilePauseBrightnessSlider" min="0" max="100" value="39" style="flex: 1;" />
-                                                <input type="number" id="profilePauseBrightness" is="emby-input" min="0" max="100" value="39" style="width: 80px;" />
-                                            </div>
-                                            <div id="profilePauseBrightnessDesc" class="fieldDescription">Dim (39%)</div>
-                                        </div>
-
-                                        <div class="checkboxContainer" style="margin-top: 5px;">
-                                            <label>
-                                                <input type="checkbox" is="emby-checkbox" id="profileEnablePauseTransition" />
-                                                <span>Custom Transition Duration</span>
-                                            </label>
-                                        </div>
-                                        <div id="pauseTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
-                                            <div style="display: flex; align-items: center; gap: 10px;">
-                                                <input type="range" id="profilePauseTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
-                                                <input type="number" id="profilePauseTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
-                                            </div>
-                                            <div id="profilePauseTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
-                                        </div>
-
-                                        <div class="checkboxContainer" style="margin-top: 5px;">
-                                            <label>
-                                                <input type="checkbox" is="emby-checkbox" id="profileEnablePauseGracePeriod" />
-                                                <span>Grace Period</span>
-                                            </label>
-                                        </div>
-                                        <div id="pauseGracePeriodContainer" class="inputContainer" style="display:none; margin-top: 0;">
-                                            <label class="inputLabel" for="profilePauseGracePeriod">Seconds</label>
-                                            <input type="number" id="profilePauseGracePeriod" is="emby-input" min="1" max="600" value="30" style="width: 80px;" />
-                                            <div class="fieldDescription">Skip pause lighting during the first N seconds of playback</div>
-                                        </div>
-                                    </div>
-
-                                    <!-- Stop Section -->
-                                    <div class="hue-state-section">
-                                        <div class="hue-state-header">
-                                            <h3>Stop</h3>
-                                            <button is="emby-button" type="button" class="raised hue-test-button" data-test-action="Stop">Test</button>
-                                        </div>
-                                        <div class="hue-test-error" id="profileTestStopError" style="display:none;"></div>
-
-                                        <div class="selectContainer">
-                                            <select id="profileStopSceneId" is="emby-select" label="Scene">
-                                                <option value="">None (Use Brightness)</option>
-                                            </select>
-                                        </div>
-
-                                        <div id="stopBrightnessContainer" class="inputContainer">
-                                            <label class="inputLabel" for="profileStopBrightness">Brightness</label>
-                                            <div style="display: flex; align-items: center; gap: 15px;">
-                                                <input type="range" id="profileStopBrightnessSlider" min="0" max="100" value="100" style="flex: 1;" />
-                                                <input type="number" id="profileStopBrightness" is="emby-input" min="0" max="100" value="100" style="width: 80px;" />
-                                            </div>
-                                            <div id="profileStopBrightnessDesc" class="fieldDescription">Very Bright (100%)</div>
-                                        </div>
-
-                                        <div class="checkboxContainer" style="margin-top: 5px;">
-                                            <label>
-                                                <input type="checkbox" is="emby-checkbox" id="profileEnableStopTransition" />
-                                                <span>Custom Transition Duration</span>
-                                            </label>
-                                        </div>
-                                        <div id="stopTransitionContainer" class="inputContainer" style="display:none; margin-top: 0;">
-                                            <div style="display: flex; align-items: center; gap: 10px;">
-                                                <input type="range" id="profileStopTransitionSlider" min="0" max="150" value="4" style="flex: 1;" />
-                                                <input type="number" id="profileStopTransitionDuration" is="emby-input" min="0" max="150" value="4" step="1" style="width: 80px;" />
-                                            </div>
-                                            <div id="profileStopTransitionDesc" class="fieldDescription">Very Fast (0.4s)</div>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- Advanced Tab -->
-                                <div id="tab-advanced" class="profile-tab-content" style="display:none;">
-                                    <h3>Advanced Options</h3>
-
-                                    <div class="checkboxContainer checkboxContainer-withDescription">
-                                        <label>
-                                            <input type="checkbox" is="emby-checkbox" id="profileEnableOutroLights" />
-                                            <span>Enable Outro Detection</span>
-                                        </label>
-                                        <div class="fieldDescription">Automatically trigger Stop Scene/Brightness when end credits (outro segment) begin. Requires media to have outro segments detected by Jellyfin.</div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Modal Footer -->
-                            <div class="hue-modal-footer">
-                                <button is="emby-button" type="button" class="raised" id="cancelProfileButton">
-                                    <span>Cancel</span>
-                                </button>
-                                <button is="emby-button" type="button" class="raised button-submit" id="saveProfileButton">
-                                    <span>Save Profile</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                </form>
+                </div>
             </div>
         </div>
-
-        <script type="text/javascript">
-            var HuePluginConfig = {
-                pluginId: "2a5f5b3e-8c9d-4f1a-9b7e-6d3c4e5f6a7b",
-                profiles: [],
-                bridges: [],
-                // False until the configuration GET succeeds; commit() saves nothing before that
-                loaded: false,
-                // Every commit runs after the previous one settles
-                saveChain: Promise.resolve(),
-                // Id of the profile the editor was opened on; null while adding one
-                currentEditingProfileId: null,
-                // Id the open editor saves under: the edited profile's, or one new id per add session
-                editorProfileId: null,
-                // Latest check per bridge Id: { state: 'checking'|'ok'|'failed', text, result }
-                bridgeStatus: {},
-                // Bumped by every renderBridges; a check answered for an earlier render is ignored
-                bridgeVerifyGeneration: 0,
-                // Bumped by every loadEditorTargets; a group or scene list for an earlier load is ignored
-                editorTargetsGeneration: 0,
-                // The open Add Bridge modal's session; every async result checks it is still the live one
-                addBridgeSession: null,
-                // Id of the profile card being dragged; null when no card drag is in progress
-                draggedProfileId: null,
-                profileDeviceIds: [],
-                editorTestGeneration: 0,
-                knownDevices: [],
-                knownDevicesLoading: false,
-
-                // Helper: Get brightness description
-                getBrightnessDescription: function(value) {
-                    if (value === 0) return 'Minimum';
-                    if (value < 20) return 'Very Dim';
-                    if (value < 40) return 'Dim';
-                    if (value < 60) return 'Medium';
-                    if (value < 80) return 'Bright';
-                    return 'Very Bright';
-                },
-                
-                // Helper: Get transition duration description
-                getTransitionDescription: function(value) {
-                    var seconds = value / 10.0;
-                    if (value === 0) return 'Instant (0.0s)';
-                    if (value < 10) return 'Very Fast (' + seconds.toFixed(1) + 's)';
-                    if (value < 30) return 'Fast (' + seconds.toFixed(1) + 's)';
-                    if (value < 70) return 'Medium (' + seconds.toFixed(1) + 's)';
-                    if (value < 100) return 'Slow (' + seconds.toFixed(1) + 's)';
-                    return 'Very Slow (' + seconds.toFixed(1) + 's)';
-                },
-
-                // Helper: Get single-line profile summary
-                getProfileSummaryItems: function(profile) {
-                    var items = [];
-
-                    // Media types
-                    var media = [];
-                    if (profile.EnableForMovies !== false) media.push('Movies');
-                    if (profile.EnableForTvShows) media.push('TV Shows');
-                    items.push('Triggers on: ' + (media.length > 0 ? media.join(' and ') : 'Movies'));
-
-                    // Client filter
-                    if (profile.TargetClientName) {
-                        items.push('Client: ' + profile.TargetClientName);
-                    }
-                    if (profile.TargetIpAddress) {
-                        items.push('IP filter: ' + profile.TargetIpAddress);
-                    }
-                    if (profile.TargetDeviceIds && profile.TargetDeviceIds.length > 0) {
-                        items.push('Device filter: ' + profile.TargetDeviceIds.length + ' device(s)');
-                    }
-
-                    // Light action on play
-                    if (profile.TurnOffLightsOnPlay) {
-                        items.push('Lights off during playback');
-                    } else if (profile.PlaySceneId) {
-                        items.push('Activates scene on play');
-                    } else {
-                        var bri = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 8;
-                        items.push('Dims to ' + bri + '% on play');
-                    }
-
-                    // Bridge
-                    if (profile.BridgeId && HuePluginConfig.bridges.length > 1) {
-                        var bridge = HuePluginConfig.bridges.find(function(b) { return b.Id === profile.BridgeId; });
-                        items.push('Bridge: ' + (bridge ? bridge.Name + ' (' + bridge.IpAddress + ')' : 'Unknown'));
-                    }
-
-                    // Special flags
-                    if (profile.EnableOutroLights) items.push('Outro detection enabled');
-
-                    return items;
-                },
-
-                // Click on card to edit (ignore clicks on menu buttons)
-                onCardClick: function(event, index) {
-                    if (event.target.closest('.profile-menu')) return;
-                    HuePluginConfig.editProfile(index);
-                },
-
-                // Toggle profile menu
-                toggleProfileMenu: function(index) {
-                    var menu = document.querySelector('#profileMenu' + index);
-                    if (menu) {
-                        // Close all other menus first. Selecting by class, not by an id prefix: an
-                        // id-prefix selector for "profileMenu" also matches each card's
-                        // "profileMenuButton" trigger and would hide that button permanently.
-                        document.querySelectorAll('.hue-dropdown').forEach(function(m) {
-                            if (m !== menu) m.style.display = 'none';
-                        });
-                        var isHidden = window.getComputedStyle(menu).display === 'none';
-                        menu.style.display = isHidden ? 'block' : 'none';
-                    }
-                },
-
-                // Test button feedback. 'busy' disables the button and shows a spinner; 'ok' and
-                // 'fail' show an icon and restore idleHtml after 2 s; 'idle' restores it at once.
-                // Any call cancels a pending restore.
-                showTestState: function(button, state, idleHtml) {
-                    if (!button) return;
-                    if (button.hueTestTimer) {
-                        clearTimeout(button.hueTestTimer);
-                        button.hueTestTimer = null;
-                    }
-                    if (state === 'busy') {
-                        button.disabled = true;
-                        button.innerHTML = '<span class="hue-spinner"></span>';
-                        return;
-                    }
-                    button.disabled = false;
-                    if (state === 'idle') {
-                        button.innerHTML = idleHtml;
-                        return;
-                    }
-                    button.innerHTML = state === 'ok'
-                        ? '<span class="material-icons hue-test-icon hue-test-ok">check</span>'
-                        : '<span class="material-icons hue-test-icon hue-test-fail">error_outline</span>';
-                    button.hueTestTimer = setTimeout(function() {
-                        button.hueTestTimer = null;
-                        button.innerHTML = idleHtml;
-                    }, 2000);
-                },
-
-                // Runs one light action for a profile (saved or not). Resolves to { Success, Error }; never rejects.
-                runTest: function(action, profile) {
-                    var unreachable = { Success: false, Error: 'Could not reach the server; check the server logs' };
-                    return ApiClient.ajax({
-                        type: 'POST',
-                        url: ApiClient.getUrl('api/hueplugin/test'),
-                        data: JSON.stringify({ Action: action, Profile: profile }),
-                        contentType: 'application/json',
-                        dataType: 'json'
-                    }).then(function(result) {
-                        return result || unreachable;
-                    }).catch(function(error) {
-                        console.error('Test failed:', error);
-                        return unreachable;
-                    });
-                },
-
-                // Test button on an editor section: the values on screen, saved or not
-                testEditorAction: function(button) {
-                    var action = button.getAttribute('data-test-action');
-                    var errorLine = document.querySelector('#profileTest' + action + 'Error');
-                    errorLine.style.display = 'none';
-
-                    // A blank number would test a value nobody typed
-                    var problem = HuePluginConfig.validateEditorNumbers(action);
-                    if (problem) {
-                        errorLine.textContent = problem;
-                        errorLine.style.display = '';
-                        return;
-                    }
-                    var generation = HuePluginConfig.editorTestGeneration;
-                    HuePluginConfig.showTestState(button, 'busy');
-
-                    HuePluginConfig.runTest(action, HuePluginConfig.readEditorProfile()).then(function(result) {
-                        // The editor was reopened while this test was out; the result belongs to the closed session
-                        if (generation !== HuePluginConfig.editorTestGeneration) return;
-                        HuePluginConfig.showTestState(button, result.Success ? 'ok' : 'fail', 'Test');
-                        if (!result.Success) {
-                            errorLine.textContent = result.Error || 'Test failed; check the server logs';
-                            errorLine.style.display = '';
-                        }
-                    });
-                },
-
-                // Every editor Test button back to "Test", every error line hidden
-                resetEditorTests: function() {
-                    HuePluginConfig.editorTestGeneration++;
-                    document.querySelectorAll('#profileEditorModal .hue-test-button').forEach(function(button) {
-                        HuePluginConfig.showTestState(button, 'idle', 'Test');
-                    });
-                    ['Play', 'Pause', 'Stop'].forEach(function(action) {
-                        document.querySelector('#profileTest' + action + 'Error').style.display = 'none';
-                    });
-                },
-
-                // Test Play / Pause / Stop from a profile card's menu: the saved profile
-                testProfile: function(index, action) {
-                    var profile = HuePluginConfig.profiles[index];
-                    if (!profile) return;
-
-                    var menu = document.querySelector('#profileMenu' + index);
-                    if (menu) menu.style.display = 'none';
-
-                    var button = document.querySelector('#profileMenuButton' + index);
-                    var errorLine = document.querySelector('#profileTestError' + index);
-                    if (errorLine) errorLine.style.display = 'none';
-                    HuePluginConfig.showTestState(button, 'busy');
-
-                    HuePluginConfig.runTest(action, profile).then(function(result) {
-                        HuePluginConfig.showTestState(button, result.Success ? 'ok' : 'fail', '&#x22EE;');
-                        if (!result.Success && errorLine) {
-                            errorLine.textContent = result.Error || 'Test failed; check the server logs';
-                            errorLine.style.display = '';
-                        }
-                    });
-                },
-
-                // Duplicate profile (appended to the list)
-                duplicateProfile: function(index) {
-                    var profile = HuePluginConfig.profiles[index];
-                    if (!profile) return;
-                    HuePluginConfig.closeProfileMenus();
-
-                    var copy = HuePluginConfig.deepCopy(profile);
-                    copy.Id = HuePluginConfig.generateGuid();
-                    copy.Name = profile.Name + ' (Copy)';
-                    HuePluginConfig.commit(function(draft) {
-                        draft.Profiles.push(copy);
-                    });
-                },
-
-                // Reorder by dragging a card onto another. Only a drag that started on a card of this list carries
-                // the private type below, so selected text, links or files dropped on a card do nothing.
-                initializeDragAndDrop: function() {
-                    var cards = document.querySelectorAll('.profile-card');
-                    var dragType = 'application/x-hue-profile';
-
-                    function isProfileDrag(e) {
-                        return HuePluginConfig.draggedProfileId !== null &&
-                            Array.prototype.indexOf.call(e.dataTransfer.types, dragType) >= 0;
-                    }
-                    function clearMarks() {
-                        cards.forEach(function(c) {
-                            c.style.borderTop = '';
-                            c.style.borderBottom = '';
-                        });
-                    }
-
-                    cards.forEach(function(card) {
-                        var profileId = card.getAttribute('data-profile-id');
-
-                        card.addEventListener('dragstart', function(e) {
-                            HuePluginConfig.draggedProfileId = profileId;
-                            e.dataTransfer.setData(dragType, profileId);
-                            e.dataTransfer.effectAllowed = 'move';
-                            this.style.opacity = '0.5';
-                        });
-
-                        card.addEventListener('dragend', function() {
-                            HuePluginConfig.draggedProfileId = null;
-                            this.style.opacity = '1';
-                            clearMarks();
-                        });
-
-                        card.addEventListener('dragover', function(e) {
-                            if (!isProfileDrag(e)) return;
-                            e.preventDefault();
-                            e.dataTransfer.dropEffect = 'move';
-                            var from = HuePluginConfig.indexOfId(HuePluginConfig.profiles, HuePluginConfig.draggedProfileId);
-                            var to = HuePluginConfig.indexOfId(HuePluginConfig.profiles, profileId);
-                            if (from < to) {
-                                this.style.borderBottom = '3px solid rgba(255,255,255,0.4)';
-                                this.style.borderTop = '';
-                            } else {
-                                this.style.borderTop = '3px solid rgba(255,255,255,0.4)';
-                                this.style.borderBottom = '';
-                            }
-                        });
-
-                        card.addEventListener('dragleave', function() {
-                            this.style.borderTop = '';
-                            this.style.borderBottom = '';
-                        });
-
-                        card.addEventListener('drop', function(e) {
-                            if (!isProfileDrag(e)) return;
-                            e.preventDefault();
-                            e.stopPropagation();
-                            var draggedId = HuePluginConfig.draggedProfileId;
-                            clearMarks();
-                            if (draggedId === profileId) return;
-
-                            HuePluginConfig.commit(function(draft) {
-                                var from = HuePluginConfig.indexOfId(draft.Profiles, draggedId);
-                                var to = HuePluginConfig.indexOfId(draft.Profiles, profileId);
-                                if (from < 0 || to < 0) {
-                                    HuePluginConfig.showError('Not saved', 'A profile was removed before the move could be saved.');
-                                    return false;
-                                }
-                                var moved = draft.Profiles.splice(from, 1)[0];
-                                draft.Profiles.splice(to, 0, moved);
-                            });
-                        });
-                    });
-                },
-
-                // Switch tabs in profile editor
-                switchTab: function(tabName) {
-                    document.querySelectorAll('.profile-tab-content').forEach(function(content) {
-                        content.style.display = 'none';
-                    });
-
-                    document.querySelectorAll('.profile-tab').forEach(function(tab) {
-                        tab.classList.remove('active');
-                    });
-
-                    var tabContent = document.querySelector('#tab-' + tabName);
-                    if (tabContent) {
-                        tabContent.style.display = 'block';
-                    }
-
-                    var selectedTab = document.querySelector('.profile-tab[data-tab="' + tabName + '"]');
-                    if (selectedTab) {
-                        selectedTab.classList.add('active');
-                    }
-
-                    // A new tab starts at its top: the body scrolls on large screens, the whole sheet on small ones
-                    var overlay = document.querySelector('#profileEditorModal');
-                    var tabBar = overlay.querySelector('.hue-tab-bar');
-                    overlay.querySelector('.hue-modal-body').scrollTop = 0;
-                    if (overlay.scrollTop > tabBar.offsetTop) {
-                        overlay.scrollTop = tabBar.offsetTop;
-                    }
-                },
-
-                // Sync brightness slider with input
-                setupBrightnessSlider: function(sliderId, inputId, descId) {
-                    var slider = document.querySelector('#' + sliderId);
-                    var input = document.querySelector('#' + inputId);
-                    var desc = document.querySelector('#' + descId);
-                    
-                    if (slider && input) {
-                        slider.addEventListener('input', function() {
-                            input.value = slider.value;
-                            if (desc) {
-                                desc.textContent = HuePluginConfig.getBrightnessDescription(parseInt(slider.value)) + ' (' + slider.value + '%)';
-                            }
-                        });
-                        
-                        input.addEventListener('input', function() {
-                            var value = parseInt(input.value, 10);
-                            if (isNaN(value)) {
-                                if (desc) desc.textContent = 'Enter a value';
-                                return;
-                            }
-                            var shown = Math.max(0, Math.min(100, value));
-                            slider.value = shown;
-                            if (desc) {
-                                desc.textContent = HuePluginConfig.getBrightnessDescription(shown) + ' (' + shown + '%)';
-                            }
-                        });
-                    }
-                },
-                
-                setupTransitionSlider: function(sliderId, inputId, descId) {
-                    var slider = document.querySelector('#' + sliderId);
-                    var input = document.querySelector('#' + inputId);
-                    var desc = document.querySelector('#' + descId);
-                    
-                    if (slider && input) {
-                        slider.addEventListener('input', function() {
-                            input.value = slider.value;
-                            if (desc) {
-                                desc.textContent = HuePluginConfig.getTransitionDescription(parseInt(slider.value));
-                            }
-                        });
-                        
-                        input.addEventListener('input', function() {
-                            var value = parseInt(input.value, 10);
-                            if (isNaN(value)) {
-                                if (desc) desc.textContent = 'Enter a value';
-                                return;
-                            }
-                            var shown = Math.max(0, Math.min(150, value));
-                            slider.value = shown;
-                            if (desc) {
-                                desc.textContent = HuePluginConfig.getTransitionDescription(shown);
-                            }
-                        });
-                    }
-                },
-
-                // Create profile from template
-                createFromTemplate: function(templateName) {
-                    document.querySelector('#templateMenu').style.display = 'none';
-                    
-                    var templates = {
-                        'blank': {
-                            Name: 'New Profile',
-                            EnableForMovies: true,
-                            EnableForTvShows: false,
-                            PlayBrightness: 8
-                        },
-                        'movie-theater': {
-                            Name: 'Movie Theater',
-                            EnableForMovies: true,
-                            EnableForTvShows: false,
-                            TurnOffLightsOnPlay: true,
-                            PauseBrightness: 6,
-                            PauseGracePeriodSeconds: 60,
-                            StopBrightness: 24,
-                            EnableOutroLights: true
-                        },
-                        'tv-viewing': {
-                            Name: 'TV Viewing',
-                            EnableForMovies: false,
-                            EnableForTvShows: true,
-                            PlayBrightness: 24,
-                            PauseBrightness: 47,
-                            StopBrightness: 79,
-                            EnableOutroLights: false
-                        },
-                        'bedroom-casual': {
-                            Name: 'Bedroom Casual',
-                            EnableForMovies: true,
-                            EnableForTvShows: true,
-                            PlayBrightness: 31,
-                            PauseBrightness: 59,
-                            StopBrightness: 79
-                        },
-                        'gaming': {
-                            Name: 'Gaming Setup',
-                            EnableForMovies: true,
-                            EnableForTvShows: true,
-                            PlayBrightness: 20,
-                            EnableOutroLights: false
-                        }
-                    };
-                    
-                    var template = templates[templateName] || templates['blank'];
-                    HuePluginConfig.currentEditingProfileId = null;
-                    HuePluginConfig.editorProfileId = HuePluginConfig.generateGuid();
-
-                    // Populate form with template values
-                    document.querySelector('#profileEditorTitle').textContent = templateName === 'blank' ? 'Add Profile' : 'Add Profile from Template';
-                    document.querySelector('#profileName').value = template.Name;
-                    document.querySelector('#profileEnabled').checked = true;
-                    document.querySelector('#profileEnableForMovies').checked = template.EnableForMovies !== false;
-                    document.querySelector('#profileEnableForTvShows').checked = template.EnableForTvShows || false;
-                    document.querySelector('#profileClientName').value = '';
-                    document.querySelector('#profileIpAddress').value = '';
-                    document.querySelector('#profileTurnOffLightsOnPlay').checked = template.TurnOffLightsOnPlay || false;
-                    document.querySelector('#profilePlayBrightness').value = template.PlayBrightness || 8;
-                    document.querySelector('#profilePauseBrightness').value = template.PauseBrightness || 39;
-                    var templateGracePeriod = template.PauseGracePeriodSeconds || 0;
-                    document.querySelector('#profileEnablePauseGracePeriod').checked = templateGracePeriod > 0;
-                    document.querySelector('#profilePauseGracePeriod').value = templateGracePeriod > 0 ? templateGracePeriod : 30;
-                    document.querySelector('#pauseGracePeriodContainer').style.display = templateGracePeriod > 0 ? '' : 'none';
-                    document.querySelector('#profileStopBrightness').value = template.StopBrightness || 100;
-                    document.querySelector('#profileEnableOutroLights').checked = template.EnableOutroLights || false;
-
-                    // Per-state transitions (defaults: disabled, 0.4s)
-                    document.querySelector('#profileEnablePlayTransition').checked = false;
-                    document.querySelector('#profilePlayTransitionDuration').value = 4;
-                    document.querySelector('#profilePlayTransitionSlider').value = 4;
-                    document.querySelector('#profilePlayTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(4);
-                    document.querySelector('#playTransitionContainer').style.display = 'none';
-
-                    document.querySelector('#profileEnablePauseTransition').checked = false;
-                    document.querySelector('#profilePauseTransitionDuration').value = 4;
-                    document.querySelector('#profilePauseTransitionSlider').value = 4;
-                    document.querySelector('#profilePauseTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(4);
-                    document.querySelector('#pauseTransitionContainer').style.display = 'none';
-
-                    document.querySelector('#profileEnableStopTransition').checked = false;
-                    document.querySelector('#profileStopTransitionDuration').value = 4;
-                    document.querySelector('#profileStopTransitionSlider').value = 4;
-                    document.querySelector('#profileStopTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(4);
-                    document.querySelector('#stopTransitionContainer').style.display = 'none';
-
-                    // Sync sliders
-                    var playBrightness = template.PlayBrightness || 8;
-                    var pauseBrightness = template.PauseBrightness || 39;
-                    var stopBrightness = template.StopBrightness || 100;
-
-                    document.querySelector('#profilePlayBrightnessSlider').value = playBrightness;
-                    document.querySelector('#profilePauseBrightnessSlider').value = pauseBrightness;
-                    document.querySelector('#profileStopBrightnessSlider').value = stopBrightness;
-
-                    // Update descriptions
-                    document.querySelector('#profilePlayBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(playBrightness) + ' (' + playBrightness + '%)';
-                    document.querySelector('#profilePauseBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(pauseBrightness) + ' (' + pauseBrightness + '%)';
-                    document.querySelector('#profileStopBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(stopBrightness) + ' (' + stopBrightness + '%)';
-                    
-                    HuePluginConfig.profileDeviceIds = [];
-                    HuePluginConfig.renderProfileDeviceIdList();
-                    document.querySelector('#profileDeviceIdInputRow').style.display = 'none';
-                    document.querySelector('#profileShowAddDeviceId').style.display = '';
-                    HuePluginConfig.refreshKnownDevices();
-
-                    HuePluginConfig.populateBridgeDropdown('', false);
-                    HuePluginConfig.loadEditorTargets({ group: '0', play: '', pause: '', stop: '' });
-
-                    HuePluginConfig.resetEditorTests();
-                    HuePluginConfig.setSaving('#saveProfileButton', false, 'Save Profile');
-
-                    HuePluginConfig.openModal('profileEditorModal');
-
-                    // Initialize tabs - show General tab first
-                    setTimeout(function() {
-                        HuePluginConfig.switchTab('general');
-                    }, 50);
-                },
-
-                // Errors that must stay until read: a Jellyfin dialog, not a toast. The dialog puts the
-                // message through innerHTML, so it is escaped here; the title is set as text.
-                showError: function(title, detail) {
-                    Dashboard.alert({ title: title, message: HuePluginConfig.escapeHtml(detail) });
-                },
-
-                // A short, truthful reason for a failed request: the HTTP status when the server answered,
-                // the message for a network or script error
-                describeError: function(error) {
-                    if (error && typeof error.status === 'number') {
-                        return 'HTTP ' + error.status + (error.statusText ? ' ' + error.statusText : '');
-                    }
-                    if (error && error.message) return error.message;
-                    return 'unknown error';
-                },
-
-                deepCopy: function(value) {
-                    return JSON.parse(JSON.stringify(value));
-                },
-
-                indexOfId: function(list, id) {
-                    for (var i = 0; i < list.length; i++) {
-                        if (list[i] && list[i].Id === id) return i;
-                    }
-                    return -1;
-                },
-
-                closeProfileMenus: function() {
-                    document.querySelectorAll('.hue-dropdown').forEach(function(menu) {
-                        menu.style.display = 'none';
-                    });
-                },
-
-                // A modal's save button while its commit is out: disabled and reading "Saving…"
-                setSaving: function(selector, saving, idleText) {
-                    var button = document.querySelector(selector);
-                    button.disabled = saving;
-                    button.querySelector('span').textContent = saving ? 'Saving…' : idleText;
-                },
-
-                // The one way the page saves. Commits run one at a time. Each applies mutate to a copy of the
-                // confirmed lists - mutate(draft) changes draft.Bridges / draft.Profiles in place, addressing
-                // entries by Id, and returns false (after telling the user why) to save nothing - and the copy
-                // becomes what the page shows only once the server has stored it. Resolves true when stored;
-                // never rejects.
-                commit: function(mutate) {
-                    if (!HuePluginConfig.loaded) {
-                        HuePluginConfig.showError('Not saved', 'The configuration has not finished loading.');
-                        return Promise.resolve(false);
-                    }
-                    var result = HuePluginConfig.saveChain.then(function() {
-                        // Checked again when the commit runs: if Jellyfin re-ran this script while an earlier save was out,
-                        // HuePluginConfig is now the new page's object, whose lists stay empty until its own load finishes
-                        if (!HuePluginConfig.loaded) throw new Error('the page was reloaded before this change could be saved');
-                        var draft = {
-                            Bridges: HuePluginConfig.deepCopy(HuePluginConfig.bridges),
-                            Profiles: HuePluginConfig.deepCopy(HuePluginConfig.profiles)
-                        };
-                        if (mutate(draft) === false) return false;
-                        return ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function(config) {
-                            config.Bridges = draft.Bridges;
-                            config.Profiles = draft.Profiles;
-                            return ApiClient.updatePluginConfiguration(HuePluginConfig.pluginId, config);
-                        }).then(function() {
-                            HuePluginConfig.adoptLists(draft.Bridges, draft.Profiles);
-                            return true;
-                        });
-                    }).catch(function(error) {
-                        console.error('Saving the configuration failed', error);
-                        HuePluginConfig.showError('Not saved', 'The configuration could not be saved: ' + HuePluginConfig.describeError(error));
-                        return false;
-                    });
-                    HuePluginConfig.saveChain = result;
-                    return result;
-                },
-
-                // Stored lists become the page's confirmed state; the bridge cards (and their checks) are
-                // redrawn only when the bridge list itself changed
-                adoptLists: function(bridges, profiles) {
-                    var bridgesChanged = JSON.stringify(bridges) !== JSON.stringify(HuePluginConfig.bridges);
-                    HuePluginConfig.bridges = bridges;
-                    HuePluginConfig.profiles = profiles;
-                    HuePluginConfig.renderProfiles();
-                    if (bridgesChanged) HuePluginConfig.renderBridges();
-                    HuePluginConfig.updateConfigSectionVisibility();
-                },
-
-                // Adopt the stored lists after the server changed them itself (pairing stores the bridge)
-                refreshFromServer: function() {
-                    var result = HuePluginConfig.saveChain.then(function() {
-                        return ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function(config) {
-                            HuePluginConfig.adoptLists(config.Bridges || [], config.Profiles || []);
-                            return true;
-                        });
-                    }).catch(function(error) {
-                        console.error('Reloading the configuration failed', error);
-                        HuePluginConfig.showError('Could not refresh', 'The bridge list could not be reloaded: ' + HuePluginConfig.describeError(error) + '. Reload the page.');
-                        return false;
-                    });
-                    HuePluginConfig.saveChain = result;
-                    return result;
-                },
-
-                // Pairing stores the bridge on the server before it answers. Adopt the stored lists, then apply a
-                // name the user typed (the server keeps an existing entry's name). Resolves to the stored bridge,
-                // or null when the lists could not be reloaded or the rename not saved (the user has been told).
-                adoptPairedBridge: function(bridgeId, typedName) {
-                    function stored() {
-                        var i = HuePluginConfig.indexOfId(HuePluginConfig.bridges, bridgeId);
-                        return i >= 0 ? HuePluginConfig.bridges[i] : null;
-                    }
-                    return HuePluginConfig.refreshFromServer().then(function(refreshed) {
-                        if (!refreshed) return null;
-                        var bridge = stored();
-                        if (!bridge) {
-                            HuePluginConfig.showError('Bridge not shown', 'The paired bridge is not in the stored configuration, probably because another change was saved at the same moment. Pair it again.');
-                            return null;
-                        }
-                        if (typedName === 'Bridge' || bridge.Name === typedName) return bridge;
-                        return HuePluginConfig.commit(function(draft) {
-                            var i = HuePluginConfig.indexOfId(draft.Bridges, bridgeId);
-                            if (i < 0) {
-                                HuePluginConfig.showError('Not saved', 'The paired bridge was removed before its name could be saved.');
-                                return false;
-                            }
-                            draft.Bridges[i].Name = typedName;
-                        }).then(function(saved) {
-                            return saved ? stored() : null;
-                        });
-                    });
-                },
-
-                // Profiles need a bridge with a key, and nothing is editable before the configuration has loaded
-                updateConfigSectionVisibility: function() {
-                    var hasAuthBridge = HuePluginConfig.bridges.some(function(b) {
-                        return b.Username && b.Username.length > 0;
-                    });
-                    document.querySelector('#configSection').style.display = HuePluginConfig.loaded && hasAuthBridge ? 'block' : 'none';
-                },
-
-                // An empty page after a failed load would look like a fresh install, and a save from it would
-                // overwrite everything, so the failure replaces the bridge list and offers Retry
-                renderLoadFailure: function(error) {
-                    var container = document.querySelector('#bridgesList');
-                    container.innerHTML = '<div class="hue-test-error" style="margin-bottom: 10px;"></div>' +
-                        '<button is="emby-button" type="button" class="raised" id="retryLoadButton"><span>Retry</span></button>';
-                    container.querySelector('.hue-test-error').textContent =
-                        'Could not load the plugin configuration: ' + HuePluginConfig.describeError(error) + '.';
-                    container.querySelector('#retryLoadButton').addEventListener('click', function() {
-                        HuePluginConfig.loadConfiguration();
-                    });
-                },
-
-                loadConfiguration: function () {
-                    HuePluginConfig.loaded = false;
-                    document.querySelector('#addBridgeButton').disabled = true;
-                    document.querySelector('#bridgesList').innerHTML = '<div class="fieldDescription">Loading…</div>';
-                    HuePluginConfig.updateConfigSectionVisibility();
-                    Dashboard.showLoadingMsg();
-
-                    ApiClient.getPluginConfiguration(HuePluginConfig.pluginId).then(function (config) {
-                        HuePluginConfig.bridges = config.Bridges || [];
-                        HuePluginConfig.profiles = config.Profiles || [];
-                        HuePluginConfig.renderBridges();
-                        HuePluginConfig.renderProfiles();
-                        HuePluginConfig.loaded = true;
-                        HuePluginConfig.updateConfigSectionVisibility();
-                        document.querySelector('#addBridgeButton').disabled = false;
-                        Dashboard.hideLoadingMsg();
-                    }).catch(function(error) {
-                        console.error('Error fetching configuration:', error);
-                        HuePluginConfig.loaded = false;
-                        Dashboard.hideLoadingMsg();
-                        HuePluginConfig.renderLoadFailure(error);
-                    });
-                },
-
-                // Bridge cards, then a check of every bridge that has a key. Results live in bridgeStatus by
-                // bridge Id; a result from an earlier render is ignored (see updateBridgeStatus).
-                renderBridges: function() {
-                    var generation = ++HuePluginConfig.bridgeVerifyGeneration;
-                    HuePluginConfig.bridgeStatus = {};
-                    var container = document.querySelector('#bridgesList');
-                    if (!container) return;
-
-                    if (!HuePluginConfig.bridges || HuePluginConfig.bridges.length === 0) {
-                        container.innerHTML = '<div class="fieldDescription">No bridges configured. Click "Add Bridge" to discover and pair a Hue bridge.</div>';
-                        return;
-                    }
-
-                    var html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
-                    HuePluginConfig.bridges.forEach(function(bridge, index) {
-                        var isAuth = bridge.Username && bridge.Username.length > 0;
-                        var statusColor = isAuth ? '#888' : '#ff9800';
-                        var statusText = isAuth ? 'Checking...' : 'Not authenticated';
-
-                        html += '<div class="hue-card" onclick="HuePluginConfig.editBridge(' + index + ')">';
-                        html += '<div style="display: flex; align-items: center; justify-content: space-between;">';
-                        html += '<div style="flex: 1;">';
-                        html += '<h3 style="margin: 0;">' + HuePluginConfig.escapeHtml(bridge.Name || 'Bridge') + '</h3>';
-                        html += '<div style="font-size: 0.88em; opacity: 0.6; margin-top: 4px;">' + HuePluginConfig.escapeHtml(bridge.IpAddress) + '</div>';
-                        html += '<div id="bridgeInfo-' + index + '" style="font-size: 0.85em; opacity: 0.6; margin-top: 2px;"></div>';
-                        html += '<div id="bridgeStatus-' + index + '" style="display: inline-flex; align-items: center; gap: 6px; margin-top: 6px;">';
-                        html += '<span class="bridge-status-dot" style="width: 8px; height: 8px; border-radius: 50%; background: ' + statusColor + '; display: inline-block;"></span>';
-                        html += '<span class="bridge-status-text" style="font-size: 0.85em; color: ' + statusColor + ';">' + statusText + '</span>';
-                        html += '</div>';
-                        html += '</div>';
-                        html += '<div style="display: flex; gap: 8px;">';
-                        html += '<button is="emby-button" type="button" class="raised" onclick="event.stopPropagation(); HuePluginConfig.editBridge(' + index + ')"><span>Edit</span></button>';
-                        html += '<button is="emby-button" type="button" class="raised" onclick="event.stopPropagation(); HuePluginConfig.deleteBridge(' + index + ')" style="opacity: 0.7;"><span>Delete</span></button>';
-                        html += '</div>';
-                        html += '</div>';
-                        html += '</div>';
-                    });
-                    html += '</div>';
-                    container.innerHTML = html;
-
-                    // Check bridges with a key in the background
-                    HuePluginConfig.bridges.forEach(function(bridge) {
-                        if (!bridge.Username || bridge.Username.length === 0) return;
-                        var bridgeId = bridge.Id;
-                        HuePluginConfig.bridgeStatus[bridgeId] = { state: 'checking', text: 'Checking...', result: null };
-                        ApiClient.ajax({
-                            type: 'POST',
-                            url: ApiClient.getUrl('api/hueplugin/verifyconnection'),
-                            data: JSON.stringify({ BridgeIp: bridge.IpAddress, Username: bridge.Username }),
-                            contentType: 'application/json',
-                            dataType: 'json'
-                        }).then(function(result) {
-                            HuePluginConfig.updateBridgeStatus(generation, bridgeId, result.Success, result.Success ? 'Connected' : (result.Error || 'Auth failed'), result);
-                        }).catch(function() {
-                            HuePluginConfig.updateBridgeStatus(generation, bridgeId, false, 'Connection error');
-                        });
-                    });
-                },
-
-                updateBridgeStatus: function(generation, bridgeId, success, text, result) {
-                    // Sent before the latest render: the list, this bridge's address or its key may have changed since
-                    if (generation !== HuePluginConfig.bridgeVerifyGeneration) return;
-                    HuePluginConfig.bridgeStatus[bridgeId] = { state: success ? 'ok' : 'failed', text: text, result: result || null };
-                    var index = HuePluginConfig.indexOfId(HuePluginConfig.bridges, bridgeId);
-                    var el = index >= 0 ? document.querySelector('#bridgeStatus-' + index) : null;
-                    if (!el) return;
-                    var color = success ? '#4caf50' : '#f44336';
-                    el.querySelector('.bridge-status-dot').style.background = color;
-                    var textEl = el.querySelector('.bridge-status-text');
-                    textEl.style.color = color;
-                    textEl.textContent = text;
-
-                    // Facts from /api/0/config, present whenever the bridge answered at all.
-                    var info = document.querySelector('#bridgeInfo-' + index);
-                    if (info && result && result.HardwareId) {
-                        info.textContent = result.HardwareId + ' · ' + (result.ModelId || '?') + ' · software ' + (result.SoftwareVersion || '?');
-                    }
-                },
-
-                // Edit a bridge. The modal remembers the bridge's Id, never its position in the list.
-                editBridgeId: null,
-                // Bumped by every editBridge; a save answered for an earlier opening leaves the current one alone
-                editBridgeSession: 0,
-
-                editBridge: function(index) {
-                    var bridge = HuePluginConfig.bridges[index];
-                    if (!bridge) return;
-                    HuePluginConfig.editBridgeSession++;
-                    HuePluginConfig.editBridgeId = bridge.Id;
-                    document.querySelector('#editBridgeName').value = bridge.Name || '';
-                    document.querySelector('#editBridgeIp').value = bridge.IpAddress || '';
-                    document.querySelector('#editBridgeUsername').value = bridge.Username || '';
-                    HuePluginConfig.setSaving('#saveEditBridge', false, 'Save');
-                    HuePluginConfig.openModal('editBridgeModal');
-                },
-
-                saveEditBridge: function() {
-                    var session = HuePluginConfig.editBridgeSession;
-                    var bridgeId = HuePluginConfig.editBridgeId;
-                    var name = document.querySelector('#editBridgeName').value;
-                    var ip = document.querySelector('#editBridgeIp').value;
-                    var key = document.querySelector('#editBridgeUsername').value;
-
-                    HuePluginConfig.setSaving('#saveEditBridge', true);
-                    HuePluginConfig.commit(function(draft) {
-                        var index = HuePluginConfig.indexOfId(draft.Bridges, bridgeId);
-                        if (index < 0) {
-                            HuePluginConfig.showError('Not saved', 'This bridge was removed.');
-                            return false;
-                        }
-                        draft.Bridges[index].Name = name;
-                        draft.Bridges[index].IpAddress = ip;
-                        draft.Bridges[index].Username = key;
-                    }).then(function(saved) {
-                        // The modal was closed and reopened meanwhile; this result belongs to the earlier opening
-                        if (session !== HuePluginConfig.editBridgeSession) return;
-                        HuePluginConfig.setSaving('#saveEditBridge', false, 'Save');
-                        if (saved) HuePluginConfig.closeModal('editBridgeModal');
-                    });
-                },
-
-                // Delete a bridge
-                deleteBridge: function(index) {
-                    var bridge = HuePluginConfig.bridges[index];
-                    if (!bridge) return;
-
-                    // Profiles that use this bridge now, or would after the delete: the server sends a profile with no
-                    // bridge chosen to the only bridge, so with two bridges those would start using the other one
-                    var affectedProfiles = HuePluginConfig.profiles.filter(function(p) {
-                        return p.BridgeId === bridge.Id || (!p.BridgeId && HuePluginConfig.bridges.length <= 2);
-                    });
-                    if (affectedProfiles.length > 0) {
-                        var names = affectedProfiles.map(function(p) { return '"' + p.Name + '"'; }).join(', ');
-                        Dashboard.alert('Cannot delete this bridge. The following profiles still use it: ' + names + '. Reassign or delete those profiles first.');
-                        return;
-                    }
-
-                    if (!confirm('Delete bridge "' + bridge.Name + '"?')) return;
-
-                    // One save; the server drops the removed bridge's cached rooms and pin on it
-                    var bridgeId = bridge.Id;
-                    HuePluginConfig.commit(function(draft) {
-                        var i = HuePluginConfig.indexOfId(draft.Bridges, bridgeId);
-                        if (i < 0) {
-                            HuePluginConfig.showError('Not saved', 'This bridge was already removed.');
-                            return false;
-                        }
-                        // Checked again on the lists being saved: a profile save that was still out may have moved a profile here
-                        var nowUsing = draft.Profiles.filter(function(p) {
-                            return p.BridgeId === bridgeId || (!p.BridgeId && draft.Bridges.length <= 2);
-                        });
-                        if (nowUsing.length > 0) {
-                            HuePluginConfig.showError('Not deleted', 'These profiles now use this bridge: ' +
-                                nowUsing.map(function(p) { return '"' + p.Name + '"'; }).join(', ') + '. Reassign or delete them first.');
-                            return false;
-                        }
-                        draft.Bridges.splice(i, 1);
-                    });
-                },
-
-                // Open the Add Bridge modal as a new session. Results from an earlier session (a pairing retry, a
-                // verification, a discovery still out) see that their session is over and change nothing here.
-                openAddBridge: function() {
-                    HuePluginConfig.endAddBridgeSession();
-                    HuePluginConfig.addBridgeSession = { ended: false, countdown: null };
-
-                    document.querySelector('#newBridgeName').value = 'Bridge';
-                    document.querySelector('#newBridgeIp').value = '';
-                    document.querySelector('#newBridgeUsername').value = '';
-                    var select = document.querySelector('#addBridgeSelect');
-                    select.innerHTML = '';
-                    select.onchange = null;
-                    document.querySelector('#addBridgeSelector').style.display = 'none';
-                    document.querySelector('#addBridgeAuthProgress').style.display = 'none';
-                    document.querySelector('#addBridgeAuthProgressText').textContent = '';
-                    document.querySelector('#addBridgeAuthCountdown').textContent = '';
-                    document.querySelector('#authBridgeInModalText').textContent = 'Authenticate';
-                    document.querySelector('#saveAddBridge span').textContent = 'Save';
-                    HuePluginConfig.setAddBridgeBusy(false);
-                    HuePluginConfig.openModal('addBridgeModal');
-                },
-
-                endAddBridgeSession: function() {
-                    var session = HuePluginConfig.addBridgeSession;
-                    if (!session) return;
-                    session.ended = true;
-                    if (session.countdown) {
-                        clearInterval(session.countdown);
-                        session.countdown = null;
-                    }
-                },
-
-                isLiveAddBridgeSession: function(session) {
-                    return !!session && session === HuePluginConfig.addBridgeSession && !session.ended;
-                },
-
-                // While pairing or verifying only Cancel stays usable, so a retry can never use values that differ from the screen
-                setAddBridgeBusy: function(busy) {
-                    ['#newBridgeName', '#newBridgeIp', '#newBridgeUsername', '#addBridgeSelect', '#discoverBridgeInModal', '#authBridgeInModal', '#saveAddBridge'].forEach(function(selector) {
-                        document.querySelector(selector).disabled = busy;
-                    });
-                },
-
-                // Discover bridges in add modal
-                discoverBridgeInModal: function() {
-                    var session = HuePluginConfig.addBridgeSession;
-                    Dashboard.showLoadingMsg();
-
-                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/discover')).then(function(bridges) {
-                        Dashboard.hideLoadingMsg();
-                        // Cancelled or reopened while discovery ran: the results belong to that closed session
-                        if (!HuePluginConfig.isLiveAddBridgeSession(session)) return;
-                        // Pairing or verification started meanwhile and works from the address it read; do not change it under them
-                        if (document.querySelector('#newBridgeIp').disabled) return;
-
-                        var ipInput = document.querySelector('#newBridgeIp');
-                        if (bridges && bridges.length > 1) {
-                            var select = document.querySelector('#addBridgeSelect');
-                            select.innerHTML = '';
-                            bridges.forEach(function(b) {
-                                var opt = document.createElement('option');
-                                opt.value = b.InternalIpAddress;
-                                opt.textContent = b.InternalIpAddress + ' (' + (b.Id || 'unknown') + ')';
-                                select.appendChild(opt);
-                            });
-                            select.onchange = function() {
-                                ipInput.value = select.value;
-                            };
-                            document.querySelector('#addBridgeSelector').style.display = 'block';
-                            ipInput.value = bridges[0].InternalIpAddress;
-                            Dashboard.alert('Found ' + bridges.length + ' bridges. Select one.');
-                        } else if (bridges && bridges.length === 1) {
-                            document.querySelector('#addBridgeSelector').style.display = 'none';
-                            ipInput.value = bridges[0].InternalIpAddress;
-                            Dashboard.alert('Bridge found at ' + bridges[0].InternalIpAddress);
-                        } else {
-                            Dashboard.alert('No Hue bridges found. You can enter the IP address manually.');
-                        }
-                    }).catch(function(error) {
-                        Dashboard.hideLoadingMsg();
-                        console.error('Bridge discovery failed:', error);
-                        if (!HuePluginConfig.isLiveAddBridgeSession(session)) return;
-                        Dashboard.alert('Failed to discover bridges. Check your network connection.');
-                    });
-                },
-
-                // Pair with the bridge at the typed address: up to three attempts, three seconds apart, while the
-                // user presses the link button. Everything is tied to the Add Bridge session that started it.
-                authBridgeInModal: function() {
-                    var bridgeIp = document.querySelector('#newBridgeIp').value.trim();
-                    var bridgeName = document.querySelector('#newBridgeName').value.trim() || 'Bridge';
-                    if (!bridgeIp) {
-                        Dashboard.alert('Please enter or discover a bridge IP address.');
-                        return;
-                    }
-
-                    var session = HuePluginConfig.addBridgeSession;
-                    var btnText = document.querySelector('#authBridgeInModalText');
-                    var progressEl = document.querySelector('#addBridgeAuthProgress');
-                    var progressText = document.querySelector('#addBridgeAuthProgressText');
-                    var countdownEl = document.querySelector('#addBridgeAuthCountdown');
-                    var maxAttempts = 3;
-                    var attempt = 0;
-
-                    function live() {
-                        return HuePluginConfig.isLiveAddBridgeSession(session);
-                    }
-                    function idle() {
-                        HuePluginConfig.setAddBridgeBusy(false);
-                        btnText.textContent = 'Authenticate';
-                    }
-
-                    HuePluginConfig.setAddBridgeBusy(true);
-                    progressEl.style.display = 'block';
-
-                    function tryAuth() {
-                        attempt++;
-                        btnText.textContent = 'Attempt ' + attempt + '/' + maxAttempts + '...';
-                        progressText.textContent = 'Attempting to pair... (' + attempt + '/' + maxAttempts + ')';
-                        countdownEl.textContent = '';
-
-                        ApiClient.ajax({
-                            type: 'POST',
-                            url: ApiClient.getUrl('api/hueplugin/authenticate'),
-                            data: JSON.stringify({ BridgeIp: bridgeIp, BridgeName: bridgeName }),
-                            contentType: 'application/json',
-                            dataType: 'json'
-                        }).then(function(result) {
-                            if (result.Success) {
-                                HuePluginConfig.onBridgePaired(session, result, bridgeIp, bridgeName);
-                                return;
-                            }
-                            // Cancelled: no further attempts, and nothing shown in a modal that has moved on
-                            if (!live()) return;
-                            if (attempt < maxAttempts) {
-                                var remaining = 3;
-                                countdownEl.textContent = 'Retrying in ' + remaining + 's...';
-                                var interval = setInterval(function() {
-                                    if (!live()) {
-                                        clearInterval(interval);
-                                        return;
-                                    }
-                                    remaining--;
-                                    if (remaining > 0) {
-                                        countdownEl.textContent = 'Retrying in ' + remaining + 's...';
-                                    } else {
-                                        clearInterval(interval);
-                                        session.countdown = null;
-                                        countdownEl.textContent = '';
-                                        tryAuth();
-                                    }
-                                }, 1000);
-                                session.countdown = interval;
-                            } else {
-                                idle();
-                                progressText.textContent = 'Authentication failed after ' + maxAttempts + ' attempts.';
-                                countdownEl.textContent = 'Press the link button on your Hue bridge and try again.';
-                            }
-                        }).catch(function(error) {
-                            console.error('Authentication error:', error);
-                            if (!live()) return;
-                            idle();
-                            progressEl.style.display = 'none';
-                            Dashboard.alert('Authentication failed. Check the server logs for details.');
-                        });
-                    }
-
-                    tryAuth();
-                },
-
-                // Pairing stored the bridge on the server before answering, so the stored list is adopted whether or
-                // not the user is still waiting in the modal, and either way the user is told
-                onBridgePaired: function(session, result, bridgeIp, bridgeName) {
-                    if (HuePluginConfig.isLiveAddBridgeSession(session)) {
-                        document.querySelector('#newBridgeUsername').value = result.Username;
-                        document.querySelector('#addBridgeAuthProgressText').textContent = 'Paired; saving…';
-                        document.querySelector('#addBridgeAuthCountdown').textContent = '';
-                    }
-                    HuePluginConfig.adoptPairedBridge(result.Id, bridgeName).then(function(stored) {
-                        if (!HuePluginConfig.isLiveAddBridgeSession(session)) {
-                            if (stored) Dashboard.alert('Pairing with ' + bridgeIp + ' completed; the bridge was saved.');
-                            return;
-                        }
-                        HuePluginConfig.setAddBridgeBusy(false);
-                        document.querySelector('#authBridgeInModalText').textContent = 'Authenticate';
-                        document.querySelector('#addBridgeAuthProgress').style.display = 'none';
-                        if (!stored) return;
-                        HuePluginConfig.closeModal('addBridgeModal');
-                        Dashboard.alert('Bridge "' + stored.Name + '" added and authenticated!');
-                    });
-                },
-
-                saveAddBridge: function() {
-                    var bridgeIp = document.querySelector('#newBridgeIp').value.trim();
-                    var bridgeName = document.querySelector('#newBridgeName').value.trim() || 'Bridge';
-                    var username = document.querySelector('#newBridgeUsername').value.trim();
-
-                    if (!bridgeIp) {
-                        Dashboard.alert('Please enter a bridge IP address.');
-                        return;
-                    }
-                    if (!username) {
-                        Dashboard.alert('Please authenticate with the bridge or paste an API key.');
-                        return;
-                    }
-
-                    var session = HuePluginConfig.addBridgeSession;
-                    var btnText = document.querySelector('#saveAddBridge span');
-                    function live() {
-                        return HuePluginConfig.isLiveAddBridgeSession(session);
-                    }
-                    function idle() {
-                        HuePluginConfig.setAddBridgeBusy(false);
-                        btnText.textContent = 'Save';
-                    }
-
-                    HuePluginConfig.setAddBridgeBusy(true);
-                    btnText.textContent = 'Verifying...';
-
-                    ApiClient.ajax({
-                        type: 'POST',
-                        url: ApiClient.getUrl('api/hueplugin/verifyconnection'),
-                        data: JSON.stringify({ BridgeIp: bridgeIp, Username: username }),
-                        contentType: 'application/json',
-                        dataType: 'json'
-                    }).then(function(result) {
-                        // Cancelled while verifying: nothing has been stored, so nothing is added
-                        if (!live()) return;
-                        if (!result.Success) {
-                            idle();
-                            Dashboard.alert('Connection failed: ' + (result.Error || 'Unknown error'));
-                            return;
-                        }
-                        var bridge = {
-                            Id: crypto.randomUUID ? crypto.randomUUID() : 'bridge-' + Date.now(),
-                            Name: bridgeName,
-                            IpAddress: bridgeIp,
-                            Username: username,
-                            HardwareId: result.HardwareId || ''
-                        };
-                        var storedName = bridgeName;
-                        btnText.textContent = 'Saving…';
-                        HuePluginConfig.commit(function(draft) {
-                            storedName = HuePluginConfig.upsertBridge(draft.Bridges, bridge).Name;
-                        }).then(function(saved) {
-                            // A save already sent completes even if the modal was cancelled meanwhile
-                            if (!live()) {
-                                if (saved) Dashboard.alert('Bridge "' + storedName + '" added!');
-                                return;
-                            }
-                            idle();
-                            if (!saved) return;
-                            HuePluginConfig.closeModal('addBridgeModal');
-                            Dashboard.alert('Bridge "' + storedName + '" added!');
-                        });
-                    }).catch(function(error) {
-                        console.error('Verify connection failed:', error);
-                        if (!live()) return;
-                        idle();
-                        Dashboard.alert('Could not verify bridge connection. Check the IP address and try again.');
-                    });
-                },
-
-                setAuthStatus: function (status) {
-                    // No longer used for global auth - kept for compatibility
-                },
-
-                renderProfiles: function() {
-                    try {
-                        var container = document.querySelector('#profilesList');
-                        if (!container) {
-                            console.error('profilesList container not found!');
-                            return;
-                        }
-
-                        if (!HuePluginConfig.profiles || HuePluginConfig.profiles.length === 0) {
-                            container.innerHTML = '<div class="fieldDescription">No profiles configured. Add your first profile to get started!</div>';
-                            return;
-                        }
-
-                        var html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
-
-                        HuePluginConfig.profiles.forEach(function(profile, index) {
-                            var summaryItems = HuePluginConfig.getProfileSummaryItems(profile);
-
-                            var isDisabled = profile.Enabled === false;
-                            html += '<div class="hue-card profile-card" draggable="true" data-index="' + index + '" data-profile-id="' + HuePluginConfig.escapeHtml(profile.Id) + '" onclick="HuePluginConfig.onCardClick(event, ' + index + ')"' + (isDisabled ? ' style="opacity: 0.5;"' : '') + '>';
-
-                            // Header row
-                            html += '<div style="display: flex; align-items: center; justify-content: space-between;">';
-                            html += '<div style="display: flex; align-items: center; gap: 10px; flex: 1;">';
-                            html += '<h3 style="margin: 0; flex: 1;">' + HuePluginConfig.escapeHtml(profile.Name || 'Unnamed Profile');
-                            if (isDisabled) html += ' <span style="font-size: 0.7em; color: #ff9800; font-weight: normal;">Disabled</span>';
-                            html += '</h3>';
-                            html += '</div>';
-                            html += '<div class="profile-menu" style="position: relative;">';
-                            html += '<button is="emby-button" type="button" class="raised" id="profileMenuButton' + index + '" onclick="event.stopPropagation(); HuePluginConfig.toggleProfileMenu(' + index + ')" style="padding: 4px 12px;">&#x22EE;</button>';
-                            html += '<div id="profileMenu' + index + '" class="hue-dropdown" style="display:none;">';
-                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.editProfile(' + index + ')"><span class="material-icons">edit</span>Edit</div>';
-                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.testProfile(' + index + ', \'Play\')"><span class="material-icons">play_arrow</span>Test Play</div>';
-                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.testProfile(' + index + ', \'Pause\')"><span class="material-icons">pause</span>Test Pause</div>';
-                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.testProfile(' + index + ', \'Stop\')"><span class="material-icons">stop</span>Test Stop</div>';
-                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.duplicateProfile(' + index + ')"><span class="material-icons">content_copy</span>Duplicate</div>';
-                            if (index > 0) {
-                                html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.moveProfile(' + index + ', -1)"><span class="material-icons">arrow_upward</span>Move Up</div>';
-                            }
-                            if (index < HuePluginConfig.profiles.length - 1) {
-                                html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.moveProfile(' + index + ', 1)"><span class="material-icons">arrow_downward</span>Move Down</div>';
-                            }
-                            html += '<div class="hue-dropdown-item" onclick="HuePluginConfig.deleteProfile(' + index + ')"><span class="material-icons">delete</span>Delete</div>';
-                            html += '</div>';
-                            html += '</div>';
-                            html += '</div>';
-                            html += '<div class="hue-test-error" id="profileTestError' + index + '" style="display:none;"></div>';
-
-                            // Summary list
-                            html += '<ul style="margin: 6px 0 0 0; padding-left: 20px; font-size: 0.88em; opacity: 0.6;">';
-                            summaryItems.forEach(function(item) {
-                                html += '<li>' + HuePluginConfig.escapeHtml(item) + '</li>';
-                            });
-                            html += '</ul>';
-
-                            html += '</div>';
-                        });
-
-                        html += '</div>';
-                        container.innerHTML = html;
-
-                        HuePluginConfig.initializeDragAndDrop();
-                    } catch (error) {
-                        console.error('Error rendering profiles:', error);
-                        Dashboard.alert('Error rendering profiles: ' + error.message);
-                    }
-                },
-
-                moveProfile: function(index, direction) {
-                    var profile = HuePluginConfig.profiles[index];
-                    if (!profile) return;
-                    HuePluginConfig.closeProfileMenus();
-
-                    var profileId = profile.Id;
-                    HuePluginConfig.commit(function(draft) {
-                        var from = HuePluginConfig.indexOfId(draft.Profiles, profileId);
-                        if (from < 0) {
-                            HuePluginConfig.showError('Not saved', 'This profile was removed before it could be moved.');
-                            return false;
-                        }
-                        var to = from + direction;
-                        if (to < 0 || to >= draft.Profiles.length) return false;
-                        var moved = draft.Profiles.splice(from, 1)[0];
-                        draft.Profiles.splice(to, 0, moved);
-                    });
-                },
-
-                editProfile: function(index) {
-                    var profile = HuePluginConfig.profiles[index];
-                    if (!profile) return;
-                    HuePluginConfig.currentEditingProfileId = profile.Id;
-                    HuePluginConfig.editorProfileId = profile.Id;
-
-                    document.querySelector('#profileEditorTitle').textContent = 'Edit Profile';
-                    document.querySelector('#profileName').value = profile.Name || '';
-                    document.querySelector('#profileEnabled').checked = profile.Enabled !== false;
-                    document.querySelector('#profileEnableForMovies').checked = profile.EnableForMovies !== false;
-                    document.querySelector('#profileEnableForTvShows').checked = profile.EnableForTvShows || false;
-                    document.querySelector('#profileClientName').value = profile.TargetClientName || '';
-                    document.querySelector('#profileIpAddress').value = profile.TargetIpAddress || '';
-                    document.querySelector('#profileTurnOffLightsOnPlay').checked = profile.TurnOffLightsOnPlay || false;
-                    document.querySelector('#profilePlayBrightness').value = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 8;
-                    document.querySelector('#profilePauseBrightness').value = profile.PauseBrightness !== undefined ? profile.PauseBrightness : 39;
-                    var gracePeriod = profile.PauseGracePeriodSeconds || 0;
-                    document.querySelector('#profileEnablePauseGracePeriod').checked = gracePeriod > 0;
-                    document.querySelector('#profilePauseGracePeriod').value = gracePeriod > 0 ? gracePeriod : 30;
-                    document.querySelector('#pauseGracePeriodContainer').style.display = gracePeriod > 0 ? '' : 'none';
-                    document.querySelector('#profileStopBrightness').value = profile.StopBrightness !== undefined ? profile.StopBrightness : 100;
-                    document.querySelector('#profileEnableOutroLights').checked = profile.EnableOutroLights || false;
-
-                    // Per-state transitions
-                    var playTransition = profile.PlayTransitionDuration !== undefined ? profile.PlayTransitionDuration : 4;
-                    document.querySelector('#profileEnablePlayTransition').checked = profile.EnablePlayTransition || false;
-                    document.querySelector('#profilePlayTransitionDuration').value = playTransition;
-                    document.querySelector('#profilePlayTransitionSlider').value = playTransition;
-                    document.querySelector('#profilePlayTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(playTransition);
-                    document.querySelector('#playTransitionContainer').style.display = profile.EnablePlayTransition ? '' : 'none';
-
-                    var pauseTransition = profile.PauseTransitionDuration !== undefined ? profile.PauseTransitionDuration : 4;
-                    document.querySelector('#profileEnablePauseTransition').checked = profile.EnablePauseTransition || false;
-                    document.querySelector('#profilePauseTransitionDuration').value = pauseTransition;
-                    document.querySelector('#profilePauseTransitionSlider').value = pauseTransition;
-                    document.querySelector('#profilePauseTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(pauseTransition);
-                    document.querySelector('#pauseTransitionContainer').style.display = profile.EnablePauseTransition ? '' : 'none';
-
-                    var stopTransition = profile.StopTransitionDuration !== undefined ? profile.StopTransitionDuration : 4;
-                    document.querySelector('#profileEnableStopTransition').checked = profile.EnableStopTransition || false;
-                    document.querySelector('#profileStopTransitionDuration').value = stopTransition;
-                    document.querySelector('#profileStopTransitionSlider').value = stopTransition;
-                    document.querySelector('#profileStopTransitionDesc').textContent = HuePluginConfig.getTransitionDescription(stopTransition);
-                    document.querySelector('#stopTransitionContainer').style.display = profile.EnableStopTransition ? '' : 'none';
-
-                    // Sync sliders with input values
-                    var playBrightness = profile.PlayBrightness !== undefined ? profile.PlayBrightness : 8;
-                    var pauseBrightness = profile.PauseBrightness !== undefined ? profile.PauseBrightness : 39;
-                    var stopBrightness = profile.StopBrightness !== undefined ? profile.StopBrightness : 100;
-
-                    document.querySelector('#profilePlayBrightnessSlider').value = playBrightness;
-                    document.querySelector('#profilePauseBrightnessSlider').value = pauseBrightness;
-                    document.querySelector('#profileStopBrightnessSlider').value = stopBrightness;
-
-                    // Update descriptions
-                    document.querySelector('#profilePlayBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(playBrightness) + ' (' + playBrightness + '%)';
-                    document.querySelector('#profilePauseBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(pauseBrightness) + ' (' + pauseBrightness + '%)';
-                    document.querySelector('#profileStopBrightnessDesc').textContent = HuePluginConfig.getBrightnessDescription(stopBrightness) + ' (' + stopBrightness + '%)';
-                    
-                    HuePluginConfig.profileDeviceIds = (profile.TargetDeviceIds || []).slice();
-                    HuePluginConfig.renderProfileDeviceIdList();
-                    document.querySelector('#profileDeviceIdInputRow').style.display = 'none';
-                    document.querySelector('#profileShowAddDeviceId').style.display = '';
-                    HuePluginConfig.refreshKnownDevices();
-
-                    // The profile keeps its own bridge; its lists load for the bridge the dropdown shows
-                    HuePluginConfig.populateBridgeDropdown(profile.BridgeId, true);
-                    HuePluginConfig.loadEditorTargets({
-                        group: profile.TargetGroupId,
-                        play: profile.PlaySceneId,
-                        pause: profile.PauseSceneId,
-                        stop: profile.StopSceneId
-                    });
-
-                    HuePluginConfig.resetEditorTests();
-                    HuePluginConfig.setSaving('#saveProfileButton', false, 'Save Profile');
-
-                    HuePluginConfig.openModal('profileEditorModal');
-
-                    // Initialize tabs - show General tab first
-                    setTimeout(function() {
-                        HuePluginConfig.switchTab('general');
-                    }, 50);
-                },
-
-                deleteProfile: function(index) {
-                    var profile = HuePluginConfig.profiles[index];
-                    if (!profile) return;
-                    HuePluginConfig.closeProfileMenus();
-                    if (!confirm('Are you sure you want to delete this profile?')) return;
-
-                    var profileId = profile.Id;
-                    HuePluginConfig.commit(function(draft) {
-                        var i = HuePluginConfig.indexOfId(draft.Profiles, profileId);
-                        if (i < 0) {
-                            HuePluginConfig.showError('Not saved', 'This profile was already removed.');
-                            return false;
-                        }
-                        draft.Profiles.splice(i, 1);
-                    });
-                },
-
-                openNewProfile: function() {
-                    HuePluginConfig.createFromTemplate('blank');
-                },
-
-                // The profile as the editor currently shows it, saved or not
-                readEditorProfile: function() {
-                    return {
-                        Id: HuePluginConfig.editorProfileId,
-                        Name: document.querySelector('#profileName').value,
-                        Enabled: document.querySelector('#profileEnabled').checked,
-                        BridgeId: document.querySelector('#profileBridgeId').value,
-                        EnableForMovies: document.querySelector('#profileEnableForMovies').checked,
-                        EnableForTvShows: document.querySelector('#profileEnableForTvShows').checked,
-                        TargetClientName: document.querySelector('#profileClientName').value,
-                        // A copy: the editor stays open while saving, and its device list must not change the saved profile
-                        TargetDeviceIds: HuePluginConfig.profileDeviceIds.slice(),
-                        TargetIpAddress: document.querySelector('#profileIpAddress').value,
-                        TargetGroupId: document.querySelector('#profileTargetGroupId').value,
-                        PlaySceneId: document.querySelector('#profilePlaySceneId').value,
-                        PauseSceneId: document.querySelector('#profilePauseSceneId').value,
-                        StopSceneId: document.querySelector('#profileStopSceneId').value,
-                        TurnOffLightsOnPlay: document.querySelector('#profileTurnOffLightsOnPlay').checked,
-                        PlayBrightness: HuePluginConfig.editorNumber('#profilePlayBrightness', 0, 100),
-                        PauseBrightness: HuePluginConfig.editorNumber('#profilePauseBrightness', 0, 100),
-                        PauseGracePeriodSeconds: document.querySelector('#profileEnablePauseGracePeriod').checked ? HuePluginConfig.editorNumber('#profilePauseGracePeriod', 1, 600) : 0,
-                        StopBrightness: HuePluginConfig.editorNumber('#profileStopBrightness', 0, 100),
-                        EnablePlayTransition: document.querySelector('#profileEnablePlayTransition').checked,
-                        PlayTransitionDuration: HuePluginConfig.editorNumber('#profilePlayTransitionDuration', 0, 150),
-                        EnablePauseTransition: document.querySelector('#profileEnablePauseTransition').checked,
-                        PauseTransitionDuration: HuePluginConfig.editorNumber('#profilePauseTransitionDuration', 0, 150),
-                        EnableStopTransition: document.querySelector('#profileEnableStopTransition').checked,
-                        StopTransitionDuration: HuePluginConfig.editorNumber('#profileStopTransitionDuration', 0, 150),
-                        EnableOutroLights: document.querySelector('#profileEnableOutroLights').checked
-                    };
-                },
-
-                saveCurrentProfile: function() {
-                    var profile = HuePluginConfig.readEditorProfile();
-
-                    // Validate profile name
-                    if (!profile.Name || !profile.Name.trim()) {
-                        Dashboard.alert('Please enter a profile name.');
-                        return;
-                    }
-
-                    // Validate at least one media type is enabled
-                    if (!profile.EnableForMovies && !profile.EnableForTvShows) {
-                        Dashboard.alert('At least one media type (Movies or TV Shows) must be enabled.');
-                        return;
-                    }
-
-                    var numberProblem = HuePluginConfig.validateEditorNumbers(null);
-                    if (numberProblem) {
-                        Dashboard.alert(numberProblem);
-                        return;
-                    }
-
-                    // With two or more bridges an empty BridgeId matches nothing at playback
-                    if (HuePluginConfig.bridges.length >= 2 && !profile.BridgeId) {
-                        Dashboard.alert('Choose a bridge for this profile.');
-                        return;
-                    }
-
-                    // The editor closes only once the server has the profile; a failed save keeps what was typed.
-                    // Retrying reuses editorProfileId, so a new profile is never added twice.
-                    var generation = HuePluginConfig.editorTestGeneration;
-                    var editing = HuePluginConfig.currentEditingProfileId !== null;
-                    HuePluginConfig.setSaving('#saveProfileButton', true);
-                    HuePluginConfig.commit(function(draft) {
-                        var index = HuePluginConfig.indexOfId(draft.Profiles, profile.Id);
-                        if (index >= 0) {
-                            draft.Profiles[index] = profile;
-                        } else if (editing) {
-                            HuePluginConfig.showError('Not saved', 'This profile was removed while the editor was open.');
-                            return false;
-                        } else {
-                            draft.Profiles.push(profile);
-                        }
-                    }).then(function(saved) {
-                        // The editor was reopened meanwhile; this result belongs to the earlier session
-                        if (generation !== HuePluginConfig.editorTestGeneration) return;
-                        HuePluginConfig.setSaving('#saveProfileButton', false, 'Save Profile');
-                        if (saved) HuePluginConfig.closeProfileEditor();
-                    });
-                },
-
-                closeProfileEditor: function() {
-                    HuePluginConfig.closeModal('profileEditorModal');
-                },
-
-                // An open modal owns one history entry (same URL), the way Jellyfin's own dialogs do,
-                // so Back closes the modal instead of navigating away underneath it. The entry keeps the
-                // router's state so its index stays intact. closeModal's history.back() lands
-                // asynchronously, so don't open a modal in the same task that closed one.
-                openModal: function(id) {
-                    var overlay = document.querySelector('#' + id);
-                    overlay.style.display = 'block';
-                    overlay.scrollTop = 0;
-                    overlay.querySelector('.hue-modal-body').scrollTop = 0;
-                    if (!(history.state && history.state.huePluginModal === id)) {
-                        history.pushState(Object.assign({}, history.state, { huePluginModal: id }), '', location.href);
-                    }
-                },
-
-                closeModal: function(id) {
-                    document.querySelector('#' + id).style.display = 'none';
-                    HuePluginConfig.onModalHidden(id);
-                    if (history.state && history.state.huePluginModal === id) {
-                        history.back();
-                    }
-                },
-
-                // Every way a modal disappears (its buttons, the backdrop, Back, leaving the page) ends here
-                onModalHidden: function(id) {
-                    if (id === 'addBridgeModal') HuePluginConfig.endAddBridgeSession();
-                },
-
-                // Hides every open modal the current history entry no longer belongs to
-                onModalPopState: function() {
-                    var current = history.state && history.state.huePluginModal;
-                    document.querySelectorAll('body > .hue-modal-overlay').forEach(function(overlay) {
-                        if (overlay.id !== current && overlay.style.display === 'block') {
-                            overlay.style.display = 'none';
-                            HuePluginConfig.onModalHidden(overlay.id);
-                        }
-                    });
-                },
-
-                escapeHtml: function(value) {
-                    return String(value == null ? '' : value)
-                        .replace(/&/g, '&amp;')
-                        .replace(/</g, '&lt;')
-                        .replace(/>/g, '&gt;')
-                        .replace(/"/g, '&quot;')
-                        .replace(/'/g, '&#39;');
-                },
-
-                formatRelativeTime: function(isoDate) {
-                    if (!isoDate) return 'never';
-                    var then = new Date(isoDate).getTime();
-                    if (isNaN(then)) return 'unknown';
-                    if (then < Date.UTC(2000, 0, 1)) return 'never'; // DateTime.MinValue or similar sentinel
-                    var minutes = Math.round((Date.now() - then) / 60000);
-                    if (minutes < 1) return 'just now';
-                    if (minutes < 60) return minutes + 'm ago';
-                    var hours = Math.round(minutes / 60);
-                    if (hours < 48) return hours + 'h ago';
-                    var days = Math.round(hours / 24);
-                    if (days < 30) return days + 'd ago';
-                    return new Date(isoDate).toLocaleDateString();
-                },
-
-                // Short display label for a device: "Name · App", optionally with the IP of its active session
-                describeKnownDevice: function(device, includeIp) {
-                    var label = device.name;
-                    if (device.app) label += ' \u00b7 ' + device.app;
-                    if (includeIp && device.ip) label += ' \u00b7 ' + device.ip;
-                    return label;
-                },
-
-                // Map DeviceId -> remote IP for sessions currently connected to the server.
-                // RemoteEndPoint is the bare address (no port). Keys are client-controlled, hence the null prototype.
-                sessionIpsByDevice: function(sessions) {
-                    var map = Object.create(null);
-                    (sessions || []).forEach(function(session) {
-                        if (!session || !session.DeviceId || !session.RemoteEndPoint) return;
-                        map[String(session.DeviceId).toLowerCase()] = String(session.RemoteEndPoint);
-                    });
-                    return map;
-                },
-
-                // The server matches device IDs case-insensitively; mirror that here
-                sameDeviceId: function(a, b) {
-                    return String(a).toLowerCase() === String(b).toLowerCase();
-                },
-
-                findKnownDevice: function(deviceId) {
-                    for (var i = 0; i < HuePluginConfig.knownDevices.length; i++) {
-                        if (HuePluginConfig.sameDeviceId(HuePluginConfig.knownDevices[i].id, deviceId)) {
-                            return HuePluginConfig.knownDevices[i];
-                        }
-                    }
-                    return null;
-                },
-
-                // Fetch every device that has signed in to this server (admin-only endpoint), and the
-                // active sessions so entries can show the IP they are connecting from.
-                // Resolves to the list; on failure leaves the cache untouched and reports via status line.
-                refreshKnownDevices: function() {
-                    var status = document.querySelector('#profileKnownDeviceStatus');
-                    if (status) status.textContent = 'Loading devices...';
-                    HuePluginConfig.knownDevicesLoading = true;
-
-                    // Sessions are an enrichment only: if that call fails, the picker still works
-                    var sessionsPromise = ApiClient.getJSON(ApiClient.getUrl('Sessions')).catch(function() { return []; });
-
-                    return Promise.all([ApiClient.getJSON(ApiClient.getUrl('Devices')), sessionsPromise]).then(function(results) {
-                        var items = (results[0] && results[0].Items) || [];
-                        var ipsByDevice = HuePluginConfig.sessionIpsByDevice(results[1]);
-                        HuePluginConfig.knownDevices = items
-                            .filter(function(d) { return d && d.Id; })
-                            .map(function(d) {
-                                return {
-                                    id: d.Id,
-                                    name: d.CustomName || d.Name || 'Unnamed device',
-                                    app: d.AppName || '',
-                                    user: d.LastUserName || '',
-                                    ip: ipsByDevice[d.Id.toLowerCase()] || '',
-                                    lastActive: d.DateLastActivity || null
-                                };
-                            })
-                            .sort(function(a, b) {
-                                var ta = a.lastActive ? new Date(a.lastActive).getTime() : 0;
-                                var tb = b.lastActive ? new Date(b.lastActive).getTime() : 0;
-                                return tb - ta;
-                            });
-                        HuePluginConfig.knownDevicesLoading = false;
-                        if (status) status.textContent = '';
-                        HuePluginConfig.populateKnownDeviceSelect();
-                        HuePluginConfig.renderProfileDeviceIdList();
-                        return HuePluginConfig.knownDevices;
-                    }).catch(function(err) {
-                        console.error('Failed to load device list', err);
-                        HuePluginConfig.knownDevicesLoading = false;
-                        if (status) status.textContent = 'Could not load the device list from Jellyfin. Enter a Device ID manually below.';
-                        HuePluginConfig.populateKnownDeviceSelect();
-                        return HuePluginConfig.knownDevices;
-                    });
-                },
-
-                populateKnownDeviceSelect: function() {
-                    var select = document.querySelector('#profileKnownDeviceSelect');
-                    if (!select) return;
-
-                    var candidates = HuePluginConfig.knownDevices.filter(function(d) {
-                        return !HuePluginConfig.profileDeviceIds.some(function(id) {
-                            return HuePluginConfig.sameDeviceId(id, d.id);
-                        });
-                    });
-
-                    // Rebuilding the options must not discard a pick the user has already made
-                    var previous = select.value;
-                    select.innerHTML = '';
-
-                    var placeholder = document.createElement('option');
-                    placeholder.value = '';
-                    if (candidates.length === 0) {
-                        placeholder.textContent = 'All known devices already added';
-                        if (HuePluginConfig.knownDevices.length === 0) {
-                            placeholder.textContent = HuePluginConfig.knownDevicesLoading ? 'Loading devices...' : 'No devices found';
-                        }
-                    } else {
-                        placeholder.textContent = 'Select a device...';
-                    }
-                    select.appendChild(placeholder);
-
-                    candidates.forEach(function(d) {
-                        var text = HuePluginConfig.describeKnownDevice(d, true);
-                        if (d.user) text += ' \u00b7 ' + d.user;
-                        text += ' \u00b7 ' + HuePluginConfig.formatRelativeTime(d.lastActive);
-                        var opt = document.createElement('option');
-                        opt.value = d.id;
-                        opt.textContent = text;
-                        select.appendChild(opt);
-                    });
-
-                    select.value = previous;
-                    if (select.value !== previous) select.value = '';
-
-                    var addButton = document.querySelector('#profileAddKnownDeviceButton');
-                    if (addButton) addButton.disabled = candidates.length === 0;
-                },
-
-                renderProfileDeviceIdList: function() {
-                    var container = document.querySelector('#profileDeviceIdList');
-                    if (HuePluginConfig.profileDeviceIds.length === 0) {
-                        container.innerHTML = '<div style="font-style: italic; opacity: 0.6;">No device IDs configured</div>';
-                        return;
-                    }
-                    
-                    var html = '';
-                    HuePluginConfig.profileDeviceIds.forEach(function(id, index) {
-                        var known = HuePluginConfig.findKnownDevice(id);
-                        html += '<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 5px; padding: 8px; background: rgba(0,0,0,0.3); border-radius: 4px;">';
-                        html += '<div style="flex: 1; min-width: 0; overflow-wrap: break-word;">';
-                        if (known) {
-                            html += '<div>' + HuePluginConfig.escapeHtml(HuePluginConfig.describeKnownDevice(known)) + '</div>';
-                            html += '<div style="font-family: monospace; font-size: 0.85em; opacity: 0.7;">' + HuePluginConfig.escapeHtml(id) + '</div>';
-                        } else {
-                            html += '<div style="font-family: monospace;">' + HuePluginConfig.escapeHtml(id) + '</div>';
-                        }
-                        html += '</div>';
-                        html += '<button is="emby-button" type="button" class="raised" onclick="HuePluginConfig.removeProfileDeviceId(' + index + ')">Remove</button>';
-                        html += '</div>';
-                    });
-                    
-                    container.innerHTML = html;
-                },
-
-                addDeviceIdToProfile: function(deviceId) {
-                    var exists = HuePluginConfig.profileDeviceIds.some(function(id) {
-                        return HuePluginConfig.sameDeviceId(id, deviceId);
-                    });
-                    if (exists) {
-                        Dashboard.alert('This Device ID is already in the list');
-                        return false;
-                    }
-                    HuePluginConfig.profileDeviceIds.push(deviceId);
-                    HuePluginConfig.renderProfileDeviceIdList();
-                    HuePluginConfig.populateKnownDeviceSelect();
-                    return true;
-                },
-
-                addKnownDevice: function() {
-                    var select = document.querySelector('#profileKnownDeviceSelect');
-                    var deviceId = select ? select.value : '';
-                    if (!deviceId) {
-                        Dashboard.alert('Please select a device');
-                        return;
-                    }
-                    HuePluginConfig.addDeviceIdToProfile(deviceId);
-                },
-
-                addProfileDeviceId: function() {
-                    var input = document.querySelector('#profileNewDeviceId');
-                    var deviceId = input.value.trim();
-                    
-                    if (!deviceId) {
-                        Dashboard.alert('Please enter a Device ID');
-                        return;
-                    }
-                    
-                    if (HuePluginConfig.addDeviceIdToProfile(deviceId)) {
-                        input.value = '';
-                    }
-                },
-
-                removeProfileDeviceId: function(index) {
-                    HuePluginConfig.profileDeviceIds.splice(index, 1);
-                    HuePluginConfig.renderProfileDeviceIdList();
-                    HuePluginConfig.populateKnownDeviceSelect();
-                },
-
-                // Bridge select in the profile editor. An existing profile keeps its saved bridge even when that
-                // bridge failed its check or has no key - the option is labelled, not disabled - so opening and
-                // saving a profile can never move it to another bridge. Unusable bridges are disabled for
-                // everything else, except that failed bridges stay selectable when no bridge is usable at all.
-                // An empty saved id follows the server's FindProfileBridge rule: the only bridge, otherwise a
-                // choice the user has to make.
-                populateBridgeDropdown: function(savedBridgeId, isExisting) {
-                    var select = document.querySelector('#profileBridgeId');
-                    var bridges = HuePluginConfig.bridges;
-                    select.innerHTML = '';
-
-                    function addOption(value, text, disabled, first) {
-                        var option = document.createElement('option');
-                        option.value = value;
-                        option.textContent = text;
-                        option.disabled = !!disabled;
-                        if (first) {
-                            select.insertBefore(option, select.firstChild);
-                        } else {
-                            select.appendChild(option);
-                        }
-                    }
-                    function usable(bridge) {
-                        return !!bridge.Username && (HuePluginConfig.bridgeStatus[bridge.Id] || {}).state !== 'failed';
-                    }
-
-                    select.onchange = function() {
-                        HuePluginConfig.loadEditorTargets(HuePluginConfig.currentTargetSelections());
-                    };
-
-                    if (bridges.length === 0) {
-                        addOption('', 'No bridges configured');
-                        select.value = '';
-                        return;
-                    }
-
-                    // With no usable bridge at all, disabling the failed ones would leave nothing to choose
-                    var anyUsable = bridges.some(usable);
-                    var implicitId = isExisting && !savedBridgeId && bridges.length === 1 ? bridges[0].Id : '';
-                    var keptId = isExisting ? (savedBridgeId || implicitId) : '';
-                    bridges.forEach(function(bridge) {
-                        var label = bridge.Name + ' (' + bridge.IpAddress + ')';
-                        if (!bridge.Username) {
-                            label += ' (not authenticated)';
-                        } else if ((HuePluginConfig.bridgeStatus[bridge.Id] || {}).state === 'failed') {
-                            label += ' (connection failed)';
-                        }
-                        addOption(bridge.Id, label, bridge.Id !== keptId && (!bridge.Username || (anyUsable && !usable(bridge))));
-                    });
-
-                    if (keptId) {
-                        select.value = keptId;
-                        if (select.value !== keptId) {
-                            addOption(keptId, 'Unknown bridge (' + keptId + ')');
-                            select.value = keptId;
-                        }
-                        return;
-                    }
-
-                    var first = isExisting ? null : bridges.find(usable);
-                    if (first) {
-                        select.value = first.Id;
-                    } else {
-                        addOption('', 'Choose a bridge', false, true);
-                        select.value = '';
-                    }
-                },
-
-                // The editor's current group and scene choices, carried over when the bridge changes
-                currentTargetSelections: function() {
-                    return {
-                        group: document.querySelector('#profileTargetGroupId').value,
-                        play: document.querySelector('#profilePlaySceneId').value,
-                        pause: document.querySelector('#profilePauseSceneId').value,
-                        stop: document.querySelector('#profileStopSceneId').value
-                    };
-                },
-
-                // Select savedValue, keeping it even when the bridge offers no such option.
-                // A room or scene deleted on the bridge (or an id stored before 4.0) matches nothing,
-                // and the browser then reports the select as empty - which the next save would
-                // write back, silently retargeting the profile at All Lights or no scene. Carry
-                // the stored value in an option of its own, flagged so it is obvious it needs
-                // attention.
-                setSelectValuePreservingUnknown: function(select, savedValue, label) {
-                    if (!savedValue) return;
-
-                    select.value = savedValue;
-                    if (select.value === savedValue) return;
-
-                    var option = document.createElement('option');
-                    option.value = savedValue;
-                    option.text = label || ('Unresolved (' + savedValue + ') \u2014 re-select');
-                    select.appendChild(option);
-                    select.value = savedValue;
-                },
-
-                // Rooms, zones and scenes for the bridge the editor shows. The selects are rebuilt at once with only
-                // the defaults plus this profile's saved ids, so nothing from an earlier editor session survives; a
-                // list answered for an earlier load (another session or bridge choice) is ignored; a list that
-                // fails to load keeps the saved ids and says so.
-                loadEditorTargets: function(saved) {
-                    var generation = ++HuePluginConfig.editorTargetsGeneration;
-                    var bridgeId = document.querySelector('#profileBridgeId').value;
-                    var groupSelect = document.querySelector('#profileTargetGroupId');
-                    var sceneSelects = {
-                        play: document.querySelector('#profilePlaySceneId'),
-                        pause: document.querySelector('#profilePauseSceneId'),
-                        stop: document.querySelector('#profileStopSceneId')
-                    };
-                    // Nothing loads without a bridge, so saved ids then say they are not loaded
-                    var loadingLabel = bridgeId ? 'Saved selection (loading…)' : 'Saved selection (not loaded)';
-
-                    groupSelect.innerHTML = '<option value="0">All Lights</option>';
-                    HuePluginConfig.setSelectValuePreservingUnknown(groupSelect, saved.group, loadingLabel);
-                    Object.keys(sceneSelects).forEach(function(key) {
-                        sceneSelects[key].innerHTML = '<option value="">None (Use Brightness)</option>';
-                        HuePluginConfig.setSelectValuePreservingUnknown(sceneSelects[key], saved[key], loadingLabel);
-                    });
-                    HuePluginConfig.updateStateVisibility();
-                    HuePluginConfig.renderTargetsStatus(null);
-
-                    if (!bridgeId) {
-                        HuePluginConfig.renderTargetsStatus('Choose a bridge to load its rooms and scenes.');
-                        return;
-                    }
-
-                    var bridgeIndex = HuePluginConfig.indexOfId(HuePluginConfig.bridges, bridgeId);
-                    var bridgeName = bridgeIndex >= 0 ? HuePluginConfig.bridges[bridgeIndex].Name : 'this bridge';
-
-                    function current() {
-                        return generation === HuePluginConfig.editorTargetsGeneration;
-                    }
-                    function keepSaved(select) {
-                        for (var i = 0; i < select.options.length; i++) {
-                            if (select.options[i].text === loadingLabel) select.options[i].text = 'Saved selection (not loaded)';
-                        }
-                    }
-
-                    ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/targets?bridgeId=' + encodeURIComponent(bridgeId))).then(function (result) {
-                        if (!current()) return;
-                        var groups = result.Groups;
-                        var scenes = result.Scenes;
-
-                        // Keep what the select holds (the saved id, or what the user picked while loading)
-                        var chosenGroup = groupSelect.value;
-                        groupSelect.innerHTML = '<option value="0">All Lights</option>';
-
-                        // Keyed by grouped_light id (the value a profile stores); Type is room or zone.
-                        var byType = { room: [], zone: [] };
-                        for (var id in groups) {
-                            var group = groups[id];
-                            if (byType[group.Type]) byType[group.Type].push({ id: id, name: group.Name });
-                        }
-
-                        [['room', 'Rooms'], ['zone', 'Zones']].forEach(function (kind) {
-                            var items = byType[kind[0]];
-                            if (items.length === 0) return;
-                            items.sort(function (a, b) { return a.name.localeCompare(b.name); });
-                            var optgroup = document.createElement('optgroup');
-                            optgroup.label = kind[1];
-                            items.forEach(function (item) {
-                                var option = document.createElement('option');
-                                option.value = item.id;
-                                option.text = item.name;
-                                optgroup.appendChild(option);
-                            });
-                            groupSelect.appendChild(optgroup);
-                        });
-
-                        HuePluginConfig.setSelectValuePreservingUnknown(groupSelect, chosenGroup);
-
-                        Object.keys(sceneSelects).forEach(function(key) {
-                            var select = sceneSelects[key];
-                            var chosen = select.value;
-                            select.innerHTML = '<option value="">None (Use Brightness)</option>';
-                            for (var id in scenes) {
-                                var option = document.createElement('option');
-                                option.value = id;
-                                option.text = scenes[id].Name + ' (Group: ' + scenes[id].GroupName + ')';
-                                select.appendChild(option);
-                            }
-                            // Keep what the select holds (the saved id, or what the user picked while loading); an id this bridge does not offer stays as a flagged option
-                            HuePluginConfig.setSelectValuePreservingUnknown(select, chosen);
-                        });
-                        HuePluginConfig.updateStateVisibility();
-                    }).catch(function(error) {
-                        if (!current()) return;
-                        console.error('Error loading rooms, zones and scenes for profile:', error);
-                        keepSaved(groupSelect);
-                        Object.keys(sceneSelects).forEach(function(key) {
-                            keepSaved(sceneSelects[key]);
-                        });
-                        HuePluginConfig.renderTargetsStatus('Could not load rooms, zones and scenes from ' + bridgeName + ': ' +
-                            HuePluginConfig.describeError(error) + '. The saved selections are kept.');
-                    });
-                },
-
-                renderTargetsStatus: function(text) {
-                    var status = document.querySelector('#profileTargetsStatus');
-                    status.textContent = text || '';
-                    status.style.display = text ? '' : 'none';
-                },
-
-                // Brightness is ignored while a scene is selected, and Play's brightness while Turn Off is ticked
-                updateStateVisibility: function() {
-                    var playScene = document.querySelector('#profilePlaySceneId').value !== '';
-                    var turnOff = document.querySelector('#profileTurnOffLightsOnPlay').checked;
-                    document.querySelector('#playBrightnessContainer').style.display = (playScene || turnOff) ? 'none' : '';
-                    document.querySelector('#playTurnOffContainer').style.display = playScene ? 'none' : '';
-                    document.querySelector('#pauseBrightnessContainer').style.display = document.querySelector('#profilePauseSceneId').value !== '' ? 'none' : '';
-                    document.querySelector('#stopBrightnessContainer').style.display = document.querySelector('#profileStopSceneId').value !== '' ? 'none' : '';
-                },
-
-                generateGuid: function() {
-                    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-                        var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-                        return v.toString(16);
-                    });
-                },
-
-                // Add a bridge to the given list, or update the entry that already has this Id or IP so a
-                // re-added bridge never becomes a duplicate. Keeps the existing Id so profiles that
-                // reference it stay linked, and keeps the existing name unless the user typed one
-                // ('Bridge' is the modal's pre-filled default, see openAddBridge). Returns the stored entry.
-                upsertBridge: function(bridges, bridge) {
-                    var existing = null;
-                    for (var i = 0; i < bridges.length; i++) {
-                        if (bridges[i].Id === bridge.Id || bridges[i].IpAddress === bridge.IpAddress) {
-                            existing = bridges[i];
-                            break;
-                        }
-                    }
-                    if (existing) {
-                        if (bridge.Name && bridge.Name !== 'Bridge') {
-                            existing.Name = bridge.Name;
-                        }
-                        existing.IpAddress = bridge.IpAddress;
-                        existing.Username = bridge.Username;
-                        if (bridge.HardwareId !== undefined) {
-                            existing.HardwareId = bridge.HardwareId;
-                        }
-                        return existing;
-                    }
-                    bridges.push(bridge);
-                    return bridge;
-                },
-
-                // A number field as { value } clamped to min..max, or { blank: true } when empty or not a number
-                readNumberField: function(selector, min, max) {
-                    var value = parseInt(document.querySelector(selector).value, 10);
-                    if (isNaN(value)) return { blank: true };
-                    return { value: Math.max(min, Math.min(max, value)) };
-                },
-
-                // An editor number as saved: clamped, and a blank field read as min (validateEditorNumbers stops Save and Test first)
-                editorNumber: function(selector, min, max) {
-                    var field = HuePluginConfig.readNumberField(selector, min, max);
-                    return field.blank ? min : field.value;
-                },
-
-                // The first visible number field that is blank or not a number, as a message naming it; null when all
-                // are usable. action limits the check to one section ('Play', 'Pause', 'Stop'); null checks all.
-                validateEditorNumbers: function(action) {
-                    var fields = [
-                        { action: 'Play', input: '#profilePlayBrightness', container: '#playBrightnessContainer', name: 'Play brightness' },
-                        { action: 'Pause', input: '#profilePauseBrightness', container: '#pauseBrightnessContainer', name: 'Pause brightness' },
-                        { action: 'Stop', input: '#profileStopBrightness', container: '#stopBrightnessContainer', name: 'Stop brightness' },
-                        { action: 'Play', input: '#profilePlayTransitionDuration', container: '#playTransitionContainer', name: 'Play transition' },
-                        { action: 'Pause', input: '#profilePauseTransitionDuration', container: '#pauseTransitionContainer', name: 'Pause transition' },
-                        { action: 'Stop', input: '#profileStopTransitionDuration', container: '#stopTransitionContainer', name: 'Stop transition' },
-                        { action: 'Pause', input: '#profilePauseGracePeriod', container: '#pauseGracePeriodContainer', name: 'the pause grace period' }
-                    ];
-                    for (var i = 0; i < fields.length; i++) {
-                        var field = fields[i];
-                        if (action && field.action !== action) continue;
-                        // A hidden field is not in use: its scene is selected or its checkbox is off
-                        if (document.querySelector(field.container).style.display === 'none') continue;
-                        if (HuePluginConfig.readNumberField(field.input, 0, 0).blank) {
-                            return 'Enter a value for ' + field.name + '.';
-                        }
-                    }
-                    return null;
-                },
-
-            };
-
-            // Initialize event listeners when page is ready
-            function initializeEventListeners() {
-                console.log('Initializing event listeners...');
-
-                // Move modals to document.body so position:fixed works
-                // (Jellyfin's page container creates a stacking context that traps fixed elements).
-                // A copy left there by an earlier load of this page (Jellyfin evicted the cached view)
-                // is removed first, or its duplicate ids would shadow this load's elements.
-                var page = document.querySelector('#HuePluginConfigPage');
-                page.querySelectorAll('.hue-modal-overlay').forEach(function(overlay) {
-                    document.querySelectorAll('body > #' + overlay.id).forEach(function(stale) {
-                        stale.remove();
-                    });
-                    document.body.appendChild(overlay);
-                });
-
-                // The script re-runs on every load of this page, so replace rather than stack the listener
-                if (window.huePluginModalPopState) {
-                    window.removeEventListener('popstate', window.huePluginModalPopState);
-                }
-                window.huePluginModalPopState = function() {
-                    HuePluginConfig.onModalPopState();
-                };
-                window.addEventListener('popstate', window.huePluginModalPopState);
-
-                // Leaving the page by any other route (drawer link, session expiry) must not strand a modal over the next view
-                page.addEventListener('viewbeforehide', function() {
-                    document.querySelectorAll('body > .hue-modal-overlay').forEach(function(overlay) {
-                        overlay.style.display = 'none';
-                        HuePluginConfig.onModalHidden(overlay.id);
-                    });
-                });
-
-                // Bridge management event handlers
-                var addBridgeButton = document.querySelector('#addBridgeButton');
-                if (addBridgeButton) {
-                    addBridgeButton.addEventListener('click', function () {
-                        HuePluginConfig.openAddBridge();
-                    });
-                }
-
-                var discoverBridgeInModal = document.querySelector('#discoverBridgeInModal');
-                if (discoverBridgeInModal) {
-                    discoverBridgeInModal.addEventListener('click', function () {
-                        HuePluginConfig.discoverBridgeInModal();
-                    });
-                }
-
-                var authBridgeInModal = document.querySelector('#authBridgeInModal');
-                if (authBridgeInModal) {
-                    authBridgeInModal.addEventListener('click', function () {
-                        HuePluginConfig.authBridgeInModal();
-                    });
-                }
-
-                var cancelAddBridge = document.querySelector('#cancelAddBridge');
-                if (cancelAddBridge) {
-                    cancelAddBridge.addEventListener('click', function () {
-                        HuePluginConfig.closeModal('addBridgeModal');
-                    });
-                }
-
-                var saveAddBridge = document.querySelector('#saveAddBridge');
-                if (saveAddBridge) {
-                    saveAddBridge.addEventListener('click', function () {
-                        HuePluginConfig.saveAddBridge();
-                    });
-                }
-
-                var saveEditBridge = document.querySelector('#saveEditBridge');
-                if (saveEditBridge) {
-                    saveEditBridge.addEventListener('click', function () {
-                        HuePluginConfig.saveEditBridge();
-                    });
-                }
-
-                var cancelEditBridge = document.querySelector('#cancelEditBridge');
-                if (cancelEditBridge) {
-                    cancelEditBridge.addEventListener('click', function () {
-                        HuePluginConfig.closeModal('editBridgeModal');
-                    });
-                }
-
-                // Close a modal when a press both starts and ends on its backdrop. A click alone is not enough:
-                // selecting text or dragging a slider past the modal's edge ends as a click on the overlay.
-                document.querySelectorAll('.hue-modal-overlay').forEach(function(overlay) {
-                    overlay.addEventListener('pointerdown', function(e) {
-                        overlay.hueDownOnBackdrop = e.target === overlay;
-                    });
-                    overlay.addEventListener('pointerup', function(e) {
-                        overlay.hueUpOnBackdrop = e.target === overlay;
-                    });
-                    overlay.addEventListener('click', function(e) {
-                        if (e.target === overlay && overlay.hueDownOnBackdrop && overlay.hueUpOnBackdrop) {
-                            HuePluginConfig.closeModal(overlay.id);
-                        }
-                    });
-                });
-
-                // Close profile menus when clicking outside them. Registered once per page load and replaced on
-                // the next, like the popstate listener, instead of once per render.
-                if (window.huePluginMenuCloser) {
-                    document.removeEventListener('click', window.huePluginMenuCloser);
-                }
-                window.huePluginMenuCloser = function(e) {
-                    if (!e.target.closest('.profile-menu')) {
-                        HuePluginConfig.closeProfileMenus();
-                    }
-                };
-                document.addEventListener('click', window.huePluginMenuCloser);
-
-                // Profile management event handlers
-                var addProfileButton = document.querySelector('#addProfileButton');
-                if (addProfileButton) {
-                    addProfileButton.addEventListener('click', function () {
-                        HuePluginConfig.openNewProfile();
-                    });
-                }
-
-                var addProfileTemplateButton = document.querySelector('#addProfileTemplateButton');
-                if (addProfileTemplateButton) {
-                    addProfileTemplateButton.addEventListener('click', function () {
-                        var templateMenu = document.querySelector('#templateMenu');
-                        if (templateMenu) {
-                            templateMenu.style.display = templateMenu.style.display === 'block' ? 'none' : 'block';
-                        }
-                    });
-                }
-
-                var saveProfileButton = document.querySelector('#saveProfileButton');
-                if (saveProfileButton) {
-                    saveProfileButton.addEventListener('click', function () {
-                        HuePluginConfig.saveCurrentProfile();
-                    });
-                }
-
-                document.querySelectorAll('#profileEditorModal .hue-test-button').forEach(function(button) {
-                    button.addEventListener('click', function() {
-                        HuePluginConfig.testEditorAction(this);
-                    });
-                });
-
-                var cancelProfileButton = document.querySelector('#cancelProfileButton');
-                if (cancelProfileButton) {
-                    cancelProfileButton.addEventListener('click', function () {
-                        HuePluginConfig.closeProfileEditor();
-                    });
-                }
-
-                var profileAddDeviceIdButton = document.querySelector('#profileAddDeviceIdButton');
-                if (profileAddDeviceIdButton) {
-                    profileAddDeviceIdButton.addEventListener('click', function () {
-                        HuePluginConfig.addProfileDeviceId();
-                    });
-                }
-
-                var profileAddKnownDeviceButton = document.querySelector('#profileAddKnownDeviceButton');
-                if (profileAddKnownDeviceButton) {
-                    profileAddKnownDeviceButton.addEventListener('click', function () {
-                        HuePluginConfig.addKnownDevice();
-                    });
-                }
-
-                var profileNewDeviceId = document.querySelector('#profileNewDeviceId');
-                if (profileNewDeviceId) {
-                    profileNewDeviceId.addEventListener('keypress', function (e) {
-                        if (e.key === 'Enter') {
-                            e.preventDefault();
-                            HuePluginConfig.addProfileDeviceId();
-                        }
-                    });
-                }
-
-                document.querySelector('#profileShowAddDeviceId').addEventListener('click', function() {
-                    document.querySelector('#profileDeviceIdInputRow').style.display = '';
-                    this.style.display = 'none';
-                    HuePluginConfig.populateKnownDeviceSelect();
-                    // Re-fetch so a device that just signed in shows up without reopening the editor
-                    HuePluginConfig.refreshKnownDevices();
-                    document.querySelector('#profileKnownDeviceSelect').focus();
-                });
-
-                // Tab switching event listeners
-                document.querySelectorAll('.profile-tab').forEach(function(tab) {
-                    tab.addEventListener('click', function() {
-                        var tabName = this.getAttribute('data-tab');
-                        HuePluginConfig.switchTab(tabName);
-                    });
-                });
-
-                // Close template menu when clicking outside
-                document.addEventListener('click', function(e) {
-                    var templateButton = document.querySelector('#addProfileTemplateButton');
-                    var templateMenu = document.querySelector('#templateMenu');
-                    
-                    if (templateButton && templateMenu && 
-                        !templateButton.contains(e.target) && 
-                        !templateMenu.contains(e.target)) {
-                        templateMenu.style.display = 'none';
-                    }
-                });
-
-                // Setup brightness sliders
-                HuePluginConfig.setupBrightnessSlider('profilePlayBrightnessSlider', 'profilePlayBrightness', 'profilePlayBrightnessDesc');
-                HuePluginConfig.setupBrightnessSlider('profilePauseBrightnessSlider', 'profilePauseBrightness', 'profilePauseBrightnessDesc');
-                HuePluginConfig.setupBrightnessSlider('profileStopBrightnessSlider', 'profileStopBrightness', 'profileStopBrightnessDesc');
-                
-                // Setup per-state transition sliders
-                HuePluginConfig.setupTransitionSlider('profilePlayTransitionSlider', 'profilePlayTransitionDuration', 'profilePlayTransitionDesc');
-                HuePluginConfig.setupTransitionSlider('profilePauseTransitionSlider', 'profilePauseTransitionDuration', 'profilePauseTransitionDesc');
-                HuePluginConfig.setupTransitionSlider('profileStopTransitionSlider', 'profileStopTransitionDuration', 'profileStopTransitionDesc');
-
-                // Toggle visibility for per-state transition sliders
-                document.querySelector('#profileEnablePlayTransition').addEventListener('change', function() {
-                    document.querySelector('#playTransitionContainer').style.display = this.checked ? '' : 'none';
-                });
-                document.querySelector('#profileEnablePauseTransition').addEventListener('change', function() {
-                    document.querySelector('#pauseTransitionContainer').style.display = this.checked ? '' : 'none';
-                });
-                document.querySelector('#profileEnableStopTransition').addEventListener('change', function() {
-                    document.querySelector('#stopTransitionContainer').style.display = this.checked ? '' : 'none';
-                });
-                document.querySelector('#profileEnablePauseGracePeriod').addEventListener('change', function() {
-                    document.querySelector('#pauseGracePeriodContainer').style.display = this.checked ? '' : 'none';
-                });
-
-                // Brightness follows the scene and Turn Off choices (updateStateVisibility)
-                ['#profilePlaySceneId', '#profilePauseSceneId', '#profileStopSceneId', '#profileTurnOffLightsOnPlay'].forEach(function(selector) {
-                    document.querySelector(selector).addEventListener('change', HuePluginConfig.updateStateVisibility);
-                });
-
-                console.log('Event listeners initialized');
-                
-                // Load configuration after everything is set up
-                HuePluginConfig.loadConfiguration();
-            }
-
-            // Wait for page to be ready
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', initializeEventListeners);
-            } else {
-                // DOM is already ready
-                initializeEventListeners();
-            }
-        </script>
     </div>
 </body>
 </html>

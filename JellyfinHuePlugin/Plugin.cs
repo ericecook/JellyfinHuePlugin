@@ -53,6 +53,11 @@ namespace JellyfinHuePlugin
 
         public override string Description => "Control Philips Hue lights based on Jellyfin playback events";
 
+        /// <summary>
+        /// The dashboard opens a plugin's first page as its settings page, so the HTML page comes first. The
+        /// second is that page's controller module, which configPage.html names in
+        /// data-controller="__plugin/HueLightingControl.js".
+        /// </summary>
         public IEnumerable<PluginPageInfo> GetPages()
         {
             return new[]
@@ -61,6 +66,11 @@ namespace JellyfinHuePlugin
                 {
                     Name = "Hue Lighting Control",
                     EmbeddedResourcePath = GetType().Namespace + ".Configuration.configPage.html"
+                },
+                new PluginPageInfo
+                {
+                    Name = "HueLightingControl.js",
+                    EmbeddedResourcePath = GetType().Namespace + ".Configuration.configPage.js"
                 }
             };
         }
