@@ -578,10 +578,12 @@ export default function HueConfigPage(view) {
             }).then(result => {
                 if (!result || !result.Success || isGone()) return { result: result || { Success: false }, adopted: false };
                 return ApiClient.getPluginConfiguration(PLUGIN_ID).then(config => {
+                    if (isGone()) return { result, adopted: false };
                     adoptLists(config.Bridges || [], config.Profiles || []);
                     return { result, adopted: true };
                 }, error => {
                     console.error('Reloading the configuration failed', error);
+                    if (isGone()) return { result, adopted: false };
                     showError('Could not refresh', `The bridge list could not be reloaded: ${describeError(error)}. Reload the page.`);
                     return { result, adopted: false };
                 });
@@ -727,7 +729,7 @@ export default function HueConfigPage(view) {
         }
     }
 
-    const isLiveBridgeSession = session => !!session && session === state.bridgeSession && !session.ended;
+    const isLiveBridgeSession = session => !!session && session === state.bridgeSession && !session.ended && !isGone();
 
     // While pairing, verifying or saving only Cancel stays usable, so a retry can never use values that differ
     // from the screen
@@ -1031,38 +1033,38 @@ export default function HueConfigPage(view) {
 
     function renderProfiles() {
         try {
-        const container = $('#profilesList');
-        const profiles = state.profiles;
-        if (profiles.length === 0) {
-            container.innerHTML = '<div class="fieldDescription">No profiles configured. Add your first profile to get started!</div>';
-            return;
-        }
+            const container = $('#profilesList');
+            const profiles = state.profiles;
+            if (profiles.length === 0) {
+                container.innerHTML = '<div class="fieldDescription">No profiles configured. Add your first profile to get started!</div>';
+                return;
+            }
 
-        const item = (action, icon, text, attributes = '') =>
-            `<div class="hue-dropdown-item" data-action="${action}"${attributes}><span class="material-icons">${icon}</span>${text}</div>`;
-        container.innerHTML = '<div class="hue-card-stack">' + profiles.map((profile, index) => {
-            const disabled = profile.Enabled === false;
-            return `<div class="hue-card profile-card${disabled ? ' is-disabled' : ''}" draggable="true" data-profile-id="${escapeHtml(profile.Id)}">
-                <div class="hue-card-header">
-                    <h3 class="hue-card-title">${escapeHtml(profile.Name || 'Unnamed Profile')}${disabled ? ' <span class="hue-card-flag">Disabled</span>' : ''}</h3>
-                    <div class="profile-menu">
-                        <button is="emby-button" type="button" class="raised profile-menu-button" data-action="toggle-menu">&#x22EE;</button>
-                        <div class="hue-dropdown">
-                            ${item('edit', 'edit', 'Edit')}
-                            ${item('test', 'play_arrow', 'Test Play', ' data-test-action="Play"')}
-                            ${item('test', 'pause', 'Test Pause', ' data-test-action="Pause"')}
-                            ${item('test', 'stop', 'Test Stop', ' data-test-action="Stop"')}
-                            ${item('duplicate', 'content_copy', 'Duplicate')}
-                            ${index > 0 ? item('move-up', 'arrow_upward', 'Move Up') : ''}
-                            ${index < profiles.length - 1 ? item('move-down', 'arrow_downward', 'Move Down') : ''}
-                            ${item('delete', 'delete', 'Delete')}
+            const item = (action, icon, text, attributes = '') =>
+                `<div class="hue-dropdown-item" data-action="${action}"${attributes}><span class="material-icons">${icon}</span>${text}</div>`;
+            container.innerHTML = '<div class="hue-card-stack">' + profiles.map((profile, index) => {
+                const disabled = profile.Enabled === false;
+                return `<div class="hue-card profile-card${disabled ? ' is-disabled' : ''}" draggable="true" data-profile-id="${escapeHtml(profile.Id)}">
+                    <div class="hue-card-header">
+                        <h3 class="hue-card-title">${escapeHtml(profile.Name || 'Unnamed Profile')}${disabled ? ' <span class="hue-card-flag">Disabled</span>' : ''}</h3>
+                        <div class="profile-menu">
+                            <button is="emby-button" type="button" class="raised profile-menu-button" data-action="toggle-menu">&#x22EE;</button>
+                            <div class="hue-dropdown">
+                                ${item('edit', 'edit', 'Edit')}
+                                ${item('test', 'play_arrow', 'Test Play', ' data-test-action="Play"')}
+                                ${item('test', 'pause', 'Test Pause', ' data-test-action="Pause"')}
+                                ${item('test', 'stop', 'Test Stop', ' data-test-action="Stop"')}
+                                ${item('duplicate', 'content_copy', 'Duplicate')}
+                                ${index > 0 ? item('move-up', 'arrow_upward', 'Move Up') : ''}
+                                ${index < profiles.length - 1 ? item('move-down', 'arrow_downward', 'Move Down') : ''}
+                                ${item('delete', 'delete', 'Delete')}
+                            </div>
                         </div>
                     </div>
-                </div>
-                <div class="hue-test-error profile-test-error" style="display:none;"></div>
-                <ul class="hue-card-summary">${profileSummary(profile, state.bridges).map(line => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
-            </div>`;
-        }).join('') + '</div>';
+                    <div class="hue-test-error profile-test-error" style="display:none;"></div>
+                    <ul class="hue-card-summary">${profileSummary(profile, state.bridges).map(line => `<li>${escapeHtml(line)}</li>`).join('')}</ul>
+                </div>`;
+            }).join('') + '</div>';
         } catch (error) {
             console.error('Error rendering profiles:', error);
             Dashboard.alert('Error rendering profiles: ' + error.message);
