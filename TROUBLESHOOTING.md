@@ -66,6 +66,10 @@ You can also click "Authenticate" first and then press the bridge button — the
 - **Bridge too old**: the log says `Bridge {Host} is not a supported v2 bridge (software {Version})`. Update the bridge in the Hue app; software 1948086000 or newer is required. The round v1 bridge cannot be updated and is not supported
 - **Certificate rejected**: see the next section
 
+### Bridge Was Reset or Its Key Stopped Working
+
+Open the bridge with **Edit** on the plugin page, press the link button and click **Authenticate**. The bridge keeps its profiles; its key and certificate pin are replaced.
+
 ---
 
 ## Bridge Certificate Rejected

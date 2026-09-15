@@ -460,85 +460,54 @@
                     </button>
                 </div>
 
-                <!-- Add Bridge Modal -->
-                <div id="addBridgeModal" class="hue-modal-overlay">
+                <!-- Bridge Modal: adds a bridge, or edits one and pairs it again -->
+                <div id="bridgeModal" class="hue-modal-overlay">
                     <div class="hue-modal hue-modal--narrow">
                         <div class="hue-modal-header">
-                            <h2>Add Hue Bridge</h2>
+                            <h2 id="bridgeModalTitle">Add Hue Bridge</h2>
                         </div>
                         <div class="hue-modal-body">
                             <div class="inputContainer">
-                                <label class="inputLabel" for="newBridgeName">Bridge Name</label>
-                                <input type="text" id="newBridgeName" is="emby-input" placeholder="e.g., Living Room Bridge" value="Bridge" />
+                                <label class="inputLabel" for="bridgeName">Bridge Name</label>
+                                <input type="text" id="bridgeName" is="emby-input" placeholder="e.g., Living Room Bridge" value="Bridge" />
                             </div>
 
                             <div class="inputContainer">
-                                <label class="inputLabel" for="newBridgeIp">Bridge IP Address</label>
+                                <label class="inputLabel" for="bridgeIp">Bridge IP Address</label>
                                 <div class="hue-field-row">
-                                    <input type="text" id="newBridgeIp" is="emby-input" placeholder="Discover or enter manually" />
-                                    <button is="emby-button" type="button" class="raised hue-inline-button" id="discoverBridgeInModal">
+                                    <input type="text" id="bridgeIp" is="emby-input" placeholder="Discover or enter manually" />
+                                    <button is="emby-button" type="button" class="raised hue-inline-button" id="discoverBridge">
                                         <span>Discover</span>
                                     </button>
                                 </div>
                                 <div class="fieldDescription">Use Discover or enter your bridge's IP address manually</div>
                             </div>
 
-                            <div id="addBridgeSelector" class="selectContainer" style="display:none;">
-                                <select id="addBridgeSelect" is="emby-select" label="Multiple bridges found — select one:"></select>
+                            <div id="bridgeDiscoverySelector" class="selectContainer" style="display:none;">
+                                <select id="bridgeDiscoverySelect" is="emby-select" label="Multiple bridges found — select one:"></select>
                             </div>
 
                             <div class="inputContainer">
-                                <label class="inputLabel" for="newBridgeUsername">API Key</label>
+                                <label class="inputLabel" for="bridgeKey">API Key</label>
                                 <div class="hue-field-row">
-                                    <input type="text" id="newBridgeUsername" is="emby-input" class="hue-key-input"
+                                    <input type="text" id="bridgeKey" is="emby-input" class="hue-key-input"
                                            placeholder="Press link button on bridge, then click Authenticate" />
-                                    <button is="emby-button" type="button" class="raised hue-inline-button" id="authBridgeInModal">
-                                        <span id="authBridgeInModalText">Authenticate</span>
+                                    <button is="emby-button" type="button" class="raised hue-inline-button" id="authenticateBridge">
+                                        <span>Authenticate</span>
                                     </button>
                                 </div>
                                 <div class="fieldDescription">Authenticate to get an API key automatically, or paste one manually</div>
-                                <div id="addBridgeAuthProgress" class="hue-auth-progress" style="display:none;">
-                                    <div id="addBridgeAuthProgressText" class="hue-auth-progress-text"></div>
-                                    <div id="addBridgeAuthCountdown" class="hue-auth-countdown"></div>
+                                <div id="bridgeAuthProgress" class="hue-auth-progress" style="display:none;">
+                                    <div id="bridgeAuthProgressText" class="hue-auth-progress-text"></div>
+                                    <div id="bridgeAuthCountdown" class="hue-auth-countdown"></div>
                                 </div>
                             </div>
                         </div>
                         <div class="hue-modal-footer">
-                            <button is="emby-button" type="button" class="raised" id="cancelAddBridge">
+                            <button is="emby-button" type="button" class="raised" id="cancelBridge">
                                 <span>Cancel</span>
                             </button>
-                            <button is="emby-button" type="button" class="raised button-submit" id="saveAddBridge">
-                                <span>Save</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Edit Bridge Modal -->
-                <div id="editBridgeModal" class="hue-modal-overlay">
-                    <div class="hue-modal hue-modal--narrow">
-                        <div class="hue-modal-header">
-                            <h2>Edit Bridge</h2>
-                        </div>
-                        <div class="hue-modal-body">
-                            <div class="inputContainer">
-                                <label class="inputLabel" for="editBridgeName">Bridge Name</label>
-                                <input type="text" id="editBridgeName" is="emby-input" />
-                            </div>
-                            <div class="inputContainer">
-                                <label class="inputLabel" for="editBridgeIp">IP Address</label>
-                                <input type="text" id="editBridgeIp" is="emby-input" />
-                            </div>
-                            <div class="inputContainer">
-                                <label class="inputLabel" for="editBridgeUsername">API Key</label>
-                                <input type="text" id="editBridgeUsername" is="emby-input" class="hue-key-input" placeholder="Auto-filled on authenticate" />
-                            </div>
-                        </div>
-                        <div class="hue-modal-footer">
-                            <button is="emby-button" type="button" class="raised" id="cancelEditBridge">
-                                <span>Cancel</span>
-                            </button>
-                            <button is="emby-button" type="button" class="raised button-submit" id="saveEditBridge">
+                            <button is="emby-button" type="button" class="raised button-submit" id="saveBridge">
                                 <span>Save</span>
                             </button>
                         </div>

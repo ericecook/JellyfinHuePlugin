@@ -3,7 +3,7 @@
 // Baseline: modern syntax (let/const, arrow functions, template literals, spread); it runs wherever the
 // dashboard's own dynamic import runs.
 // Sections: constants and helpers; the save queue; HueConfigPage (state, queue operations, bridges list,
-// bridge modals, profiles list, profile editor, rooms and scenes, device picker, modals and lifecycle).
+// bridge modal, profiles list, profile editor, rooms and scenes, device picker, modals and lifecycle).
 
 // ---------------------------------------------------------------------------------------------------------
 // Constants and helpers
@@ -432,13 +432,11 @@ export default function HueConfigPage(view) {
     const $ = selector => view.querySelector(selector);
     // Captured before they move to body (see "Modals and lifecycle"); looked up inside from then on
     const overlays = {
-        addBridgeModal: $('#addBridgeModal'),
-        editBridgeModal: $('#editBridgeModal'),
+        bridgeModal: $('#bridgeModal'),
         profileEditorModal: $('#profileEditorModal')
     };
     const editor = selector => overlays.profileEditorModal.querySelector(selector);
-    const addModal = selector => overlays.addBridgeModal.querySelector(selector);
-    const editModal = selector => overlays.editBridgeModal.querySelector(selector);
+    const bridgeField = selector => overlays.bridgeModal.querySelector(selector);
 
     const state = {
         // False until the configuration GET succeeds; commit() saves nothing before that
@@ -460,11 +458,9 @@ export default function HueConfigPage(view) {
         knownDevicesLoading: false,
         // Id of the profile card being dragged; null when no card drag is in progress
         draggedProfileId: null,
-        // The open Add Bridge modal's session; every async result checks it is still the live one
-        addBridgeSession: null,
-        // Edit Bridge remembers the bridge's Id, and counts openings so a late save leaves a reopened modal alone
-        editBridgeId: null,
-        editBridgeSession: 0
+        // The open bridge modal: { mode: 'add'|'edit', bridgeId, ended, countdown }; every async result checks it
+        // is still the live one
+        bridgeSession: null
     };
 
     const isGone = () => state.destroyed || !view.isConnected;
@@ -566,18 +562,30 @@ export default function HueConfigPage(view) {
         updateConfigSectionVisibility();
     }
 
-    // Adopt the stored lists after the server changed them itself (pairing stores the bridge)
-    function refreshFromServer() {
+    // One pairing attempt, run on the queue: POST authenticate and, when the bridge paired, reload the stored lists
+    // in the same step. The server stores the pairing itself, so no save of this page can land in between and
+    // overwrite it. Resolves { result, adopted }; adopted is false when the reload failed (the user has been told).
+    // Rejects only when the authenticate request itself failed.
+    function pairOnce(request) {
         return enqueue(() => {
-            if (isGone() || !state.loaded) return false;
-            return ApiClient.getPluginConfiguration(PLUGIN_ID).then(config => {
-                adoptLists(config.Bridges || [], config.Profiles || []);
-                return true;
+            if (isGone() || !state.loaded) return { result: { Success: false }, adopted: false };
+            return ApiClient.ajax({
+                type: 'POST',
+                url: ApiClient.getUrl('api/hueplugin/authenticate'),
+                data: JSON.stringify(request),
+                contentType: 'application/json',
+                dataType: 'json'
+            }).then(result => {
+                if (!result || !result.Success || isGone()) return { result: result || { Success: false }, adopted: false };
+                return ApiClient.getPluginConfiguration(PLUGIN_ID).then(config => {
+                    adoptLists(config.Bridges || [], config.Profiles || []);
+                    return { result, adopted: true };
+                }, error => {
+                    console.error('Reloading the configuration failed', error);
+                    showError('Could not refresh', `The bridge list could not be reloaded: ${describeError(error)}. Reload the page.`);
+                    return { result, adopted: false };
+                });
             });
-        }).catch(error => {
-            console.error('Reloading the configuration failed', error);
-            if (!isGone()) showError('Could not refresh', `The bridge list could not be reloaded: ${describeError(error)}. Reload the page.`);
-            return false;
         });
     }
 
@@ -683,67 +691,34 @@ export default function HueConfigPage(view) {
         });
     }
 
-    // ---- Bridge modals ----
+    // ---- Bridge modal ----
 
-    function editBridge(bridgeId) {
-        const bridge = state.bridges[indexOfId(state.bridges, bridgeId)];
-        if (!bridge) return;
-        state.editBridgeSession++;
-        state.editBridgeId = bridge.Id;
-        editModal('#editBridgeName').value = bridge.Name || '';
-        editModal('#editBridgeIp').value = bridge.IpAddress || '';
-        editModal('#editBridgeUsername').value = bridge.Username || '';
-        setSaving(editModal('#saveEditBridge'), false, 'Save');
-        openModal('editBridgeModal');
-    }
+    // Open the bridge modal as a new session: 'add', or 'edit' for the bridge with bridgeId. Results from an
+    // earlier session (a pairing retry, a verification, a discovery still out) see that their session is over and
+    // change nothing here.
+    function openBridgeModal(mode, bridgeId) {
+        const bridge = mode === 'edit' ? state.bridges[indexOfId(state.bridges, bridgeId)] : null;
+        if (mode === 'edit' && !bridge) return;
+        endBridgeSession();
+        state.bridgeSession = { mode, bridgeId: bridge ? bridge.Id : null, ended: false, countdown: null };
 
-    function saveEditBridge() {
-        const session = state.editBridgeSession;
-        const bridgeId = state.editBridgeId;
-        const name = editModal('#editBridgeName').value;
-        const ip = editModal('#editBridgeIp').value;
-        const key = editModal('#editBridgeUsername').value;
-
-        setSaving(editModal('#saveEditBridge'), true);
-        commit(draft => {
-            const index = indexOfId(draft.Bridges, bridgeId);
-            if (index < 0) {
-                showError('Not saved', 'This bridge was removed.');
-                return false;
-            }
-            Object.assign(draft.Bridges[index], { Name: name, IpAddress: ip, Username: key });
-        }).then(saved => {
-            // The modal was closed and reopened meanwhile; this result belongs to the earlier opening
-            if (session !== state.editBridgeSession) return;
-            setSaving(editModal('#saveEditBridge'), false, 'Save');
-            if (saved) closeModal('editBridgeModal');
-        });
-    }
-
-    // Open the Add Bridge modal as a new session. Results from an earlier session (a pairing retry, a
-    // verification, a discovery still out) see that their session is over and change nothing here.
-    function openAddBridge() {
-        endAddBridgeSession();
-        state.addBridgeSession = { ended: false, countdown: null };
-
-        addModal('#newBridgeName').value = 'Bridge';
-        addModal('#newBridgeIp').value = '';
-        addModal('#newBridgeUsername').value = '';
-        const select = addModal('#addBridgeSelect');
+        bridgeField('#bridgeModalTitle').textContent = bridge ? 'Edit Bridge' : 'Add Hue Bridge';
+        bridgeField('#bridgeName').value = bridge ? (bridge.Name || '') : 'Bridge';
+        bridgeField('#bridgeIp').value = bridge ? (bridge.IpAddress || '') : '';
+        bridgeField('#bridgeKey').value = bridge ? (bridge.Username || '') : '';
+        const select = bridgeField('#bridgeDiscoverySelect');
         select.innerHTML = '';
         select.onchange = null;
-        addModal('#addBridgeSelector').style.display = 'none';
-        addModal('#addBridgeAuthProgress').style.display = 'none';
-        addModal('#addBridgeAuthProgressText').textContent = '';
-        addModal('#addBridgeAuthCountdown').textContent = '';
-        addModal('#authBridgeInModalText').textContent = 'Authenticate';
-        addModal('#saveAddBridge span').textContent = 'Save';
-        setAddBridgeBusy(false);
-        openModal('addBridgeModal');
+        bridgeField('#bridgeDiscoverySelector').style.display = 'none';
+        showPairingProgress(false);
+        bridgeField('#authenticateBridge span').textContent = 'Authenticate';
+        bridgeField('#saveBridge span').textContent = 'Save';
+        setBridgeBusy(false);
+        openModal('bridgeModal');
     }
 
-    function endAddBridgeSession() {
-        const session = state.addBridgeSession;
+    function endBridgeSession() {
+        const session = state.bridgeSession;
         if (!session) return;
         session.ended = true;
         if (session.countdown) {
@@ -752,36 +727,59 @@ export default function HueConfigPage(view) {
         }
     }
 
-    const isLiveAddBridgeSession = session => !!session && session === state.addBridgeSession && !session.ended;
+    const isLiveBridgeSession = session => !!session && session === state.bridgeSession && !session.ended;
 
-    // While pairing or verifying only Cancel stays usable, so a retry can never use values that differ from the screen
-    function setAddBridgeBusy(busy) {
-        ['#newBridgeName', '#newBridgeIp', '#newBridgeUsername', '#addBridgeSelect', '#discoverBridgeInModal', '#authBridgeInModal', '#saveAddBridge']
-            .forEach(selector => { addModal(selector).disabled = busy; });
+    // While pairing, verifying or saving only Cancel stays usable, so a retry can never use values that differ
+    // from the screen
+    function setBridgeBusy(busy) {
+        ['#bridgeName', '#bridgeIp', '#bridgeKey', '#bridgeDiscoverySelect', '#discoverBridge', '#authenticateBridge', '#saveBridge']
+            .forEach(selector => { bridgeField(selector).disabled = busy; });
     }
 
-    function discoverBridgeInModal() {
-        const session = state.addBridgeSession;
+    function showPairingProgress(visible) {
+        bridgeField('#bridgeAuthProgress').style.display = visible ? 'block' : 'none';
+        if (!visible) {
+            bridgeField('#bridgeAuthProgressText').textContent = '';
+            bridgeField('#bridgeAuthCountdown').textContent = '';
+        }
+    }
+
+    // Another bridge than bridgeId already at this address
+    const addressTakenByAnother = (bridges, address, bridgeId) =>
+        bridges.some(b => b.Id !== bridgeId && normalizeAddress(b.IpAddress) === normalizeAddress(address));
+
+    // In Edit, an address that differs from the stored one and belongs to another bridge; the user is told
+    function refusedAddress(session, address) {
+        if (session.mode !== 'edit') return false;
+        const stored = state.bridges[indexOfId(state.bridges, session.bridgeId)];
+        const changed = !stored || normalizeAddress(address) !== normalizeAddress(stored.IpAddress);
+        if (!changed || !addressTakenByAnother(state.bridges, address, session.bridgeId)) return false;
+        Dashboard.alert('Another bridge already uses this address.');
+        return true;
+    }
+
+    function discoverBridge() {
+        const session = state.bridgeSession;
         Dashboard.showLoadingMsg();
 
         ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/discover')).then(bridges => {
             Dashboard.hideLoadingMsg();
             // Cancelled or reopened while discovery ran: the results belong to that closed session
-            if (!isLiveAddBridgeSession(session)) return;
-            const ipInput = addModal('#newBridgeIp');
+            if (!isLiveBridgeSession(session)) return;
+            const ipInput = bridgeField('#bridgeIp');
             // Pairing or verification started meanwhile and works from the address it read; do not change it under them
             if (ipInput.disabled) return;
 
             if (bridges && bridges.length > 1) {
-                const select = addModal('#addBridgeSelect');
+                const select = bridgeField('#bridgeDiscoverySelect');
                 select.innerHTML = '';
                 bridges.forEach(b => select.appendChild(new Option(`${b.InternalIpAddress} (${b.Id || 'unknown'})`, b.InternalIpAddress)));
                 select.onchange = () => { ipInput.value = select.value; };
-                addModal('#addBridgeSelector').style.display = 'block';
+                bridgeField('#bridgeDiscoverySelector').style.display = 'block';
                 ipInput.value = bridges[0].InternalIpAddress;
                 Dashboard.alert(`Found ${bridges.length} bridges. Select one.`);
             } else if (bridges && bridges.length === 1) {
-                addModal('#addBridgeSelector').style.display = 'none';
+                bridgeField('#bridgeDiscoverySelector').style.display = 'none';
                 ipInput.value = bridges[0].InternalIpAddress;
                 Dashboard.alert('Bridge found at ' + bridges[0].InternalIpAddress);
             } else {
@@ -790,53 +788,145 @@ export default function HueConfigPage(view) {
         }).catch(error => {
             Dashboard.hideLoadingMsg();
             console.error('Bridge discovery failed:', error);
-            if (!isLiveAddBridgeSession(session)) return;
+            if (!isLiveBridgeSession(session)) return;
             Dashboard.alert('Failed to discover bridges. Check your network connection.');
         });
     }
 
-    // Pair with the bridge at the typed address: up to three attempts, three seconds apart, while the user
-    // presses the link button. Everything is tied to the Add Bridge session that started it.
-    function authBridgeInModal() {
-        const bridgeIp = addModal('#newBridgeIp').value.trim();
-        const bridgeName = addModal('#newBridgeName').value.trim() || 'Bridge';
-        if (!bridgeIp) {
-            Dashboard.alert('Please enter or discover a bridge IP address.');
+    // Save: Add checks the key and merges into an entry with the same Id or address; Edit checks the bridge only
+    // when its address or key changed, so a rename saves while the bridge is offline
+    function saveBridge() {
+        const session = state.bridgeSession;
+        const name = bridgeField('#bridgeName').value.trim() || 'Bridge';
+        const ip = bridgeField('#bridgeIp').value.trim();
+        const key = bridgeField('#bridgeKey').value.trim();
+        if (!ip) {
+            Dashboard.alert("Enter the bridge's IP address.");
+            return;
+        }
+        if (!key) {
+            Dashboard.alert('Authenticate with the bridge or paste an API key.');
             return;
         }
 
-        const session = state.addBridgeSession;
-        const buttonText = addModal('#authBridgeInModalText');
-        const progress = addModal('#addBridgeAuthProgress');
-        const progressText = addModal('#addBridgeAuthProgressText');
-        const countdown = addModal('#addBridgeAuthCountdown');
+        let stored = null;
+        if (session.mode === 'edit') {
+            stored = state.bridges[indexOfId(state.bridges, session.bridgeId)];
+            if (!stored) {
+                showError('Not saved', 'This bridge was removed.');
+                return;
+            }
+            if (refusedAddress(session, ip)) return;
+        }
+
+        const buttonText = bridgeField('#saveBridge span');
+        const live = () => isLiveBridgeSession(session);
+        const idle = () => {
+            setBridgeBusy(false);
+            buttonText.textContent = 'Save';
+        };
+
+        const store = hardwareId => {
+            buttonText.textContent = 'Saving…';
+            let storedName = name;
+            commit(draft => {
+                if (session.mode === 'add') {
+                    storedName = upsertBridge(draft.Bridges, { Id: generateGuid(), Name: name, IpAddress: ip, Username: key, HardwareId: hardwareId || '' }).Name;
+                    return;
+                }
+                const i = indexOfId(draft.Bridges, session.bridgeId);
+                if (i < 0) {
+                    showError('Not saved', 'This bridge was removed.');
+                    return false;
+                }
+                // Checked again on the lists being saved: a bridge added meanwhile may have this address
+                if (normalizeAddress(ip) !== normalizeAddress(draft.Bridges[i].IpAddress) && addressTakenByAnother(draft.Bridges, ip, session.bridgeId)) {
+                    showError('Not saved', 'Another bridge already uses this address.');
+                    return false;
+                }
+                Object.assign(draft.Bridges[i], { Name: name, IpAddress: ip, Username: key });
+            }).then(saved => {
+                // A save already sent completes even if the modal was cancelled meanwhile
+                if (!live()) {
+                    if (saved && session.mode === 'add') Dashboard.alert(`Bridge "${storedName}" added!`);
+                    return;
+                }
+                idle();
+                if (!saved) return;
+                closeModal('bridgeModal');
+                if (session.mode === 'add') Dashboard.alert(`Bridge "${storedName}" added!`);
+            });
+        };
+
+        setBridgeBusy(true);
+        if (stored && normalizeAddress(ip) === normalizeAddress(stored.IpAddress) && key === stored.Username) {
+            store();
+            return;
+        }
+
+        buttonText.textContent = 'Verifying...';
+        ApiClient.ajax({
+            type: 'POST',
+            url: ApiClient.getUrl('api/hueplugin/verifyconnection'),
+            data: JSON.stringify({ BridgeIp: ip, Username: key }),
+            contentType: 'application/json',
+            dataType: 'json'
+        }).then(result => {
+            // Cancelled while verifying: nothing has been stored, so nothing is saved
+            if (!live()) return;
+            if (!result.Success) {
+                idle();
+                Dashboard.alert('Connection failed: ' + (result.Error || 'Unknown error'));
+                return;
+            }
+            store(result.HardwareId);
+        }).catch(error => {
+            console.error('Verify connection failed:', error);
+            if (!live()) return;
+            idle();
+            Dashboard.alert('Could not verify bridge connection. Check the IP address and try again.');
+        });
+    }
+
+    // Pair with the bridge at the typed address: up to three attempts, three seconds apart, while the user presses
+    // the link button. Edit sends the bridge's Id, so the server gives that entry the new key, address and pin.
+    // Everything is tied to the session that started it.
+    function authenticateBridge() {
+        const session = state.bridgeSession;
+        const ip = bridgeField('#bridgeIp').value.trim();
+        const name = bridgeField('#bridgeName').value.trim() || 'Bridge';
+        if (!ip) {
+            Dashboard.alert("Enter the bridge's IP address.");
+            return;
+        }
+        if (refusedAddress(session, ip)) return;
+
+        const request = { BridgeIp: ip, BridgeName: name };
+        if (session.mode === 'edit') request.BridgeId = session.bridgeId;
+        const buttonText = bridgeField('#authenticateBridge span');
+        const progressText = bridgeField('#bridgeAuthProgressText');
+        const countdown = bridgeField('#bridgeAuthCountdown');
         const maxAttempts = 3;
         let attempt = 0;
 
-        const live = () => isLiveAddBridgeSession(session);
+        const live = () => isLiveBridgeSession(session);
         const idle = () => {
-            setAddBridgeBusy(false);
+            setBridgeBusy(false);
             buttonText.textContent = 'Authenticate';
         };
 
-        setAddBridgeBusy(true);
-        progress.style.display = 'block';
+        setBridgeBusy(true);
+        showPairingProgress(true);
 
-        function tryAuth() {
+        function tryPair() {
             attempt++;
             buttonText.textContent = `Attempt ${attempt}/${maxAttempts}...`;
             progressText.textContent = `Attempting to pair... (${attempt}/${maxAttempts})`;
             countdown.textContent = '';
 
-            ApiClient.ajax({
-                type: 'POST',
-                url: ApiClient.getUrl('api/hueplugin/authenticate'),
-                data: JSON.stringify({ BridgeIp: bridgeIp, BridgeName: bridgeName }),
-                contentType: 'application/json',
-                dataType: 'json'
-            }).then(result => {
+            pairOnce(request).then(({ result, adopted }) => {
                 if (result.Success) {
-                    onBridgePaired(session, result, bridgeIp, bridgeName);
+                    onBridgePaired(session, result, adopted, ip, name);
                     return;
                 }
                 // Cancelled: no further attempts, and nothing shown in a modal that has moved on
@@ -856,7 +946,7 @@ export default function HueConfigPage(view) {
                             clearInterval(interval);
                             session.countdown = null;
                             countdown.textContent = '';
-                            tryAuth();
+                            tryPair();
                         }
                     }, 1000);
                     session.countdown = interval;
@@ -869,121 +959,63 @@ export default function HueConfigPage(view) {
                 console.error('Authentication error:', error);
                 if (!live()) return;
                 idle();
-                progress.style.display = 'none';
+                showPairingProgress(false);
                 Dashboard.alert('Authentication failed. Check the server logs for details.');
             });
         }
 
-        tryAuth();
+        tryPair();
     }
 
-    // Pairing stored the bridge on the server before answering, so the stored list is adopted whether or not
-    // the user is still waiting in the modal, and either way the user is told
-    function onBridgePaired(session, result, bridgeIp, bridgeName) {
-        if (isLiveAddBridgeSession(session)) {
-            addModal('#newBridgeUsername').value = result.Username;
-            addModal('#addBridgeAuthProgressText').textContent = 'Paired; saving…';
-            addModal('#addBridgeAuthCountdown').textContent = '';
+    // The server stored the pairing and pairOnce adopted the stored lists (unless that reload failed). Saves a name
+    // the user typed (the server keeps an existing entry's name), then tells the user whether or not they are
+    // still in the modal.
+    function onBridgePaired(session, result, adopted, ip, typedName) {
+        const live = () => isLiveBridgeSession(session);
+        if (live()) {
+            bridgeField('#bridgeKey').value = result.Username;
+            bridgeField('#bridgeAuthProgressText').textContent = 'Paired; saving…';
+            bridgeField('#bridgeAuthCountdown').textContent = '';
         }
-        adoptPairedBridge(result.Id, bridgeName).then(stored => {
-            if (!isLiveAddBridgeSession(session)) {
-                if (stored) Dashboard.alert(`Pairing with ${bridgeIp} completed; the bridge was saved.`);
+
+        const finish = stored => {
+            if (!live()) {
+                if (stored) Dashboard.alert(`Pairing with ${ip} completed; the bridge was saved.`);
                 return;
             }
-            setAddBridgeBusy(false);
-            addModal('#authBridgeInModalText').textContent = 'Authenticate';
-            addModal('#addBridgeAuthProgress').style.display = 'none';
+            setBridgeBusy(false);
+            bridgeField('#authenticateBridge span').textContent = 'Authenticate';
+            showPairingProgress(false);
             if (!stored) return;
-            closeModal('addBridgeModal');
-            Dashboard.alert(`Bridge "${stored.Name}" added and authenticated!`);
-        });
-    }
-
-    // Adopt the stored lists, then apply a name the user typed (the server keeps an existing entry's name).
-    // Resolves to the stored bridge, or null when the lists could not be reloaded or the rename not saved (the
-    // user has been told).
-    function adoptPairedBridge(bridgeId, typedName) {
-        const stored = () => state.bridges[indexOfId(state.bridges, bridgeId)] || null;
-        return refreshFromServer().then(refreshed => {
-            if (!refreshed) return null;
-            const bridge = stored();
-            if (!bridge) {
-                showError('Bridge not shown', 'The paired bridge is not in the stored configuration, probably because another change was saved at the same moment. Pair it again.');
-                return null;
-            }
-            if (typedName === 'Bridge' || bridge.Name === typedName) return bridge;
-            return commit(draft => {
-                const i = indexOfId(draft.Bridges, bridgeId);
-                if (i < 0) {
-                    showError('Not saved', 'The paired bridge was removed before its name could be saved.');
-                    return false;
-                }
-                draft.Bridges[i].Name = typedName;
-            }).then(saved => (saved ? stored() : null));
-        });
-    }
-
-    function saveAddBridge() {
-        const bridgeIp = addModal('#newBridgeIp').value.trim();
-        const bridgeName = addModal('#newBridgeName').value.trim() || 'Bridge';
-        const username = addModal('#newBridgeUsername').value.trim();
-
-        if (!bridgeIp) {
-            Dashboard.alert('Please enter a bridge IP address.');
-            return;
-        }
-        if (!username) {
-            Dashboard.alert('Please authenticate with the bridge or paste an API key.');
-            return;
-        }
-
-        const session = state.addBridgeSession;
-        const buttonText = addModal('#saveAddBridge span');
-        const live = () => isLiveAddBridgeSession(session);
-        const idle = () => {
-            setAddBridgeBusy(false);
-            buttonText.textContent = 'Save';
+            closeModal('bridgeModal');
+            Dashboard.alert(session.mode === 'edit' ? `Bridge "${stored.Name}" paired again.` : `Bridge "${stored.Name}" added and authenticated!`);
         };
 
-        setAddBridgeBusy(true);
-        buttonText.textContent = 'Verifying...';
-
-        ApiClient.ajax({
-            type: 'POST',
-            url: ApiClient.getUrl('api/hueplugin/verifyconnection'),
-            data: JSON.stringify({ BridgeIp: bridgeIp, Username: username }),
-            contentType: 'application/json',
-            dataType: 'json'
-        }).then(result => {
-            // Cancelled while verifying: nothing has been stored, so nothing is added
-            if (!live()) return;
-            if (!result.Success) {
-                idle();
-                Dashboard.alert('Connection failed: ' + (result.Error || 'Unknown error'));
-                return;
+        if (!adopted) {
+            finish(null);
+            return;
+        }
+        const storedBridge = () => state.bridges[indexOfId(state.bridges, result.Id)] || null;
+        const bridge = storedBridge();
+        if (!bridge) {
+            showError('Bridge not shown', 'The paired bridge is not in the stored configuration, probably because another change was saved at the same moment. Pair it again.');
+            finish(null);
+            return;
+        }
+        // 'Bridge' is Add's pre-filled name, never a rename; in Edit the typed name is the one the user wants
+        const rename = session.mode === 'edit' ? bridge.Name !== typedName : typedName !== 'Bridge' && bridge.Name !== typedName;
+        if (!rename) {
+            finish(bridge);
+            return;
+        }
+        commit(draft => {
+            const i = indexOfId(draft.Bridges, result.Id);
+            if (i < 0) {
+                showError('Not saved', 'The paired bridge was removed before its name could be saved.');
+                return false;
             }
-            const bridge = { Id: generateGuid(), Name: bridgeName, IpAddress: bridgeIp, Username: username, HardwareId: result.HardwareId || '' };
-            let storedName = bridgeName;
-            buttonText.textContent = 'Saving…';
-            commit(draft => {
-                storedName = upsertBridge(draft.Bridges, bridge).Name;
-            }).then(saved => {
-                // A save already sent completes even if the modal was cancelled meanwhile
-                if (!live()) {
-                    if (saved) Dashboard.alert(`Bridge "${storedName}" added!`);
-                    return;
-                }
-                idle();
-                if (!saved) return;
-                closeModal('addBridgeModal');
-                Dashboard.alert(`Bridge "${storedName}" added!`);
-            });
-        }).catch(error => {
-            console.error('Verify connection failed:', error);
-            if (!live()) return;
-            idle();
-            Dashboard.alert('Could not verify bridge connection. Check the IP address and try again.');
-        });
+            draft.Bridges[i].Name = typedName;
+        }).then(saved => finish(saved ? storedBridge() : null));
     }
 
     // ---- Profiles list ----
@@ -1679,7 +1711,7 @@ export default function HueConfigPage(view) {
 
     // Every way a modal disappears (its buttons, the backdrop, Back, leaving the page) ends here
     function onModalHidden(id) {
-        if (id === 'addBridgeModal') endAddBridgeSession();
+        if (id === 'bridgeModal') endBridgeSession();
         if (id === 'profileEditorModal') {
             state.editorSession = null;
             state.editorTargetsGeneration++;
@@ -1721,7 +1753,7 @@ export default function HueConfigPage(view) {
     function teardown() {
         if (state.destroyed) return;
         state.destroyed = true;
-        endAddBridgeSession();
+        endBridgeSession();
         state.editorSession = null;
         state.editorTargetsGeneration++;
         Object.keys(overlays).forEach(id => overlays[id].remove());
@@ -1731,7 +1763,7 @@ export default function HueConfigPage(view) {
 
     function wireListeners() {
         // Bridges
-        $('#addBridgeButton').addEventListener('click', openAddBridge);
+        $('#addBridgeButton').addEventListener('click', () => openBridgeModal('add'));
         $('#bridgesList').addEventListener('click', e => {
             const card = e.target instanceof Element ? e.target.closest('.bridge-card') : null;
             if (!card) return;
@@ -1739,15 +1771,13 @@ export default function HueConfigPage(view) {
             if (action && action.dataset.action === 'delete-bridge') {
                 deleteBridge(card.dataset.bridgeId);
             } else {
-                editBridge(card.dataset.bridgeId);
+                openBridgeModal('edit', card.dataset.bridgeId);
             }
         });
-        addModal('#discoverBridgeInModal').addEventListener('click', discoverBridgeInModal);
-        addModal('#authBridgeInModal').addEventListener('click', authBridgeInModal);
-        addModal('#cancelAddBridge').addEventListener('click', () => closeModal('addBridgeModal'));
-        addModal('#saveAddBridge').addEventListener('click', saveAddBridge);
-        editModal('#saveEditBridge').addEventListener('click', saveEditBridge);
-        editModal('#cancelEditBridge').addEventListener('click', () => closeModal('editBridgeModal'));
+        bridgeField('#discoverBridge').addEventListener('click', discoverBridge);
+        bridgeField('#authenticateBridge').addEventListener('click', authenticateBridge);
+        bridgeField('#cancelBridge').addEventListener('click', () => closeModal('bridgeModal'));
+        bridgeField('#saveBridge').addEventListener('click', saveBridge);
 
         // Profiles list: one listener for every card, menu item and menu button
         $('#profilesList').addEventListener('click', e => {
