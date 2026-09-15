@@ -220,6 +220,10 @@ namespace JellyfinHuePlugin.Api
                 result.Error = "Bridge returned no data. The API key may be invalid, or the bridge certificate was rejected; the Jellyfin log names the reason.";
                 return Ok(result);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Bridge verification failed for {BridgeIp}", request.BridgeIp);

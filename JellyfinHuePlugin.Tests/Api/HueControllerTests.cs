@@ -320,6 +320,17 @@ namespace JellyfinHuePlugin.Tests.Api
         }
 
         [Fact]
+        public async Task VerifyConnection_CancelledToken_Propagates()
+        {
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+            _hue.Setup(h => h.GetBridgeInfoAsync("192.168.1.50", cts.Token)).ThrowsAsync(new OperationCanceledException(cts.Token));
+
+            await FluentActions.Awaiting(() => _controller.VerifyConnection(new VerifyConnectionRequest { BridgeIp = "192.168.1.50", Username = Key }, cts.Token))
+                .Should().ThrowAsync<OperationCanceledException>();
+        }
+
+        [Fact]
         public async Task Discover_PassesThrough()
         {
             var found = new List<HueBridgeDiscovery> { new() { Id = HardwareId, InternalIpAddress = "192.168.1.170" } };
