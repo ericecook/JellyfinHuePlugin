@@ -182,43 +182,67 @@ namespace JellyfinHuePlugin.Tests.Api
         {
             _config.Bridges[0].Username = "";
 
-            Status(await _controller.GetGroups("b1", CancellationToken.None)).Should().Be(400);
+            Status(await _controller.GetGroups("b1", false, CancellationToken.None)).Should().Be(400);
         }
 
         [Fact]
         public async Task GetGroups_CatalogFailure_Is500()
         {
-            _catalog.Setup(c => c.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlyList<HueGroupResource>?)null);
+            _catalog.Setup(c => c.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlyList<HueGroupResource>?)null);
 
-            Status(await _controller.GetGroups("b1", CancellationToken.None)).Should().Be(500);
+            Status(await _controller.GetGroups("b1", false, CancellationToken.None)).Should().Be(500);
         }
 
         [Fact]
         public async Task GetGroups_KeysByGroupedLightIdAndDropsBridgeHome()
         {
-            _catalog.Setup(c => c.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(new[]
+            _catalog.Setup(c => c.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(new[]
             {
                 new HueGroupResource("room-1", "gl-1", "Theater", "room", "/groups/1"),
                 new HueGroupResource("zone-5", "gl-5", "Downstairs", "zone", "/groups/5"),
                 new HueGroupResource("home-1", "gl-0", "All Lights", "bridge_home", "/groups/0")
             });
 
-            var groups = Value(await _controller.GetGroups("b1", CancellationToken.None));
+            var groups = Value(await _controller.GetGroups("b1", false, CancellationToken.None));
 
             groups.Keys.Should().BeEquivalentTo(new[] { "gl-1", "gl-5" });
             groups["gl-1"].Name.Should().Be("Theater");
             groups["gl-5"].Type.Should().Be("zone");
         }
 
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task GetGroups_PassesRefreshToTheCatalog(bool refresh)
+        {
+            _catalog.Setup(c => c.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<HueGroupResource>());
+
+            Status(await _controller.GetGroups("b1", refresh, CancellationToken.None)).Should().Be(200);
+
+            _catalog.Verify(c => c.GetGroupsAsync(It.Is<HueBridge>(b => b.Id == "b1"), refresh, It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Theory]
+        [InlineData(true)]
+        [InlineData(false)]
+        public async Task GetScenes_PassesRefreshToTheCatalog(bool refresh)
+        {
+            _catalog.Setup(c => c.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(Array.Empty<HueSceneResource>());
+
+            Status(await _controller.GetScenes("b1", refresh, CancellationToken.None)).Should().Be(200);
+
+            _catalog.Verify(c => c.GetScenesAsync(It.Is<HueBridge>(b => b.Id == "b1"), refresh, It.IsAny<CancellationToken>()), Times.Once);
+        }
+
         [Fact]
         public async Task GetScenes_KeysBySceneId()
         {
-            _catalog.Setup(c => c.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(new[]
+            _catalog.Setup(c => c.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync(new[]
             {
                 new HueSceneResource("sc-1", "Movie", "room-1", "/scenes/abc") { GroupName = "Theater" }
             });
 
-            var scenes = Value(await _controller.GetScenes("b1", CancellationToken.None));
+            var scenes = Value(await _controller.GetScenes("b1", false, CancellationToken.None));
 
             scenes.Should().ContainKey("sc-1").WhoseValue.GroupName.Should().Be("Theater");
         }
@@ -226,9 +250,9 @@ namespace JellyfinHuePlugin.Tests.Api
         [Fact]
         public async Task GetScenes_CatalogFailure_Is500()
         {
-            _catalog.Setup(c => c.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlyList<HueSceneResource>?)null);
+            _catalog.Setup(c => c.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<bool>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlyList<HueSceneResource>?)null);
 
-            Status(await _controller.GetScenes("b1", CancellationToken.None)).Should().Be(500);
+            Status(await _controller.GetScenes("b1", false, CancellationToken.None)).Should().Be(500);
         }
 
         private static LightControlProfile TestProfile(string bridgeId = "b1") =>

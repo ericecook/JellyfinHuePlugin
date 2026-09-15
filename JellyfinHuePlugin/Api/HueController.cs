@@ -215,9 +215,12 @@ namespace JellyfinHuePlugin.Api
 
         // Keyed by grouped_light id, which is what a profile stores as TargetGroupId. The bridge
         // home is left out: the page adds its own "All Lights" option with value "0".
+        // refresh=true reads the bridge instead of the cache; the profile editor sends it on every
+        // open. A missing value binds false (no C# default: it would have to follow the token).
         [HttpGet("groups")]
         public async Task<ActionResult<Dictionary<string, HueGroupResource>>> GetGroups(
             [FromQuery] string? bridgeId,
+            [FromQuery] bool refresh,
             CancellationToken cancellationToken)
         {
             var bridge = GetBridge(bridgeId);
@@ -228,7 +231,7 @@ namespace JellyfinHuePlugin.Api
 
             _logger.LogInformation("API: Getting groups from bridge {BridgeName}", bridge.Name);
 
-            var groups = await _catalog.GetGroupsAsync(bridge, cancellationToken);
+            var groups = await _catalog.GetGroupsAsync(bridge, refresh, cancellationToken);
             if (groups == null)
             {
                 return StatusCode(500, "Failed to retrieve groups");
@@ -237,9 +240,11 @@ namespace JellyfinHuePlugin.Api
             return Ok(groups.Where(g => g.Type != "bridge_home").ToDictionary(g => g.GroupedLightId));
         }
 
+        // refresh as for GetGroups.
         [HttpGet("scenes")]
         public async Task<ActionResult<Dictionary<string, HueSceneResource>>> GetScenes(
             [FromQuery] string? bridgeId,
+            [FromQuery] bool refresh,
             CancellationToken cancellationToken)
         {
             var bridge = GetBridge(bridgeId);
@@ -250,7 +255,7 @@ namespace JellyfinHuePlugin.Api
 
             _logger.LogInformation("API: Getting scenes from bridge {BridgeName}", bridge.Name);
 
-            var scenes = await _catalog.GetScenesAsync(bridge, cancellationToken);
+            var scenes = await _catalog.GetScenesAsync(bridge, refresh, cancellationToken);
             if (scenes == null)
             {
                 return StatusCode(500, "Failed to retrieve scenes");

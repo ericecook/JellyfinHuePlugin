@@ -228,7 +228,7 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             // Seed the cache so both resolves start from a populated snapshot that misses for
             // both target ids, forcing each into the refresh path.
-            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
 
             var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
             _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).Returns(gate.Task);
@@ -247,7 +247,7 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             // Seed the cache so the "9" lookup below takes the miss -> refresh path rather than
             // the very first cold load.
-            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
 
             var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
             _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).Returns(gate.Task);
@@ -264,7 +264,7 @@ namespace JellyfinHuePlugin.Tests.Services
 
             // The invalidate must stick: the next read has to hit the bridge again rather than
             // serve the snapshot the in-flight refresh wrote after the invalidate landed.
-            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
 
             VerifyGroupFetches(Times.Exactly(3)); // seed + in-flight refresh + forced-by-invalidate refetch
         }
@@ -274,7 +274,7 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             // Seed the cache so the "9" lookup below takes the miss -> refresh path rather than
             // the very first cold load.
-            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
 
             var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
             _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).Returns(gate.Task);
@@ -301,7 +301,7 @@ namespace JellyfinHuePlugin.Tests.Services
         public async Task Invalidate_WhileAPeerRefreshIsQueuedOnTheGate_QueuedCallStillFetches()
         {
             // Seed the cache so "9" and "10" below both take the miss -> refresh path.
-            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
 
             var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
             _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).Returns(gate.Task);
@@ -329,9 +329,39 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
+        public async Task GetGroups_Refresh_FetchesEvenWhenCached()
+        {
+            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
+            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
+            VerifyGroupFetches(Times.Once());
+
+            await _catalog.GetGroupsAsync(_bridge, refresh: true, CancellationToken.None);
+            VerifyGroupFetches(Times.Exactly(2));
+        }
+
+        [Fact]
+        public async Task ConcurrentGroupAndSceneRefreshes_ShareOneFetch()
+        {
+            // The profile editor asks for groups and scenes at once, both with refresh=true.
+            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
+
+            var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _hue.Setup(h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).Returns(gate.Task);
+
+            var groups = _catalog.GetGroupsAsync(_bridge, refresh: true, CancellationToken.None);
+            var scenes = _catalog.GetScenesAsync(_bridge, refresh: true, CancellationToken.None);
+            gate.SetResult(Groups);
+            await Task.WhenAll(groups, scenes);
+
+            (await groups).Should().NotBeNull();
+            (await scenes).Should().NotBeNull();
+            VerifyGroupFetches(Times.Exactly(2)); // 1 seed load + 1 shared refresh, not 2 refreshes
+        }
+
+        [Fact]
         public async Task GetScenes_AreEnrichedWithGroupName()
         {
-            var scenes = await _catalog.GetScenesAsync(_bridge, CancellationToken.None);
+            var scenes = await _catalog.GetScenesAsync(_bridge, refresh: false, CancellationToken.None);
 
             scenes.Should().NotBeNull();
             scenes![0].GroupName.Should().Be("Theater");
@@ -342,17 +372,17 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task RepointingABridge_MissesTheCacheRatherThanServingTheOldBridgesCatalog()
         {
-            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
 
             // The admin edits the bridge: same configuration entry (same Id), different hardware.
             _bridge.IpAddress = "192.168.1.99";
-            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
 
             VerifyGroupFetches(Times.Exactly(2));
 
             // A new application key means a different view of the bridge as well.
             _bridge.Username = "another-key";
-            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
 
             VerifyGroupFetches(Times.Exactly(3));
         }
@@ -360,7 +390,7 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task Invalidate_FindsTheEntryThroughTheSameComposedKeyTheLoadPathUsed()
         {
-            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
 
             // A HueBridge is a configuration record, not an identity: the caller that invalidates
             // holds its own instance, so the key has to be composed from the values, and both
@@ -375,7 +405,7 @@ namespace JellyfinHuePlugin.Tests.Services
             };
             _catalog.Invalidate(sameBridge);
 
-            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
 
             VerifyGroupFetches(Times.Exactly(2));
         }
@@ -383,9 +413,9 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task Invalidate_ForcesAFetchOnNextUse()
         {
-            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
             _catalog.Invalidate(_bridge);
-            await _catalog.GetGroupsAsync(_bridge, CancellationToken.None);
+            await _catalog.GetGroupsAsync(_bridge, refresh: false, CancellationToken.None);
 
             VerifyGroupFetches(Times.Exactly(2));
         }

@@ -2449,7 +2449,8 @@
 
                     var bridgeIndex = HuePluginConfig.indexOfId(HuePluginConfig.bridges, bridgeId);
                     var bridgeName = bridgeIndex >= 0 ? HuePluginConfig.bridges[bridgeIndex].Name : 'this bridge';
-                    var query = '?bridgeId=' + encodeURIComponent(bridgeId);
+                    // refresh=true reads the bridge, so a room or scene made in the Hue app since the last open is listed
+                    var query = '?bridgeId=' + encodeURIComponent(bridgeId) + '&refresh=true';
 
                     function current() {
                         return generation === HuePluginConfig.editorTargetsGeneration;

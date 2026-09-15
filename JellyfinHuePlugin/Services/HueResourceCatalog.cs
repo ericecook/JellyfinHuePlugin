@@ -93,11 +93,18 @@ namespace JellyfinHuePlugin.Services
         // so none of the three may collapse into either of the others.
         private readonly record struct LoadResult(Snapshot? Snapshot, bool FetchFailed, bool Invalidated);
 
-        public virtual async Task<IReadOnlyList<HueGroupResource>?> GetGroupsAsync(HueBridge bridge, CancellationToken cancellationToken)
-            => (await LoadAsync(bridge, refresh: false, cancellationToken)).Snapshot?.Groups;
+        /// <summary>
+        /// The bridge's rooms, zones and bridge home; null when the bridge could not be read.
+        /// <paramref name="refresh"/> reads the bridge even when they are cached - the plugin page's
+        /// profile editor asks for that each time it opens - unless another caller's refresh lands
+        /// while this one waits its turn, which is then used instead of a second fetch.
+        /// </summary>
+        public virtual async Task<IReadOnlyList<HueGroupResource>?> GetGroupsAsync(HueBridge bridge, bool refresh, CancellationToken cancellationToken)
+            => (await LoadAsync(bridge, refresh, cancellationToken)).Snapshot?.Groups;
 
-        public virtual async Task<IReadOnlyList<HueSceneResource>?> GetScenesAsync(HueBridge bridge, CancellationToken cancellationToken)
-            => (await LoadAsync(bridge, refresh: false, cancellationToken)).Snapshot?.Scenes;
+        /// <summary>The bridge's scenes, with GroupName filled; <paramref name="refresh"/> as for <see cref="GetGroupsAsync"/>.</summary>
+        public virtual async Task<IReadOnlyList<HueSceneResource>?> GetScenesAsync(HueBridge bridge, bool refresh, CancellationToken cancellationToken)
+            => (await LoadAsync(bridge, refresh, cancellationToken)).Snapshot?.Scenes;
 
         /// <summary>
         /// "0" (or empty) → the bridge home's grouped light; a UUID → itself; a v1 number N → the

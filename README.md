@@ -104,8 +104,8 @@ All endpoints require an authenticated Jellyfin **administrator** account (the s
 | `/api/hueplugin/bridges/{bridgeId}` | DELETE | Delete a bridge |
 | `/api/hueplugin/authenticate` | POST | Authenticate with bridge |
 | `/api/hueplugin/lights` | GET | List all lights |
-| `/api/hueplugin/groups` | GET | List all groups |
-| `/api/hueplugin/scenes` | GET | List all scenes |
+| `/api/hueplugin/groups` | GET | List all groups (`refresh=true` reads the bridge instead of the cache) |
+| `/api/hueplugin/scenes` | GET | List all scenes (`refresh=true` reads the bridge instead of the cache) |
 | `/api/hueplugin/test` | POST | Run a profile's Play, Pause or Stop action (body: `Action`, `Profile`) |
 | `/api/hueplugin/testconnection` | POST | Test bridge connectivity |
 | `/api/hueplugin/verifyconnection` | POST | Check a stored bridge key and report the bridge's id, model and software |
