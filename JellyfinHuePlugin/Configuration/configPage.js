@@ -95,7 +95,7 @@ const MESSAGES = {
         statusConnected: 'Connected',
         // The check itself can fail for a reason (the bridge answered) or for no reason at all (it never did)
         statusFailed: reason => reason || 'The bridge could not be checked.',
-        // confirm, buttons Delete/Cancel - wired once confirmAction reaches the delete flows
+        // confirm, buttons Delete/Cancel
         deleteBridge: name => `Delete bridge "${name}"?`,
         // dialog 'Not deleted'
         bridgeInUse: names => `These profiles use this bridge: ${names}. Reassign or delete them first.`
@@ -106,20 +106,20 @@ const MESSAGES = {
         addressMissing: "Enter the bridge's IP address.",
         keyMissing: 'Authenticate with the bridge, or paste an API key.',
         addressTaken: 'Another bridge already uses this address.',
-        // inline, beside the picker - still a toast until discovery moves inline
+        // inline, beside the picker
         discoveryMany: n => `Found ${n} bridges — select one.`,
         discoveryOne: ip => `Bridge found at ${ip}.`,
         discoveryNone: 'No bridges answered. Enter the address manually.',
-        // Keeps its prefix when a reason exists; a bare `reason || fallback` here would silently drop
-        // "Discovery failed: " whenever discovery did return a reason
-        discoveryFailed: reason => reason ? `Discovery failed: ${reason}` : 'Discovery failed.',
-        // The modal's one status line, shared with discovery once that moves inline too. Falls back so an
-        // empty Error can never render a blank status line
+        // Falls back so a request that never reached the server (describeFailure can still return
+        // a falsy-adjacent value) never renders as a bare "Discovery failed: "
+        discoveryFailed: reason => reason || 'Discovery failed.',
+        // The modal's one status line, shared with discovery. Falls back so a Success:false result
+        // with an empty Error never renders as an empty line.
         verifyFailed: reason => reason || 'The bridge could not be checked.',
         pairingAttempt: (n, max) => `Attempting to pair… (${n}/${max})`,
         pairingRetry: s => `Retrying in ${s}s…`,
-        // Read after every failed attempt, so three failures in a row can read the same reason three times.
-        // Falls back so an empty Error can never render a blank progress line
+        // Read after every failed attempt, so three failures in a row can read the same reason three
+        // times. Falls back for the same empty-Error case testFailed and verifyFailed guard against.
         pairingFailed: reason => reason || 'Pairing failed.',
         pairingSaving: 'Paired; saving…',
         // The authenticate request itself never reached the server - not one failed pairing attempt among
@@ -133,7 +133,7 @@ const MESSAGES = {
 
     profiles: {
         empty: 'No profiles configured. Add your first profile to get started!',
-        // confirm, buttons Delete/Cancel - wired once confirmAction reaches the delete flows
+        // confirm, buttons Delete/Cancel
         deleteProfile: name => `Delete profile "${name}"?`,
         // Falls back so a Success: false result with an empty Error can never render a blank line
         testFailed: reason => reason || 'The test failed.',
@@ -882,22 +882,29 @@ export default function HueConfigPage(view) {
             showError('Not deleted', MESSAGES.bridges.bridgeInUse(affected.map(p => `"${p.Name}"`).join(', ')));
             return;
         }
-        if (!confirm(`Delete bridge "${bridge.Name}"?`)) return;
-
-        // One save; the server drops the removed bridge's cached rooms and pin on it
-        commit(draft => {
-            const i = indexOfId(draft.Bridges, bridgeId);
-            if (i < 0) {
-                showError('Not saved', MESSAGES.gone('bridge'));
-                return false;
-            }
-            // Checked again on the lists being saved: a profile save that was still out may have moved a profile here
-            const nowUsing = profilesUsingBridge(draft.Profiles, draft.Bridges, bridgeId);
-            if (nowUsing.length > 0) {
-                showError('Not deleted', MESSAGES.bridges.bridgeInUse(nowUsing.map(p => `"${p.Name}"`).join(', ')));
-                return false;
-            }
-            draft.Bridges.splice(i, 1);
+        // Every value confirm renders is raw HTML (Fact 6), so the bridge's name is escaped here, not left to confirmAction
+        confirmAction({
+            title: 'Delete bridge',
+            text: MESSAGES.bridges.deleteBridge(escapeHtml(bridge.Name)),
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            primary: 'delete'
+        }, () => {
+            // One save; the server drops the removed bridge's cached rooms and pin on it
+            commit(draft => {
+                const i = indexOfId(draft.Bridges, bridgeId);
+                if (i < 0) {
+                    showError('Not saved', MESSAGES.gone('bridge'));
+                    return false;
+                }
+                // Checked again on the lists being saved: a profile save that was still out may have moved a profile here
+                const nowUsing = profilesUsingBridge(draft.Profiles, draft.Bridges, bridgeId);
+                if (nowUsing.length > 0) {
+                    showError('Not deleted', MESSAGES.bridges.bridgeInUse(nowUsing.map(p => `"${p.Name}"`).join(', ')));
+                    return false;
+                }
+                draft.Bridges.splice(i, 1);
+            });
         });
     }
 
@@ -1353,14 +1360,23 @@ export default function HueConfigPage(view) {
     }
 
     function deleteProfile(profileId) {
-        if (!confirm('Are you sure you want to delete this profile?')) return;
-        commit(draft => {
-            const i = indexOfId(draft.Profiles, profileId);
-            if (i < 0) {
-                showError('Not saved', MESSAGES.gone('profile'));
-                return false;
-            }
-            draft.Profiles.splice(i, 1);
+        const profile = state.profiles[indexOfId(state.profiles, profileId)];
+        if (!profile) return;
+        confirmAction({
+            title: 'Delete profile',
+            text: MESSAGES.profiles.deleteProfile(escapeHtml(profile.Name)),
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            primary: 'delete'
+        }, () => {
+            commit(draft => {
+                const i = indexOfId(draft.Profiles, profileId);
+                if (i < 0) {
+                    showError('Not saved', MESSAGES.gone('profile'));
+                    return false;
+                }
+                draft.Profiles.splice(i, 1);
+            });
         });
     }
 

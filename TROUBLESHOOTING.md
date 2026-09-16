@@ -65,10 +65,13 @@ You can also click "Authenticate" first and then press the bridge button — the
 - **Bridge unreachable**: Make sure the Jellyfin server can reach the bridge IP over HTTPS (port 443)
 - **Bridge too old**: the log says `Bridge {Host} is not a supported v2 bridge (software {Version})`. Update the bridge in the Hue app; software 1948086000 or newer is required. The round v1 bridge cannot be updated and is not supported
 - **Certificate rejected**: see **Bridge Certificate Rejected** below
+- **Link button not pressed in time**: the page says `The link button wasn't pressed. Press it on the bridge, then try again.` after each retry — press the round button on top and click Authenticate again within the 30-second window
 
 ### Bridge Was Reset or Its Key Stopped Working
 
 Open the bridge with **Edit** on the plugin page, press the link button and click **Authenticate**. The bridge keeps its profiles; its key and certificate pin are replaced.
+
+If a bridge that was working starts failing, the page says `The bridge rejected the API key. Authenticate again.` — the key was revoked (the bridge was reset, or the key was removed in the Hue app). Edit the bridge and Authenticate again.
 
 ---
 
@@ -87,6 +90,9 @@ Bridge certificate rejected for {Host}: {Verdict} (subject {Subject}, expected {
 - **`SubjectMismatch`**: a Hue bridge answered, but not the one this entry was paired with —
   typically the address now belongs to a different bridge after a DHCP change. Fix the
   address, or delete the entry and pair it again. The log names both ids.
+
+Either verdict reaches the plugin page as `The bridge's certificate doesn't match the stored one.
+Authenticate again to store the new one.` Authenticating again re-pins the certificate it presents now.
 
 The plugin never falls back to an unverified connection.
 
