@@ -1270,15 +1270,20 @@ export default function HueConfigPage(view) {
                 return;
             }
 
+            // A native <button>, not a <div> and not is="emby-button": a real button is what both Tab and
+            // Jellyfin's D-pad focusManager accept (spec Facts 3, 4), while .emby-button is one of the
+            // selectors Jellyfin suppresses focus outlines on (spec Fact 6) and would strip the focus ring
+            // from the one surface this change exists to make keyboard-usable. The class, the icon span and
+            // data-action are unchanged, so click handling and the harness's selectors are untouched.
             const item = (action, icon, text, attributes = '') =>
-                `<div class="hue-dropdown-item" data-action="${action}"${attributes}><span class="material-icons">${icon}</span>${text}</div>`;
+                `<button type="button" class="hue-dropdown-item" data-action="${action}"${attributes}><span class="material-icons">${icon}</span>${text}</button>`;
             container.innerHTML = '<div class="hue-card-stack">' + profiles.map((profile, index) => {
                 const disabled = profile.Enabled === false;
                 return `<div class="hue-card profile-card${disabled ? ' is-disabled' : ''}" draggable="true" data-profile-id="${escapeHtml(profile.Id)}">
                     <div class="hue-card-header">
                         <h3 class="hue-card-title">${escapeHtml(profile.Name || 'Unnamed Profile')}${disabled ? ' <span class="hue-card-flag">Disabled</span>' : ''}</h3>
                         <div class="profile-menu">
-                            <button is="emby-button" type="button" class="raised profile-menu-button" data-action="toggle-menu">&#x22EE;</button>
+                            <button is="emby-button" type="button" class="raised profile-menu-button" data-action="toggle-menu" aria-haspopup="true" aria-expanded="false" aria-label="Profile actions">&#x22EE;</button>
                             <div class="hue-dropdown">
                                 ${item('edit', 'edit', 'Edit')}
                                 ${item('test', 'play_arrow', 'Test Play', ' data-test-action="Play"')}
@@ -1301,8 +1306,12 @@ export default function HueConfigPage(view) {
         }
     }
 
+    // Every close path goes through here - the menu's own item, a click anywhere else (onDocumentClick),
+    // Escape - so this is the one place that can guarantee no trigger is left claiming to be expanded.
     function closeProfileMenus() {
         $('#profilesList').querySelectorAll('.hue-dropdown.is-open').forEach(menu => menu.classList.remove('is-open'));
+        $('#profilesList').querySelectorAll('.profile-menu-button[aria-expanded="true"]')
+            .forEach(button => button.setAttribute('aria-expanded', 'false'));
     }
 
     function toggleProfileMenu(card) {
@@ -1310,6 +1319,7 @@ export default function HueConfigPage(view) {
         const open = !menu.classList.contains('is-open');
         closeProfileMenus();
         menu.classList.toggle('is-open', open);
+        card.querySelector('.profile-menu-button').setAttribute('aria-expanded', open ? 'true' : 'false');
     }
 
     // Test Play / Pause / Stop from a profile card's menu: the saved profile
