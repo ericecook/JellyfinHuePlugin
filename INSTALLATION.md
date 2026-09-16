@@ -25,8 +25,10 @@ Use this method if you're building from source or can't use the plugin repositor
 
 ```bash
 cd JellyfinHuePlugin
-dotnet build -c Release
+dotnet build -c Release -p:AssemblyVersion=$VERSION -p:FileVersion=$VERSION
 ```
+
+`$VERSION` is the `version` value in `build.yaml`. Without the two properties Jellyfin lists the plugin as 1.0.0.0.
 
 ### Step 2: Stop Jellyfin
 

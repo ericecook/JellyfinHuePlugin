@@ -12,6 +12,7 @@ TestResults/
 *.user
 *.suo
 *.swp
+.env
 
 # Project internal docs
 PRD.md

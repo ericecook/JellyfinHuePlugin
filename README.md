@@ -135,7 +135,7 @@ PluginServiceRegistrator.cs               Composition root (Jellyfin DI + hosted
 
 ```bash
 dotnet build -c Release
-dotnet test
+dotnet test -c Release
 ```
 
 `dev-deploy.sh` publishes the plugin into a local Jellyfin container (see `docker-compose.yml`), and `deploy.sh` cuts a release.
