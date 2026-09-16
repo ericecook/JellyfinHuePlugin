@@ -1457,7 +1457,7 @@ export default function HueConfigPage(view) {
         syncEditorVisibility();
         resetEditorTests();
         clearAllFieldErrors(overlays.profileEditorModal);
-        // A save left in flight by a session this reopen abandons (readEditorProfile's session check bails
+        // A save left in flight by a session this reopen abandons (saveCurrentProfile's session check bails
         // out of its own unlock) never gets a matching busy=false; this one guarantees a clean start anyway
         setFormBusy(overlays.profileEditorModal, false);
         editor('#saveProfileButton').querySelector('span').textContent = 'Save Profile';
@@ -1842,7 +1842,7 @@ export default function HueConfigPage(view) {
     // untouched and reports via the status line.
     function refreshKnownDevices() {
         const status = editor('#profileKnownDeviceStatus');
-        status.textContent = 'Loading devices...';
+        inlineStatus(status, 'Loading devices...');
         state.knownDevicesLoading = true;
 
         // Sessions are an enrichment only: if that call fails, the picker still works
@@ -1862,14 +1862,14 @@ export default function HueConfigPage(view) {
                 }))
                 .sort((a, b) => (b.lastActive ? new Date(b.lastActive).getTime() : 0) - (a.lastActive ? new Date(a.lastActive).getTime() : 0));
             state.knownDevicesLoading = false;
-            status.textContent = '';
+            inlineStatus(status, null);
             populateKnownDeviceSelect();
             renderProfileDeviceIdList();
             return state.knownDevices;
         }).catch(error => {
             console.error('Failed to load device list', error);
             state.knownDevicesLoading = false;
-            status.textContent = 'Could not load the device list from Jellyfin. Enter a Device ID manually below.';
+            inlineStatus(status, MESSAGES.devicePicker.devicesFailed);
             populateKnownDeviceSelect();
             return state.knownDevices;
         });

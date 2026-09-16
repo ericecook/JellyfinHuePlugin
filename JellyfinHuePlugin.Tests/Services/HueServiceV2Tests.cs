@@ -174,6 +174,17 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
+        public async Task GetBridgeInfo_HtmlResponse_ReasonSaysNotABridge()
+        {
+            _handler.Responses["/api/0/config"] = (HttpStatusCode.OK, "<html><body>not a bridge</body></html>");
+
+            var result = await _service.GetBridgeInfoAsync("192.168.1.50");
+
+            result.Ok.Should().BeFalse();
+            result.Reason.Should().Be("Something answered at that address, but it isn't a Hue bridge.");
+        }
+
+        [Fact]
         public async Task Authenticate_UnparseableResponse_ReasonSaysCouldNotRead()
         {
             _handler.Responses["/api"] = (HttpStatusCode.OK, "{not json");

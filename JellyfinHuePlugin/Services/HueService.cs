@@ -31,6 +31,9 @@ namespace JellyfinHuePlugin.Services
         /// <summary>The admin-facing reason for a response the plugin couldn't parse or didn't recognize the shape of.</summary>
         private const string UnreadableResponseReason = "The bridge sent a response the plugin couldn't read.";
 
+        /// <summary>The admin-facing reason for an HTML response where JSON was expected -- the commonest wrong-address mistake (e.g. a router's own web page instead of the bridge). Shared by GetBridgeInfoAsync and AuthenticateAsync so the sentence exists once.</summary>
+        private const string NotABridgeReason = "Something answered at that address, but it isn't a Hue bridge.";
+
         /// <summary>
         /// Present on every bridge request sent over <see cref="_httpClient"/>. Its value is the
         /// bridge id the certificate must name. The one call that has no id yet -- the unauthenticated
@@ -221,11 +224,19 @@ namespace JellyfinHuePlugin.Services
             return request;
         }
 
-        /// <summary>The reason mapped from a non-success HTTP status: a rejected key for 401/403, the bare status and phrase otherwise.</summary>
-        private static string StatusReason(HttpResponseMessage response) =>
-            response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden
-                ? "The bridge rejected the API key. Authenticate again."
-                : $"The bridge answered {(int)response.StatusCode} {response.ReasonPhrase}.";
+        /// <summary>The reason mapped from a non-success HTTP status: a rejected key for 401/403, the bare status and phrase otherwise. The phrase is omitted when absent (e.g. HTTP/2, which carries none) rather than leaving a stray space before the period.</summary>
+        private static string StatusReason(HttpResponseMessage response)
+        {
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                return "The bridge rejected the API key. Authenticate again.";
+            }
+
+            var status = (int)response.StatusCode;
+            return string.IsNullOrEmpty(response.ReasonPhrase)
+                ? $"The bridge answered {status}."
+                : $"The bridge answered {status} {response.ReasonPhrase}.";
+        }
 
         /// <summary>Bridge software {version} doesn't support CLIP v2 -- shared by ResolveBridgeIdAsync and HueController.VerifyConnection so the wording cannot drift between the two sites that both discover the same fact.</summary>
         internal static string UnsupportedVersionReason(string softwareVersion) =>
@@ -475,6 +486,16 @@ namespace JellyfinHuePlugin.Services
                     return HueResult<HueBridgeInfo>.Failure(StatusReason(response));
                 }
 
+                // The commonest wrong-address mistake: a router's own web page answering at that IP. No key
+                // exists on this call's path (it is unauthenticated), so unlike AuthenticateAsync's HTML
+                // branch there is nothing to protect by omitting it -- the excerpt is logged like every
+                // other warning in this method.
+                if (content.TrimStart().StartsWith('<'))
+                {
+                    _logger.LogWarning("Bridge returned an HTML response for {Operation}: {Content}", "bridge config", excerpt);
+                    return HueResult<HueBridgeInfo>.Failure(NotABridgeReason);
+                }
+
                 using var doc = JsonDocument.Parse(content);
                 var bridgeId = GetString(doc.RootElement, "bridgeid")?.Trim().ToLowerInvariant();
                 if (string.IsNullOrEmpty(bridgeId))
@@ -542,7 +563,7 @@ namespace JellyfinHuePlugin.Services
                     // responder could still wrap a real success payload inside.
                     _logger.LogError("Received an HTML response instead of JSON from {Host} ({Length} chars); the bridge may not be accessible at that address",
                         host, content.Length);
-                    return HueResult<AuthenticationOutcome>.Failure("Something answered at that address, but it isn't a Hue bridge.");
+                    return HueResult<AuthenticationOutcome>.Failure(NotABridgeReason);
                 }
 
                 using var doc = JsonDocument.Parse(content);
