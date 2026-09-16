@@ -263,6 +263,30 @@ function fieldAnchor(input) {
 // Creates its message element the first time a field is invalid - no markup for this exists in
 // configPage.html yet, E wires ARIA to these ids later - right after fieldAnchor's block, and marks the
 // field so its own styling can show the invalid state. clearFieldError undoes both.
+// aria-describedby is a list, and a slider's number input already names its description line (E's slider
+// work). Adding an error id must therefore append, and clearing must remove only that id - assigning over
+// the attribute would silently delete the description and leave the field describing nothing once the
+// error clears.
+function describedBy(input) {
+    return (input.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+}
+
+function addDescribedBy(input, id) {
+    const ids = describedBy(input);
+    if (!ids.includes(id)) {
+        input.setAttribute('aria-describedby', ids.concat(id).join(' '));
+    }
+}
+
+function removeDescribedBy(input, id) {
+    const ids = describedBy(input).filter(existing => existing !== id);
+    if (ids.length) {
+        input.setAttribute('aria-describedby', ids.join(' '));
+    } else {
+        input.removeAttribute('aria-describedby');
+    }
+}
+
 function fieldError(input, text) {
     const id = input.id + 'Error';
     let el = document.getElementById(id);
@@ -275,19 +299,27 @@ function fieldError(input, text) {
     el.textContent = text;
     el.style.display = '';
     input.classList.add('hue-field-invalid');
+    input.setAttribute('aria-invalid', 'true');
+    addDescribedBy(input, id);
 }
 
 function clearFieldError(input) {
     const el = document.getElementById(input.id + 'Error');
     if (el) el.style.display = 'none';
     input.classList.remove('hue-field-invalid');
+    input.removeAttribute('aria-invalid');
+    removeDescribedBy(input, input.id + 'Error');
 }
 
 // Every field error a modal might still be showing from an earlier session, hidden and unmarked - called
 // when the profile editor or the bridge modal opens, so nothing stale survives into the next one.
 function clearAllFieldErrors(root) {
     root.querySelectorAll('.hue-field-error').forEach(el => { el.style.display = 'none'; });
-    root.querySelectorAll('.hue-field-invalid').forEach(el => el.classList.remove('hue-field-invalid'));
+    root.querySelectorAll('.hue-field-invalid').forEach(el => {
+        el.classList.remove('hue-field-invalid');
+        el.removeAttribute('aria-invalid');
+        removeDescribedBy(el, el.id + 'Error');
+    });
 }
 
 // The generic inline-status line: set the text and show or hide with it, so a call site never has to spell
