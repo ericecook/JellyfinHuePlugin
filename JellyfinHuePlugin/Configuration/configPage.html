@@ -487,6 +487,9 @@
                                 <select id="bridgeDiscoverySelect" is="emby-select" label="Multiple bridges found — select one:"></select>
                             </div>
 
+                            <!-- Discovery results and a Save that fails verifying land here, one line for both -->
+                            <div id="bridgeConnectionStatus" class="hue-test-error" style="display:none;"></div>
+
                             <div class="inputContainer">
                                 <label class="inputLabel" for="bridgeKey">API Key</label>
                                 <div class="hue-field-row">
@@ -504,7 +507,7 @@
                             </div>
                         </div>
                         <div class="hue-modal-footer">
-                            <button is="emby-button" type="button" class="raised" id="cancelBridge">
+                            <button is="emby-button" type="button" class="raised" id="cancelBridge" data-keep-enabled>
                                 <span>Cancel</span>
                             </button>
                             <button is="emby-button" type="button" class="raised button-submit" id="saveBridge">
@@ -678,7 +681,7 @@
 
                         <!-- Modal Footer -->
                         <div class="hue-modal-footer">
-                            <button is="emby-button" type="button" class="raised" id="cancelProfileButton">
+                            <button is="emby-button" type="button" class="raised" id="cancelProfileButton" data-keep-enabled>
                                 <span>Cancel</span>
                             </button>
                             <button is="emby-button" type="button" class="raised button-submit" id="saveProfileButton">

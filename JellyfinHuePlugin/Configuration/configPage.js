@@ -122,6 +122,9 @@ const MESSAGES = {
         // Falls back so an empty Error can never render a blank progress line
         pairingFailed: reason => reason || 'Pairing failed.',
         pairingSaving: 'Paired; saving…',
+        // The authenticate request itself never reached the server - not one failed pairing attempt among
+        // three, but the whole exchange failing to happen. Shown in the same progress line as pairingFailed.
+        pairingRequestFailed: reason => `The pairing request couldn't be sent: ${reason}`,
         pairedAfterClose: ip => `Pairing with ${ip} finished; the bridge was saved.`,
         addedAfterClose: name => `Bridge "${name}" was saved.`,
         // dialog 'Not saved'
@@ -134,6 +137,9 @@ const MESSAGES = {
         deleteProfile: name => `Delete profile "${name}"?`,
         // Falls back so a Success: false result with an empty Error can never render a blank line
         testFailed: reason => reason || 'The test failed.',
+        // The test POST itself never reached the server - distinct from testFailed, which is the server
+        // answering that the light command failed
+        testUnreachable: reason => `The test couldn't be sent: ${reason}`,
         // dialog 'Could not load'
         renderFailed: message => `The profile list could not be drawn: ${message}`,
         // field errors - wired once the editor gains inline validation
@@ -245,9 +251,18 @@ async function describeFailure(error) {
     return 'unknown error';
 }
 
+// Where a field's message belongs: right after the block that visually owns it. A field paired with a
+// button in a .hue-field-row (the bridge address and key rows; the device picker's select-and-Add and its
+// manual-entry-and-Add) would become a third flex item beside that button if the message landed inside the
+// row itself, so the message goes after the row instead. Everything else sits in an .inputContainer,
+// .selectContainer or .checkboxContainer that the message can simply follow.
+function fieldAnchor(input) {
+    return input.closest('.hue-field-row') || input.closest('.inputContainer, .selectContainer, .checkboxContainer') || input;
+}
+
 // Creates its message element the first time a field is invalid - no markup for this exists in
-// configPage.html yet, E wires ARIA to these ids later - right after the field, and marks the field so its
-// own styling can show the invalid state. clearFieldError undoes both.
+// configPage.html yet, E wires ARIA to these ids later - right after fieldAnchor's block, and marks the
+// field so its own styling can show the invalid state. clearFieldError undoes both.
 function fieldError(input, text) {
     const id = input.id + 'Error';
     let el = document.getElementById(id);
@@ -255,7 +270,7 @@ function fieldError(input, text) {
         el = document.createElement('div');
         el.id = id;
         el.className = 'fieldDescription hue-field-error';
-        input.insertAdjacentElement('afterend', el);
+        fieldAnchor(input).insertAdjacentElement('afterend', el);
     }
     el.textContent = text;
     el.style.display = '';
@@ -266,6 +281,13 @@ function clearFieldError(input) {
     const el = document.getElementById(input.id + 'Error');
     if (el) el.style.display = 'none';
     input.classList.remove('hue-field-invalid');
+}
+
+// Every field error a modal might still be showing from an earlier session, hidden and unmarked - called
+// when the profile editor or the bridge modal opens, so nothing stale survives into the next one.
+function clearAllFieldErrors(root) {
+    root.querySelectorAll('.hue-field-error').forEach(el => { el.style.display = 'none'; });
+    root.querySelectorAll('.hue-field-invalid').forEach(el => el.classList.remove('hue-field-invalid'));
 }
 
 // The generic inline-status line: set the text and show or hide with it, so a call site never has to spell
@@ -279,6 +301,21 @@ function inlineStatus(el, text) {
 // unescaped HTML.
 function toast(text) {
     Dashboard.alert(text);
+}
+
+// Locks every input, select, textarea and button under root except one marked data-keep-enabled (a modal's
+// Cancel button), remembering exactly what it disabled so the matching busy=false call re-enables those and
+// nothing else - a bridge option already disabled for having no key, say, stays disabled either way.
+function setFormBusy(root, busy) {
+    if (busy) {
+        const controls = Array.from(root.querySelectorAll('input, select, textarea, button'))
+            .filter(el => !el.disabled && !el.hasAttribute('data-keep-enabled'));
+        controls.forEach(el => { el.disabled = true; });
+        root.hueBusyControls = controls;
+    } else {
+        (root.hueBusyControls || []).forEach(el => { el.disabled = false; });
+        root.hueBusyControls = null;
+    }
 }
 
 const deepCopy = value => JSON.parse(JSON.stringify(value));
@@ -546,17 +583,17 @@ function showTestState(button, state, idleHtml) {
 
 // Runs one light action for a profile (saved or not). Resolves to { Success, Error }; never rejects.
 function runTest(action, profile) {
-    const unreachable = { Success: false, Error: 'Could not reach the server; check the server logs' };
     return ApiClient.ajax({
         type: 'POST',
         url: ApiClient.getUrl('api/hueplugin/test'),
         data: JSON.stringify({ Action: action, Profile: profile }),
         contentType: 'application/json',
         dataType: 'json'
-    }).then(result => result || unreachable).catch(error => {
-        console.error('Test failed:', error);
-        return unreachable;
-    });
+    }).then(result => result || { Success: false, Error: MESSAGES.profiles.testUnreachable('the server sent no result') })
+        .catch(async error => {
+            console.error('Test failed:', error);
+            return { Success: false, Error: MESSAGES.profiles.testUnreachable(await describeFailure(error)) };
+        });
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -637,12 +674,6 @@ export default function HueConfigPage(view) {
     }
 
     // ---- Queue operations ----
-
-    // A modal's save button while its commit is out: disabled and reading "Saving…"
-    function setSaving(button, saving, idleText) {
-        button.disabled = saving;
-        button.querySelector('span').textContent = saving ? 'Saving…' : idleText;
-    }
 
     // Profiles need a bridge with a key, and nothing is editable before the configuration has loaded
     function updateConfigSectionVisibility() {
@@ -878,9 +909,11 @@ export default function HueConfigPage(view) {
         select.innerHTML = '';
         select.onchange = null;
         bridgeField('#bridgeDiscoverySelector').style.display = 'none';
+        inlineStatus(bridgeField('#bridgeConnectionStatus'), null);
         showPairingProgress(false);
         bridgeField('#authenticateBridge span').textContent = 'Authenticate';
         bridgeField('#saveBridge span').textContent = 'Save';
+        clearAllFieldErrors(overlays.bridgeModal);
         setBridgeBusy(false);
         openModal('bridgeModal');
     }
@@ -898,10 +931,10 @@ export default function HueConfigPage(view) {
     const isLiveBridgeSession = session => !!session && session === state.bridgeSession && !session.ended && !isGone();
 
     // While pairing, verifying or saving only Cancel stays usable, so a retry can never use values that differ
-    // from the screen
+    // from the screen. Re-expressed through setFormBusy so the bridge modal and the profile editor lock the
+    // same way; every field and button here except Cancel would be disabled by the generic sweep anyway.
     function setBridgeBusy(busy) {
-        ['#bridgeName', '#bridgeIp', '#bridgeKey', '#bridgeDiscoverySelect', '#discoverBridge', '#authenticateBridge', '#saveBridge']
-            .forEach(selector => { bridgeField(selector).disabled = busy; });
+        setFormBusy(overlays.bridgeModal, busy);
     }
 
     function showPairingProgress(visible) {
@@ -922,13 +955,14 @@ export default function HueConfigPage(view) {
         const stored = state.bridges[indexOfId(state.bridges, session.bridgeId)];
         const changed = !stored || normalizeAddress(address) !== normalizeAddress(stored.IpAddress);
         if (!changed || !addressTakenByAnother(state.bridges, address, session.bridgeId)) return false;
-        Dashboard.alert('Another bridge already uses this address.');
+        fieldError(bridgeField('#bridgeIp'), MESSAGES.bridgeModal.addressTaken);
         return true;
     }
 
     function discoverBridge() {
         const session = state.bridgeSession;
         Dashboard.showLoadingMsg();
+        const status = bridgeField('#bridgeConnectionStatus');
 
         ApiClient.getJSON(ApiClient.getUrl('api/hueplugin/discover')).then(bridges => {
             Dashboard.hideLoadingMsg();
@@ -945,19 +979,21 @@ export default function HueConfigPage(view) {
                 select.onchange = () => { ipInput.value = select.value; };
                 bridgeField('#bridgeDiscoverySelector').style.display = 'block';
                 ipInput.value = bridges[0].InternalIpAddress;
-                Dashboard.alert(`Found ${bridges.length} bridges. Select one.`);
+                inlineStatus(status, MESSAGES.bridgeModal.discoveryMany(bridges.length));
             } else if (bridges && bridges.length === 1) {
                 bridgeField('#bridgeDiscoverySelector').style.display = 'none';
                 ipInput.value = bridges[0].InternalIpAddress;
-                Dashboard.alert('Bridge found at ' + bridges[0].InternalIpAddress);
+                inlineStatus(status, MESSAGES.bridgeModal.discoveryOne(bridges[0].InternalIpAddress));
             } else {
-                Dashboard.alert('No Hue bridges found. You can enter the IP address manually.');
+                inlineStatus(status, MESSAGES.bridgeModal.discoveryNone);
             }
-        }).catch(error => {
+        }).catch(async error => {
             Dashboard.hideLoadingMsg();
             console.error('Bridge discovery failed:', error);
             if (!isLiveBridgeSession(session)) return;
-            Dashboard.alert('Failed to discover bridges. Check your network connection.');
+            const reason = await describeFailure(error);
+            if (!isLiveBridgeSession(session)) return; // the session may have moved on while the body was read
+            inlineStatus(status, MESSAGES.bridgeModal.discoveryFailed(reason));
         });
     }
 
@@ -969,13 +1005,14 @@ export default function HueConfigPage(view) {
         const ip = bridgeField('#bridgeIp').value.trim();
         const key = bridgeField('#bridgeKey').value.trim();
         if (!ip) {
-            Dashboard.alert("Enter the bridge's IP address.");
+            fieldError(bridgeField('#bridgeIp'), MESSAGES.bridgeModal.addressMissing);
             return;
         }
         if (!key) {
-            Dashboard.alert('Authenticate with the bridge or paste an API key.');
+            fieldError(bridgeField('#bridgeKey'), MESSAGES.bridgeModal.keyMissing);
             return;
         }
+        inlineStatus(bridgeField('#bridgeConnectionStatus'), null);
 
         let stored = null;
         if (session.mode === 'edit') {
@@ -1051,15 +1088,19 @@ export default function HueConfigPage(view) {
             if (!live()) return;
             if (!result.Success) {
                 idle();
-                Dashboard.alert('Connection failed: ' + (result.Error || 'Unknown error'));
+                // The server's own sentence, with no prefix added here - a prefix on both ends is how today's
+                // "Connection failed: Connection failed: ..." happens
+                inlineStatus(bridgeField('#bridgeConnectionStatus'), MESSAGES.bridgeModal.verifyFailed(result.Error));
                 return;
             }
             store(result.HardwareId, true);
-        }).catch(error => {
+        }).catch(async error => {
             console.error('Verify connection failed:', error);
             if (!live()) return;
             idle();
-            Dashboard.alert('Could not verify bridge connection. Check the IP address and try again.');
+            const reason = await describeFailure(error);
+            if (!live()) return; // the session may have moved on while the body was read
+            inlineStatus(bridgeField('#bridgeConnectionStatus'), MESSAGES.bridgeModal.verifyFailed(reason));
         });
     }
 
@@ -1071,7 +1112,7 @@ export default function HueConfigPage(view) {
         const ip = bridgeField('#bridgeIp').value.trim();
         const name = bridgeField('#bridgeName').value.trim() || 'Bridge';
         if (!ip) {
-            Dashboard.alert("Enter the bridge's IP address.");
+            fieldError(bridgeField('#bridgeIp'), MESSAGES.bridgeModal.addressMissing);
             return;
         }
         if (refusedAddress(session, ip)) return;
@@ -1130,12 +1171,16 @@ export default function HueConfigPage(view) {
                     idle();
                     countdown.textContent = '';
                 }
-            }).catch(error => {
+            }).catch(async error => {
                 console.error('Authentication error:', error);
                 if (!live()) return;
                 idle();
-                showPairingProgress(false);
-                Dashboard.alert('Authentication failed. Check the server logs for details.');
+                const reason = await describeFailure(error);
+                if (!live()) return; // the session may have moved on while the body was read
+                // Not one failed attempt among three (pairingFailed's territory) but the request never
+                // reaching the server at all; shown where pairingFailed shows, not as a toast
+                progressText.textContent = MESSAGES.bridgeModal.pairingRequestFailed(reason);
+                countdown.textContent = '';
             });
         }
 
@@ -1384,7 +1429,11 @@ export default function HueConfigPage(view) {
         loadEditorTargets({ group: base.TargetGroupId, play: base.PlaySceneId, pause: base.PauseSceneId, stop: base.StopSceneId });
         syncEditorVisibility();
         resetEditorTests();
-        setSaving(editor('#saveProfileButton'), false, 'Save Profile');
+        clearAllFieldErrors(overlays.profileEditorModal);
+        // A save left in flight by a session this reopen abandons (readEditorProfile's session check bails
+        // out of its own unlock) never gets a matching busy=false; this one guarantees a clean start anyway
+        setFormBusy(overlays.profileEditorModal, false);
+        editor('#saveProfileButton').querySelector('span').textContent = 'Save Profile';
         switchTab('general');
         openModal('profileEditorModal');
     }
@@ -1485,18 +1534,47 @@ export default function HueConfigPage(view) {
         });
     }
 
-    // The first visible number field that is blank or not a number, as a message naming it; null when all are
-    // usable. action limits the check to one section ('Play', 'Pause', 'Stop'); null checks all.
-    function validateEditorNumbers(action) {
+    // Every number field the editor shows: each state's brightness, then each state's transition, then the
+    // grace fields - the order Save and the per-section Test buttons have always checked in. action limits
+    // the list to one section ('Play', 'Pause', 'Stop'); null lists all.
+    function numberFields(action) {
         const fields = [];
         STATES.forEach(s => fields.push({ state: s, input: stateIds(s).brightness, container: stateIds(s).brightnessContainer, name: `${s.name} brightness` }));
         STATES.forEach(s => fields.push({ state: s, input: stateIds(s).transition, container: stateIds(s).transitionContainer, name: `${s.name} transition` }));
         STATES.filter(s => s.gracePeriod).forEach(s => fields.push({ state: s, input: stateIds(s).grace, container: stateIds(s).graceContainer, name: `the ${s.name.toLowerCase()} grace period` }));
-        for (const field of fields) {
-            if (action && field.state.name !== action) continue;
-            // A hidden field is not in use: its scene is selected or its checkbox is off
-            if (editor(field.container).style.display === 'none') continue;
-            if (isBlankNumber(editor(field.input))) return `Enter a value for ${field.name}.`;
+        return action ? fields.filter(f => f.state.name === action) : fields;
+    }
+
+    // The first field in the list that is visible and blank or not a number; null when all are usable. A
+    // hidden field is not in use: its scene is selected or its checkbox is off.
+    function firstBlankNumberField(action) {
+        return numberFields(action).find(f => editor(f.container).style.display !== 'none' && isBlankNumber(editor(f.input))) || null;
+    }
+
+    // The first visible number field that is blank or not a number, as a message naming it; null when all are
+    // usable. Only the text is wanted here; the per-section Test buttons don't switch tabs or take focus.
+    function validateEditorNumbers(action) {
+        const field = firstBlankNumberField(action);
+        return field ? MESSAGES.profiles.valueMissing(field.name) : null;
+    }
+
+    // The editor's own required fields, walked in tab order so Save can jump to the first one that needs
+    // fixing: General (name, then the media-type checkboxes), Lights (the bridge, then each number field in
+    // the order above). Filters and Advanced have nothing this checks. Returns null when the profile can be
+    // saved as it stands.
+    function validateProfile(profile) {
+        if (!profile.Name || !profile.Name.trim()) {
+            return { tab: 'general', input: editor('#profileName'), message: MESSAGES.profiles.nameMissing };
+        }
+        if (!profile.EnableForMovies && !profile.EnableForTvShows) {
+            return { tab: 'general', input: editor('#profileEnableForMovies'), message: MESSAGES.profiles.mediaTypeMissing };
+        }
+        if (state.bridges.length >= 2 && !profile.BridgeId) {
+            return { tab: 'lights', input: editor('#profileBridgeId'), message: MESSAGES.profiles.bridgeMissing };
+        }
+        const field = firstBlankNumberField(null);
+        if (field) {
+            return { tab: 'lights', input: editor(field.input), message: MESSAGES.profiles.valueMissing(field.name) };
         }
         return null;
     }
@@ -1507,10 +1585,12 @@ export default function HueConfigPage(view) {
         const input = editor(inputSelector);
         const desc = editor(descSelector);
         slider.addEventListener('input', () => {
+            clearFieldError(input);
             input.value = slider.value;
             desc.textContent = spec.describe(parseInt(slider.value, 10));
         });
         input.addEventListener('input', () => {
+            clearFieldError(input);
             const value = parseInt(input.value, 10);
             if (isNaN(value)) {
                 desc.textContent = 'Enter a value';
@@ -1566,30 +1646,23 @@ export default function HueConfigPage(view) {
     function saveCurrentProfile() {
         const profile = readEditorProfile();
 
-        if (!profile.Name || !profile.Name.trim()) {
-            Dashboard.alert('Please enter a profile name.');
-            return;
-        }
-        if (!profile.EnableForMovies && !profile.EnableForTvShows) {
-            Dashboard.alert('At least one media type (Movies or TV Shows) must be enabled.');
-            return;
-        }
-        const numberProblem = validateEditorNumbers(null);
-        if (numberProblem) {
-            Dashboard.alert(numberProblem);
-            return;
-        }
-        // With two or more bridges an empty BridgeId matches nothing at playback
-        if (state.bridges.length >= 2 && !profile.BridgeId) {
-            Dashboard.alert('Choose a bridge for this profile.');
+        const invalid = validateProfile(profile);
+        if (invalid) {
+            switchTab(invalid.tab);
+            invalid.input.focus();
+            invalid.input.scrollIntoView({ block: 'nearest' });
+            fieldError(invalid.input, invalid.message);
             return;
         }
 
         // The editor closes only once the server has the profile; a failed save keeps what was typed. Retrying
-        // reuses the session's profile Id, so a new profile is never added twice.
+        // reuses the session's profile Id, so a new profile is never added twice. Locked with setFormBusy
+        // before the button's own label changes, so the label change is not mistaken for a control that was
+        // already disabled for its own reason and left out of what gets re-enabled.
         const session = state.editorSession;
         const saveButton = editor('#saveProfileButton');
-        setSaving(saveButton, true);
+        setFormBusy(overlays.profileEditorModal, true);
+        saveButton.querySelector('span').textContent = 'Saving…';
         commit(draft => {
             const index = indexOfId(draft.Profiles, profile.Id);
             if (index >= 0) {
@@ -1603,7 +1676,8 @@ export default function HueConfigPage(view) {
         }).then(saved => {
             // The editor was closed or reopened meanwhile; this result belongs to that session
             if (session !== state.editorSession) return;
-            setSaving(saveButton, false, 'Save Profile');
+            setFormBusy(overlays.profileEditorModal, false);
+            saveButton.querySelector('span').textContent = 'Save Profile';
             if (saved) closeModal('profileEditorModal');
         });
     }
@@ -1816,11 +1890,13 @@ export default function HueConfigPage(view) {
         }).join('');
     }
 
-    function addDeviceIdToProfile(deviceId) {
+    // Adds deviceId once: false, after showing why under whichever control was used to try, when it cannot be.
+    function addDeviceIdToProfile(deviceId, control) {
         if (state.profileDeviceIds.some(id => sameDeviceId(id, deviceId))) {
-            Dashboard.alert('This Device ID is already in the list');
+            fieldError(control, MESSAGES.devicePicker.deviceDuplicate);
             return false;
         }
+        clearFieldError(control);
         state.profileDeviceIds.push(deviceId);
         renderProfileDeviceIdList();
         populateKnownDeviceSelect();
@@ -1828,22 +1904,23 @@ export default function HueConfigPage(view) {
     }
 
     function addKnownDevice() {
-        const deviceId = editor('#profileKnownDeviceSelect').value;
+        const select = editor('#profileKnownDeviceSelect');
+        const deviceId = select.value;
         if (!deviceId) {
-            Dashboard.alert('Please select a device');
+            fieldError(select, MESSAGES.devicePicker.deviceNotChosen);
             return;
         }
-        addDeviceIdToProfile(deviceId);
+        addDeviceIdToProfile(deviceId, select);
     }
 
     function addProfileDeviceId() {
         const input = editor('#profileNewDeviceId');
         const deviceId = input.value.trim();
         if (!deviceId) {
-            Dashboard.alert('Please enter a Device ID');
+            fieldError(input, MESSAGES.devicePicker.deviceIdMissing);
             return;
         }
-        if (addDeviceIdToProfile(deviceId)) input.value = '';
+        if (addDeviceIdToProfile(deviceId, input)) input.value = '';
     }
 
     function removeProfileDeviceId(deviceId) {
@@ -1945,6 +2022,8 @@ export default function HueConfigPage(view) {
         bridgeField('#authenticateBridge').addEventListener('click', authenticateBridge);
         bridgeField('#cancelBridge').addEventListener('click', () => closeModal('bridgeModal'));
         bridgeField('#saveBridge').addEventListener('click', saveBridge);
+        bridgeField('#bridgeIp').addEventListener('input', () => clearFieldError(bridgeField('#bridgeIp')));
+        bridgeField('#bridgeKey').addEventListener('input', () => clearFieldError(bridgeField('#bridgeKey')));
 
         // Profiles list: one listener for every card, menu item and menu button
         $('#profilesList').addEventListener('click', e => {
@@ -1992,12 +2071,21 @@ export default function HueConfigPage(view) {
             const ids = stateIds(s);
             bindSlider('brightness', ids.brightnessSlider, ids.brightness, ids.brightnessDesc);
             bindSlider('transition', ids.transitionSlider, ids.transition, ids.transitionDesc);
+            if (s.gracePeriod) editor(ids.grace).addEventListener('input', () => clearFieldError(editor(ids.grace)));
         });
+        // Validation's own fields: each clears only itself, except the two media-type checkboxes, which
+        // share one message anchored to the first of them
+        editor('#profileName').addEventListener('input', () => clearFieldError(editor('#profileName')));
+        editor('#profileEnableForMovies').addEventListener('change', () => clearFieldError(editor('#profileEnableForMovies')));
+        editor('#profileEnableForTvShows').addEventListener('change', () => clearFieldError(editor('#profileEnableForMovies')));
+        editor('#profileBridgeId').addEventListener('change', () => clearFieldError(editor('#profileBridgeId')));
         overlays.profileEditorModal.querySelectorAll('.profile-tab').forEach(tab => {
             tab.addEventListener('click', () => switchTab(tab.dataset.tab));
         });
         editor('#profileAddDeviceIdButton').addEventListener('click', addProfileDeviceId);
         editor('#profileAddKnownDeviceButton').addEventListener('click', addKnownDevice);
+        editor('#profileKnownDeviceSelect').addEventListener('change', () => clearFieldError(editor('#profileKnownDeviceSelect')));
+        editor('#profileNewDeviceId').addEventListener('input', () => clearFieldError(editor('#profileNewDeviceId')));
         editor('#profileNewDeviceId').addEventListener('keydown', e => {
             if (e.key === 'Enter') {
                 e.preventDefault();
