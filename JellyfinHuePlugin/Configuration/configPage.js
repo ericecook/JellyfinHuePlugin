@@ -140,6 +140,11 @@ const MESSAGES = {
         // The test POST itself never reached the server - distinct from testFailed, which is the server
         // answering that the light command failed
         testUnreachable: reason => `The test couldn't be sent: ${reason}`,
+        // Spoken, never shown: a Test button reports progress and success as a glyph alone, which a screen
+        // reader has nothing to read. A failure is deliberately absent - testFailed already speaks it from
+        // the line under the button, and with the reason, so a failure is announced once rather than twice.
+        testing: 'Testing…',
+        testOk: 'The test succeeded.',
         // dialog 'Could not load'
         renderFailed: message => `The profile list could not be drawn: ${message}`,
         // field errors - wired once the editor gains inline validation
@@ -287,7 +292,7 @@ function removeDescribedBy(input, id) {
 
 // Creates its message element the first time a field is invalid, right after fieldAnchor's block, and
 // marks the field so its own styling can show the invalid state. clearFieldError undoes both.
-function fieldError(input, text) {
+function fieldError(input, text, speak = true) {
     const id = input.id + 'Error';
     let el = document.getElementById(id);
     if (!el) {
@@ -301,6 +306,11 @@ function fieldError(input, text) {
     input.classList.add('hue-field-invalid');
     input.setAttribute('aria-invalid', 'true');
     addDescribedBy(input, id);
+    // Almost every caller paints the message and leaves focus on the button that was pressed, where a screen
+    // reader never encounters it - pressing Save and hearing nothing reads as a broken button. The exception
+    // is a caller that sends the user to the field itself: there the message is read on arrival, as the
+    // field's own description, and it passes false so it is not also said here a moment earlier.
+    if (speak) announce(input, text);
 }
 
 function clearFieldError(input) {
@@ -322,11 +332,41 @@ function clearAllFieldErrors(root) {
     });
 }
 
+// The live region that covers el. A modal owns its own because aria-modal="true" makes assistive technology
+// ignore every node outside the open dialog - the page's region included, which is exactly where pairing
+// progress would otherwise go unheard. Outside a modal, the page's one region serves.
+function liveRegion(el) {
+    const overlay = el.closest('.hue-modal-overlay');
+    if (overlay) return overlay.querySelector('.hue-live-region');
+    const page = el.closest('.pluginConfigurationPage');
+    return page ? page.querySelector('#huePageLiveRegion') : null;
+}
+
+// Says text out loud without moving the user's cursor. A screen reader reads only what its cursor is on, so
+// every status line this page writes is silent on its own; copying the text into a live region is what makes
+// it heard. Clearing a status announces nothing - there is no news in a line going away.
+function announce(el, text) {
+    if (!text) return;
+    const region = liveRegion(el);
+    if (region) region.textContent = text;
+}
+
 // The generic inline-status line: set the text and show or hide with it, so a call site never has to spell
 // out style.display itself. Used for Test results, pairing progress and the targets status line alike.
+// Every one of those is news a screen reader would otherwise miss, so this is also the single place that
+// speaks them: a call site that sets a status has already announced it.
 function inlineStatus(el, text) {
     el.textContent = text || '';
     el.style.display = text ? '' : 'none';
+    announce(el, text);
+}
+
+// A status line that is always in place and only ever changes its words - the pairing progress line, a bridge
+// card's check result - where inlineStatus would also be deciding whether to show it. Same rule for speech:
+// new words are news, an emptied line is not.
+function statusText(el, text) {
+    el.textContent = text || '';
+    announce(el, text);
 }
 
 // A success the page cannot show any other way. Jellyfin escapes this itself (Fact 6): never build it from
@@ -602,6 +642,7 @@ function showTestState(button, state, idleHtml) {
     if (state === 'busy') {
         button.disabled = true;
         button.innerHTML = '<span class="hue-spinner"></span>';
+        announce(button, MESSAGES.profiles.testing);
         return;
     }
     // 'busy' disabled this button on its own, ahead of any setFormBusy sweep - a light-command round trip
@@ -623,6 +664,9 @@ function showTestState(button, state, idleHtml) {
     button.innerHTML = state === 'ok'
         ? '<span class="material-icons hue-test-icon hue-test-ok">check</span>'
         : '<span class="material-icons hue-test-icon hue-test-fail">error_outline</span>';
+    // Only success. Every caller follows a failure with the reason on its own status line, which announces
+    // itself through inlineStatus; speaking here too would say the failure twice, the second time vaguely.
+    if (state === 'ok') announce(button, MESSAGES.profiles.testOk);
     button.hueTestTimer = setTimeout(() => {
         button.hueTestTimer = null;
         button.innerHTML = idleHtml;
@@ -686,6 +730,15 @@ export default function HueConfigPage(view) {
         bridgeStatus: {},
         // Bumped by every renderBridges; a check answered for an earlier render is ignored
         bridgeVerifyGeneration: 0,
+        // Where focus belongs after the next redraw of a list, for the one case the redraw cannot work out
+        // for itself: a delete is confirmed through a Jellyfin dialog, which owns focus while it is up and
+        // leaves it on <body> afterwards, so by then nothing in the list holds focus to notice. Read before
+        // the dialog opens, armed only if the delete is confirmed, and consumed by the next redraw.
+        pendingProfileFocus: null,
+        pendingBridgeFocus: null,
+        // The list row a modal was opened from, kept beside focusBeforeModal because saving from a modal
+        // destroys the element itself - see openModal
+        cardBeforeModal: null,
         // The open editor: { profileId, isNew, base }; null while it is closed. Async results compare against it.
         editorSession: null,
         // Bumped by every loadEditorTargets and when the editor closes; an older rooms-and-scenes answer is ignored
@@ -750,24 +803,44 @@ export default function HueConfigPage(view) {
     // Profiles need a bridge with a key, and nothing is editable before the configuration has loaded
     function updateConfigSectionVisibility() {
         const hasKey = state.bridges.some(b => b.Username && b.Username.length > 0);
-        $('#configSection').style.display = state.loaded && hasKey ? 'block' : 'none';
+        const section = $('#configSection');
+        const show = state.loaded && hasKey;
+        // Hiding a section that holds focus leaves focus on something no longer focusable, which the browser
+        // settles by dropping it on <body>. Deleting the last paired bridge while focus is in the profile list
+        // is the path that gets here, and Add Bridge is the control that decides whether this section returns.
+        if (!show && section.contains(document.activeElement)) {
+            const add = $('#addBridgeButton');
+            if (!add.disabled) add.focus();
+        }
+        section.style.display = show ? 'block' : 'none';
     }
 
     // An empty page after a failed load would look like a fresh install, and a save from it would overwrite
     // everything, so the failure replaces the bridge list and offers Retry
-    function renderLoadFailure(reason) {
+    function renderLoadFailure(reason, takeFocus) {
         const container = $('#bridgesList');
         container.innerHTML = '<div class="hue-test-error hue-load-error"></div>' +
             '<button is="emby-button" type="button" class="raised" id="retryLoadButton"><span>Retry</span></button>';
         inlineStatus(container.querySelector('.hue-test-error'), MESSAGES.load.failed(reason));
-        container.querySelector('#retryLoadButton').addEventListener('click', load);
+        const retry = container.querySelector('#retryLoadButton');
+        retry.addEventListener('click', load);
+        // Retry is itself the button load() destroyed on its way in, so a keyboard user has been parked on
+        // <body> for the whole request. Its replacement takes focus back, and a second failure is one keypress
+        // away rather than a fresh hunt through the page.
+        if (takeFocus) retry.focus();
     }
 
     function load() {
+        const bridgesList = $('#bridgesList');
+        // Noted before the wipe below, which is what destroys the Retry button a keyboard user pressed to get
+        // here. Whichever ending draws the replacement hands focus back.
+        const hadFocus = bridgesList.contains(document.activeElement);
         state.loaded = false;
-        $('#addBridgeButton').disabled = true;
-        $('#bridgesList').innerHTML = '<div class="fieldDescription">Loading…</div>';
+        // Ahead of disabling Add Bridge, because that is where updateConfigSectionVisibility sends focus when
+        // it has to hide a section still holding it, and a disabled button cannot accept focus.
         updateConfigSectionVisibility();
+        $('#addBridgeButton').disabled = true;
+        bridgesList.innerHTML = '<div class="fieldDescription">Loading…</div>';
         Dashboard.showLoadingMsg();
         enqueue(() => {
             if (isGone()) return null;
@@ -780,12 +853,15 @@ export default function HueConfigPage(view) {
                 state.loaded = true;
                 updateConfigSectionVisibility();
                 $('#addBridgeButton').disabled = false;
+                // The load succeeded, so there is no Retry to go back to; Add Bridge is what now sits where
+                // it stood, and it has only this moment become enabled.
+                if (hadFocus) $('#addBridgeButton').focus();
             });
         }).catch(async error => {
             console.error('Error fetching configuration:', error);
             state.loaded = false;
             const reason = await describeFailure(error);
-            if (!isGone()) renderLoadFailure(reason);
+            if (!isGone()) renderLoadFailure(reason, hadFocus);
         }).then(() => Dashboard.hideLoadingMsg());
     }
 
@@ -867,7 +943,46 @@ export default function HueConfigPage(view) {
 
     // Bridge cards, then a check of every bridge that has a key. Results live in bridgeStatus by bridge Id; a
     // result from an earlier render is ignored (see updateBridgeStatus).
+    // Same rebuild-under-focus problem as renderProfiles, and the same remedy - a bridge is renamed, re-paired
+    // or deleted, adoptLists redraws the list, and the Edit button the user was standing on stops existing.
     function renderBridges() {
+        const container = $('#bridgesList');
+        const held = heldBridgeControl(container) || state.pendingBridgeFocus;
+        state.pendingBridgeFocus = null;
+        drawBridges();
+        if (held) restoreBridgeFocus(container, held);
+    }
+
+    function heldBridgeControl(container) {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLElement) || !container.contains(active)) return null;
+        const card = active.closest('.bridge-card');
+        if (!card) return null;
+        return {
+            bridgeId: card.dataset.bridgeId,
+            action: active.dataset.action || null,
+            index: Array.prototype.indexOf.call(container.querySelectorAll('.bridge-card'), card)
+        };
+    }
+
+    function restoreBridgeFocus(container, held) {
+        const cards = Array.from(container.querySelectorAll('.bridge-card'));
+        const same = cards.find(c => c.dataset.bridgeId === held.bridgeId);
+        const card = same || cards[Math.min(held.index, cards.length - 1)];
+        if (!card) {
+            const add = $('#addBridgeButton');
+            if (!add.disabled) add.focus();
+            return;
+        }
+        // Only the bridge that held focus gets the same button back. When it is gone, focus moves to another
+        // bridge's row, and putting Delete under a finger that was aimed at a different card is how a stray
+        // keypress deletes the wrong bridge; Edit is the safe landing.
+        const control = (same && held.action && card.querySelector(`[data-action="${held.action}"]`))
+            || card.querySelector('[data-action="edit-bridge"]');
+        if (control && !control.disabled) control.focus();
+    }
+
+    function drawBridges() {
         const generation = ++state.bridgeVerifyGeneration;
         state.bridgeStatus = {};
         const container = $('#bridgesList');
@@ -923,7 +1038,12 @@ export default function HueConfigPage(view) {
         const status = card.querySelector('.bridge-status');
         status.classList.remove('bridge-status--checking', 'bridge-status--nokey', 'bridge-status--ok', 'bridge-status--failed');
         status.classList.add(success ? 'bridge-status--ok' : 'bridge-status--failed');
-        status.querySelector('.bridge-status-text').textContent = text;
+        const statusLine = status.querySelector('.bridge-status-text');
+        statusLine.textContent = text;
+        // Only a failure is spoken. A successful check is already part of the card a screen reader reads on
+        // its way past, and announcing every bridge's "Connected" on every page load would be noise nobody
+        // asked for; a bridge that has stopped answering is news the user would otherwise never be told.
+        if (!success) announce(statusLine, text);
         // Facts from /api/0/config, present whenever the bridge answered at all
         if (result && result.HardwareId) {
             card.querySelector('.bridge-info').textContent = `${result.HardwareId} · ${result.ModelId || '?'} · software ${result.SoftwareVersion || '?'}`;
@@ -943,6 +1063,8 @@ export default function HueConfigPage(view) {
             showError('Not deleted', MESSAGES.bridges.bridgeInUse(affected.map(p => `"${p.Name}"`).join(', ')));
             return;
         }
+        // Read now, while focus is still on this card's Delete button; the confirm below takes focus for itself.
+        const held = heldBridgeControl($('#bridgesList'));
         // Every value confirm renders is raw HTML (Fact 6), so the bridge's name is escaped here, not left to confirmAction
         confirmAction({
             title: 'Delete bridge',
@@ -951,6 +1073,8 @@ export default function HueConfigPage(view) {
             cancelText: 'Cancel',
             primary: 'delete'
         }, () => {
+            // Inside the callback, so a cancelled delete leaves no stale instruction for a later redraw
+            if (held) state.pendingBridgeFocus = held;
             // One save; the server drops the removed bridge's cached rooms and pin on it
             commit(draft => {
                 const i = indexOfId(draft.Bridges, bridgeId);
@@ -965,6 +1089,14 @@ export default function HueConfigPage(view) {
                     return false;
                 }
                 draft.Bridges.splice(i, 1);
+            }).then(saved => {
+                // Same as deleteProfile: a delete the save refused - the bridge is in use after all, or the
+                // save failed - redraws nothing, so the armed instruction is spent here rather than left to
+                // ambush a later redraw.
+                if (saved || isGone()) return;
+                const stranded = state.pendingBridgeFocus;
+                state.pendingBridgeFocus = null;
+                if (stranded) restoreBridgeFocus($('#bridgesList'), stranded);
             });
         });
     }
@@ -1216,7 +1348,7 @@ export default function HueConfigPage(view) {
         function tryPair() {
             attempt++;
             buttonText.textContent = `Attempt ${attempt}/${maxAttempts}...`;
-            progressText.textContent = MESSAGES.bridgeModal.pairingAttempt(attempt, maxAttempts);
+            statusText(progressText, MESSAGES.bridgeModal.pairingAttempt(attempt, maxAttempts));
             countdown.textContent = '';
 
             pairOnce(request).then(({ result, adopted }) => {
@@ -1226,8 +1358,10 @@ export default function HueConfigPage(view) {
                 }
                 // Cancelled: no further attempts, and nothing shown in a modal that has moved on
                 if (!live()) return;
-                progressText.textContent = MESSAGES.bridgeModal.pairingFailed(result.Error);
+                statusText(progressText, MESSAGES.bridgeModal.pairingFailed(result.Error));
                 if (attempt < maxAttempts) {
+                    // The countdown stays silent on purpose: "Retrying in 3s… 2s… 1s…", three times over,
+                    // would still be draining out of the polite queue when the next attempt began.
                     let remaining = 3;
                     countdown.textContent = MESSAGES.bridgeModal.pairingRetry(remaining);
                     const interval = setInterval(() => {
@@ -1258,7 +1392,7 @@ export default function HueConfigPage(view) {
                 if (!live()) return; // the session may have moved on while the body was read
                 // Not one failed attempt among three (pairingFailed's territory) but the request never
                 // reaching the server at all; shown where pairingFailed shows, not as a toast
-                progressText.textContent = MESSAGES.bridgeModal.pairingRequestFailed(reason);
+                statusText(progressText, MESSAGES.bridgeModal.pairingRequestFailed(reason));
                 countdown.textContent = '';
             });
         }
@@ -1273,7 +1407,7 @@ export default function HueConfigPage(view) {
         const live = () => isLiveBridgeSession(session);
         if (live()) {
             bridgeField('#bridgeKey').value = result.Username;
-            bridgeField('#bridgeAuthProgressText').textContent = MESSAGES.bridgeModal.pairingSaving;
+            statusText(bridgeField('#bridgeAuthProgressText'), MESSAGES.bridgeModal.pairingSaving);
             bridgeField('#bridgeAuthCountdown').textContent = '';
         }
 
@@ -1322,7 +1456,46 @@ export default function HueConfigPage(view) {
     const profileCard = profileId =>
         Array.from($('#profilesList').querySelectorAll('.profile-card')).find(card => card.dataset.profileId === profileId) || null;
 
+    // Focus sitting in the profile list does not survive the rebuild: the element stays attached right up to
+    // the moment innerHTML replaces it, so document.contains() cannot see this coming and the browser quietly
+    // drops focus on <body>. Every profile change reaches the page through adoptLists → renderProfiles, so
+    // noting the card here covers Duplicate, Move Up and Move Down. The two paths where focus is already gone
+    // by the time this runs say where it belongs instead: a delete arms pendingProfileFocus before its confirm
+    // dialog takes focus, and a save from the editor is handed back by onModalHidden from cardBeforeModal.
+    // All three end in restoreProfileFocus, which is the one place that decides where focus lands.
     function renderProfiles() {
+        const container = $('#profilesList');
+        const held = heldProfileCard(container) || state.pendingProfileFocus;
+        state.pendingProfileFocus = null;
+        drawProfiles();
+        if (held) restoreProfileFocus(container, held);
+    }
+
+    function heldProfileCard(container) {
+        const active = document.activeElement;
+        if (!(active instanceof HTMLElement) || !container.contains(active)) return null;
+        const card = active.closest('.profile-card');
+        if (!card) return null;
+        return {
+            profileId: card.dataset.profileId,
+            index: Array.prototype.indexOf.call(container.querySelectorAll('.profile-card'), card)
+        };
+    }
+
+    // A card's ⋮ trigger is its only durable focus target - everything else inside a card is a menu item, and
+    // the rebuild closes every menu - so focus lands there however it left.
+    function restoreProfileFocus(container, held) {
+        const cards = Array.from(container.querySelectorAll('.profile-card'));
+        // The same profile while it is still listed: Move keeps it, at a new position, which is what lets a
+        // second Move Up follow the first without reaching for the mouse. Otherwise it was deleted, and the
+        // card that took its index inherits focus - or the new last card, or, on an empty list, Add Profile.
+        const card = cards.find(c => c.dataset.profileId === held.profileId)
+            || cards[Math.min(held.index, cards.length - 1)];
+        const control = card ? card.querySelector('.profile-menu-button') : $('#addProfileButton');
+        if (control && !control.disabled) control.focus();
+    }
+
+    function drawProfiles() {
         try {
             const container = $('#profilesList');
             const profiles = state.profiles;
@@ -1447,6 +1620,8 @@ export default function HueConfigPage(view) {
     function deleteProfile(profileId) {
         const profile = state.profiles[indexOfId(state.profiles, profileId)];
         if (!profile) return;
+        // Read now, while focus is still on this card's ⋮ trigger; the confirm below takes focus for itself.
+        const held = heldProfileCard($('#profilesList'));
         confirmAction({
             title: 'Delete profile',
             text: MESSAGES.profiles.deleteProfile(escapeHtml(profile.Name)),
@@ -1454,6 +1629,8 @@ export default function HueConfigPage(view) {
             cancelText: 'Cancel',
             primary: 'delete'
         }, () => {
+            // Inside the callback, so a cancelled delete leaves no stale instruction for a later redraw
+            if (held) state.pendingProfileFocus = held;
             commit(draft => {
                 const i = indexOfId(draft.Profiles, profileId);
                 if (i < 0) {
@@ -1461,6 +1638,14 @@ export default function HueConfigPage(view) {
                     return false;
                 }
                 draft.Profiles.splice(i, 1);
+            }).then(saved => {
+                // A refused or failed save never redraws the list, so nothing consumes the instruction armed
+                // above: it would sit there until some later change redrew, and move focus out of wherever
+                // the user had gone by then. Spend it here instead, on the card that is still listed.
+                if (saved || isGone()) return;
+                const stranded = state.pendingProfileFocus;
+                state.pendingProfileFocus = null;
+                if (stranded) restoreProfileFocus($('#profilesList'), stranded);
             });
         });
     }
@@ -1772,9 +1957,12 @@ export default function HueConfigPage(view) {
         const invalid = validateProfile(profile);
         if (invalid) {
             switchTab(invalid.tab);
+            // The message and the aria-describedby link to it are in place before focus lands, so a screen
+            // reader reads the field together with what is wrong with it. An id added after focus has already
+            // arrived is not reliably re-announced, which is what the old order did.
+            fieldError(invalid.input, invalid.message, false);
             invalid.input.focus();
             invalid.input.scrollIntoView({ block: 'nearest' });
-            fieldError(invalid.input, invalid.message);
             return;
         }
 
@@ -2079,6 +2267,12 @@ export default function HueConfigPage(view) {
     function openModal(id) {
         const overlay = overlays[id];
         state.focusBeforeModal = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        // The row focus came from, remembered as an id rather than an element, because the element usually
+        // does not survive: saving from a modal locks its form, which disables the focused Save button and
+        // blurs it to <body>, and the save's own redraw then replaces the card this modal was opened from.
+        // By the time onModalHidden looks, focusBeforeModal is detached and nothing in the list still holds
+        // focus for a redraw to notice - so without this, Edit → Save ends on <body>.
+        state.cardBeforeModal = heldProfileCard($('#profilesList')) || heldBridgeControl($('#bridgesList'));
         overlay.style.display = 'block';
         overlay.scrollTop = 0;
         overlay.querySelector('.hue-modal-body').scrollTop = 0;
@@ -2104,11 +2298,29 @@ export default function HueConfigPage(view) {
             state.editorSession = null;
             state.editorTargetsGeneration++;
         }
+        // Emptied now, with the overlay already hidden, so the clearing is never spoken and the next session
+        // starts blank - assistive technology announces a live region when its text changes, so a sentence
+        // left over from last time would make the identical sentence this time no change at all. Not done on
+        // open: the open sequence writes into the region (the device list, the rooms-and-scenes status)
+        // before the modal is shown, and clearing there would wipe exactly those messages.
+        const region = overlays[id].querySelector('.hue-live-region');
+        if (region) region.textContent = '';
+
         // Only if the element is still in the document: the profile list is re-rendered while a modal is
         // open, so the card button that opened it may no longer exist.
         const previous = state.focusBeforeModal;
+        const card = state.cardBeforeModal;
         state.focusBeforeModal = null;
-        if (previous && document.contains(previous)) previous.focus();
+        state.cardBeforeModal = null;
+        if (previous && document.contains(previous)) {
+            previous.focus();
+        } else if (card) {
+            // The element is gone because the save that closed this modal redrew the list it stood in. The
+            // row is still addressable by its id, so focus returns to where the user actually came from
+            // instead of falling to <body>.
+            if (card.profileId) restoreProfileFocus($('#profilesList'), card);
+            else restoreBridgeFocus($('#bridgesList'), card);
+        }
     }
 
     // Hides every open modal the current history entry no longer belongs to
