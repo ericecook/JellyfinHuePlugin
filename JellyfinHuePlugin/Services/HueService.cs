@@ -536,7 +536,7 @@ namespace JellyfinHuePlugin.Services
             }
 
             var info = infoResult.Value!;
-            // GetBridgeInfoAsync already rejected an unparsable address; host is only for the log lines.
+            // Cannot fail: GetBridgeInfoAsync parsed the same address and returned a failure if it could not.
             _ = BridgeUri.TryParseHost(bridgeIp, out var host);
             if (!info.SupportsV2)
             {

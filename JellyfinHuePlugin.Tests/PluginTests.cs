@@ -18,7 +18,7 @@ namespace JellyfinHuePlugin.Tests
     /// A real Plugin over a temporary configuration directory. The XML serializer is a mock so the
     /// tests control what "on disk" holds and can count writes.
     /// </summary>
-    public class PluginTests : IDisposable
+    public sealed class PluginTests : IDisposable
     {
         private readonly string _dir = Path.Combine(Path.GetTempPath(), "hue-plugin-tests-" + Guid.NewGuid().ToString("N"));
         private readonly Mock<IApplicationPaths> _paths = new();

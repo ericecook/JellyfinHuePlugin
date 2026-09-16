@@ -71,11 +71,8 @@ namespace JellyfinHuePlugin.Tests.Services
             _handler.Responses["/api/0/config"] = (HttpStatusCode.OK, ConfigBody);
         }
 
-        public void Dispose()
-        {
-            _service.Dispose();
-            _handler.Dispose();
-        }
+        // The service's HttpClient owns the handler and disposes it.
+        public void Dispose() => _service.Dispose();
 
         private static HueBridge Bridge(string bridgeId = BridgeId, string ip = "192.168.1.50", string key = Key) =>
             new() { Id = "bridge1", Name = "Test Bridge", IpAddress = ip, Username = key, HardwareId = bridgeId };

@@ -21,7 +21,7 @@ namespace JellyfinHuePlugin.Tests.Api
     /// The page ↔ controller contract, endpoint by endpoint, over mocked services. The response
     /// shapes here are what configPage.html reads; see PageContractTests for the names.
     /// </summary>
-    public class HueControllerTests : IDisposable
+    public sealed class HueControllerTests : IDisposable
     {
         private const string Key = "SECRETKEY0123456789";
         private const string HardwareId = "c42996fffec03a49";

@@ -23,7 +23,7 @@ namespace JellyfinHuePlugin.Tests.Managers
     /// Event wiring only: raises the ISessionManager events through Moq and waits for the
     /// async void handlers with WhenIdleAsync. Behaviour lives in PlaybackSessionManagerStateTests.
     /// </summary>
-    public class PlaybackSessionManagerHandlerTests : IDisposable
+    public sealed class PlaybackSessionManagerHandlerTests : IDisposable
     {
         private readonly Mock<ISessionManager> _mockSessionManager;
         private readonly Mock<HueService> _mockHueService;

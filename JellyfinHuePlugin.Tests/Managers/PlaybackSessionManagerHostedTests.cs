@@ -25,7 +25,7 @@ namespace JellyfinHuePlugin.Tests.Managers
     /// PlaybackSessionManagerHandlerTests and PlaybackSessionManagerStateTests, which start
     /// the manager as part of their fixture.
     /// </summary>
-    public class PlaybackSessionManagerHostedTests : IDisposable
+    public sealed class PlaybackSessionManagerHostedTests : IDisposable
     {
         private sealed class CapturingLogger : ILogger<PlaybackSessionManager>
         {

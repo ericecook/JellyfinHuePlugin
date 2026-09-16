@@ -29,7 +29,7 @@ namespace JellyfinHuePlugin.Tests.Managers
     /// enqueued light command has finished, so there are no sleeps.
     /// PlaybackSessionManagerHandlerTests covers the event wiring.
     /// </summary>
-    public class PlaybackSessionManagerStateTests : IDisposable
+    public sealed class PlaybackSessionManagerStateTests : IDisposable
     {
         private sealed class FakeClock : TimeProvider
         {

@@ -24,7 +24,7 @@ namespace JellyfinHuePlugin.Tests.Services
     /// BridgeCertificateValidatorTests; the minting helpers are duplicated here rather than shared,
     /// to keep the two test files independent.
     /// </summary>
-    public class HueServiceCertificateTests : IDisposable
+    public sealed class HueServiceCertificateTests : IDisposable
     {
         private const string BridgeId = "001788fffe123456";
 

@@ -14,7 +14,7 @@ namespace JellyfinHuePlugin.Tests.Services
     /// A throwaway CA and leaves are generated per test class, shaped like the real ones:
     /// ECDSA P-256, subject "CN=&lt;bridge id&gt;, O=Philips Hue, C=NL".
     /// </summary>
-    public class BridgeCertificateValidatorTests : IDisposable
+    public sealed class BridgeCertificateValidatorTests : IDisposable
     {
         private const string BridgeId = "001788fffe123456";
 
