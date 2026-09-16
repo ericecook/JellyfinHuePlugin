@@ -2020,11 +2020,21 @@ export default function HueConfigPage(view) {
     // modal instead of navigating away underneath it. The entry keeps the router's state so its index stays
     // intact. closeModal's history.back() lands asynchronously, so don't open a modal in the same task that
     // closed one.
+    // The element that opened the modal, so onModalHidden can put focus back where it came from rather
+    // than dropping it on <body>, where the next Tab would restart at the top of the dashboard.
+    function focusableIn(overlay) {
+        return Array.from(overlay.querySelectorAll('a[href], button, input, select, textarea, [tabindex]'))
+            .filter(el => !el.disabled && el.tabIndex !== -1 && el.offsetParent !== null);
+    }
+
     function openModal(id) {
         const overlay = overlays[id];
+        state.focusBeforeModal = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         overlay.style.display = 'block';
         overlay.scrollTop = 0;
         overlay.querySelector('.hue-modal-body').scrollTop = 0;
+        const first = focusableIn(overlay)[0];
+        if (first) first.focus();
         if (!(history.state && history.state.huePluginModal === id)) {
             history.pushState(Object.assign({}, history.state, { huePluginModal: id }), '', location.href);
         }
@@ -2045,6 +2055,11 @@ export default function HueConfigPage(view) {
             state.editorSession = null;
             state.editorTargetsGeneration++;
         }
+        // Only if the element is still in the document: the profile list is re-rendered while a modal is
+        // open, so the card button that opened it may no longer exist.
+        const previous = state.focusBeforeModal;
+        state.focusBeforeModal = null;
+        if (previous && document.contains(previous)) previous.focus();
     }
 
     // Hides every open modal the current history entry no longer belongs to
@@ -2060,6 +2075,44 @@ export default function HueConfigPage(view) {
                 onModalHidden(id);
             }
         });
+    }
+
+    // Escape closes the innermost open thing first, so a dropdown inside the profile list closes without
+    // also dismissing whatever is behind it. Jellyfin only handles Escape in TV layout (spec Fact 5), so
+    // this is the page's own.
+    function onDocumentKeydown(e) {
+        if (isGone()) {
+            teardown();
+            return;
+        }
+        const open = Object.keys(overlays).find(id => overlays[id].style.display === 'block');
+        if (e.key === 'Escape') {
+            const menuOpen = $('#profilesList').querySelector('.hue-dropdown.is-open');
+            if (menuOpen) {
+                closeProfileMenus();
+                e.preventDefault();
+                return;
+            }
+            if (open) {
+                closeModal(open);
+                e.preventDefault();
+            }
+            return;
+        }
+        // A modal is modal: Tab cycles within it instead of walking into the dashboard behind it.
+        if (e.key === 'Tab' && open) {
+            const items = focusableIn(overlays[open]);
+            if (!items.length) return;
+            const first = items[0];
+            const last = items[items.length - 1];
+            if (e.shiftKey && document.activeElement === first) {
+                last.focus();
+                e.preventDefault();
+            } else if (!e.shiftKey && document.activeElement === last) {
+                first.focus();
+                e.preventDefault();
+            }
+        }
     }
 
     // Closes the profile menus and the template menu on a click outside them
@@ -2088,6 +2141,7 @@ export default function HueConfigPage(view) {
         Object.keys(overlays).forEach(id => overlays[id].remove());
         window.removeEventListener('popstate', onPopState);
         document.removeEventListener('click', onDocumentClick);
+        document.removeEventListener('keydown', onDocumentKeydown);
     }
 
     function wireListeners() {
@@ -2204,6 +2258,7 @@ export default function HueConfigPage(view) {
         // Page lifetime: removed again by teardown()
         window.addEventListener('popstate', onPopState);
         document.addEventListener('click', onDocumentClick);
+        document.addEventListener('keydown', onDocumentKeydown);
         // Leaving the page by any other route (drawer link, session expiry) must not strand a modal over the next view
         view.addEventListener('viewbeforehide', () => {
             Object.keys(overlays).forEach(id => {
