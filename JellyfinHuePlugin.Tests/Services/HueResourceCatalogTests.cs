@@ -53,14 +53,17 @@ namespace JellyfinHuePlugin.Tests.Services
         public HueResourceCatalogTests()
         {
             _hue = new Mock<HueService>(new NullLogger<HueService>(), new MdnsBridgeDiscovery(NullLogger<MdnsBridgeDiscovery>.Instance)) { CallBase = false };
-            _hue.Setup(GroupsRead("room", "zone")).ReturnsAsync(RoomsAndZones);
-            _hue.Setup(GroupsRead("bridge_home")).ReturnsAsync(Home);
-            _hue.Setup(h => h.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(Scenes);
+            _hue.Setup(GroupsRead("room", "zone")).ReturnsAsync(HueResult<IReadOnlyList<HueGroupResource>>.Success(RoomsAndZones));
+            _hue.Setup(GroupsRead("bridge_home")).ReturnsAsync(HueResult<IReadOnlyList<HueGroupResource>>.Success(Home));
+            _hue.Setup(h => h.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(HueResult<IReadOnlyList<HueSceneResource>>.Success(Scenes));
             _catalog = new HueResourceCatalog(_hue.Object, _log);
         }
 
+        /// <summary>A reason used where a mock's failure needs one but no test asserts its text (that's HueServiceV2Tests's job).</summary>
+        private const string FailureReason = "bridge unreachable";
+
         /// <summary>A GetGroupsAsync call that asks for exactly these types, in this order.</summary>
-        private static Expression<Func<HueService, Task<IReadOnlyList<HueGroupResource>?>>> GroupsRead(params string[] types) =>
+        private static Expression<Func<HueService, Task<HueResult<IReadOnlyList<HueGroupResource>>>>> GroupsRead(params string[] types) =>
             h => h.GetGroupsAsync(It.IsAny<HueBridge>(), It.Is<IReadOnlyList<string>>(t => t.SequenceEqual(types)), It.IsAny<CancellationToken>());
 
         private void VerifyHomeReads(Times times) => _hue.Verify(GroupsRead("bridge_home"), times);
@@ -108,7 +111,7 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task ResolveGroupedLight_ZeroWithoutBridgeHome_ReturnsNullAfterOneFetch()
         {
-            _hue.Setup(GroupsRead("bridge_home")).ReturnsAsync(Array.Empty<HueGroupResource>());
+            _hue.Setup(GroupsRead("bridge_home")).ReturnsAsync(HueResult<IReadOnlyList<HueGroupResource>>.Success(Array.Empty<HueGroupResource>()));
 
             var id = await _catalog.ResolveGroupedLightAsync(_bridge, "0", CancellationToken.None);
 
@@ -143,7 +146,7 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task Resolve_ServiceFailure_ReturnsNull()
         {
-            _hue.Setup(GroupsRead("bridge_home")).ReturnsAsync((IReadOnlyList<HueGroupResource>?)null);
+            _hue.Setup(GroupsRead("bridge_home")).ReturnsAsync(HueResult<IReadOnlyList<HueGroupResource>>.Failure(FailureReason));
 
             var id = await _catalog.ResolveGroupedLightAsync(_bridge, "0", CancellationToken.None);
 
@@ -153,7 +156,7 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task Resolve_WhenTheGroupFetchFails_SaysTheBridgeIsUnreachableAndDoesNotSayReselect()
         {
-            _hue.Setup(GroupsRead("bridge_home")).ReturnsAsync((IReadOnlyList<HueGroupResource>?)null);
+            _hue.Setup(GroupsRead("bridge_home")).ReturnsAsync(HueResult<IReadOnlyList<HueGroupResource>>.Failure(FailureReason));
 
             var id = await _catalog.ResolveGroupedLightAsync(_bridge, "0", CancellationToken.None);
 
@@ -167,8 +170,8 @@ namespace JellyfinHuePlugin.Tests.Services
         public async Task ResolveGroupedLight_FailedRead_IsNotCached()
         {
             _hue.SetupSequence(GroupsRead("bridge_home"))
-                .ReturnsAsync((IReadOnlyList<HueGroupResource>?)null)
-                .ReturnsAsync(Home);
+                .ReturnsAsync(HueResult<IReadOnlyList<HueGroupResource>>.Failure(FailureReason))
+                .ReturnsAsync(HueResult<IReadOnlyList<HueGroupResource>>.Success(Home));
 
             var first = await _catalog.ResolveGroupedLightAsync(_bridge, "0", CancellationToken.None);
             var second = await _catalog.ResolveGroupedLightAsync(_bridge, "0", CancellationToken.None);
@@ -190,12 +193,12 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task ConcurrentResolves_FetchOnce()
         {
-            var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var gate = new TaskCompletionSource<HueResult<IReadOnlyList<HueGroupResource>>>(TaskCreationOptions.RunContinuationsAsynchronously);
             _hue.Setup(GroupsRead("bridge_home")).Returns(gate.Task);
 
             var first = _catalog.ResolveGroupedLightAsync(_bridge, "0", CancellationToken.None);
             var second = _catalog.ResolveGroupedLightAsync(_bridge, "", CancellationToken.None);
-            gate.SetResult(Home);
+            gate.SetResult(HueResult<IReadOnlyList<HueGroupResource>>.Success(Home));
             var ids = await Task.WhenAll(first, second);
 
             ids.Should().Equal("gl-0", "gl-0");
@@ -205,7 +208,7 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task Invalidate_DuringInFlightRead_IsNotSilentlyUndone()
         {
-            var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var gate = new TaskCompletionSource<HueResult<IReadOnlyList<HueGroupResource>>>(TaskCreationOptions.RunContinuationsAsynchronously);
             _hue.Setup(GroupsRead("bridge_home")).Returns(gate.Task);
 
             // A cold resolve blocks on the gated bridge-home read.
@@ -215,7 +218,7 @@ namespace JellyfinHuePlugin.Tests.Services
             _catalog.Invalidate(_bridge);
 
             // Let the in-flight (now stale-relative-to-the-invalidate) read finish.
-            gate.SetResult(Home);
+            gate.SetResult(HueResult<IReadOnlyList<HueGroupResource>>.Success(Home));
             await inFlight;
 
             // The invalidate must stick: the next resolve has to hit the bridge again rather than
@@ -229,7 +232,7 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task Resolve_WhenInvalidateLandsDuringTheInFlightFetch_LogsDebugInsteadOfReselect()
         {
-            var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var gate = new TaskCompletionSource<HueResult<IReadOnlyList<HueGroupResource>>>(TaskCreationOptions.RunContinuationsAsynchronously);
             _hue.Setup(GroupsRead("bridge_home")).Returns(gate.Task);
 
             // A cold cache: resolving the bridge home reads it and blocks on the gated fetch.
@@ -239,7 +242,7 @@ namespace JellyfinHuePlugin.Tests.Services
             // result is discarded, and the resolve must not blame "0" for that.
             _catalog.Invalidate(_bridge);
 
-            gate.SetResult(Home);
+            gate.SetResult(HueResult<IReadOnlyList<HueGroupResource>>.Success(Home));
             var id = await resolve;
 
             id.Should().BeNull();
@@ -253,7 +256,7 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task Invalidate_WhileAResolveIsQueuedOnTheGate_QueuedResolveReadsAgain()
         {
-            var gate = new TaskCompletionSource<IReadOnlyList<HueGroupResource>?>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var gate = new TaskCompletionSource<HueResult<IReadOnlyList<HueGroupResource>>>(TaskCreationOptions.RunContinuationsAsynchronously);
             _hue.Setup(GroupsRead("bridge_home")).Returns(gate.Task);
 
             // The holder resolves a cold cache and blocks on the read, holding the gate the whole time.
@@ -265,7 +268,7 @@ namespace JellyfinHuePlugin.Tests.Services
             // Invalidate lands while the second is queued, before the holder's read comes back.
             _catalog.Invalidate(_bridge);
 
-            gate.SetResult(Home);
+            gate.SetResult(HueResult<IReadOnlyList<HueGroupResource>>.Success(Home));
             await Task.WhenAll(holder, queued);
 
             // The holder's read was discarded, so the queued resolve must not take the invalidate's
@@ -278,10 +281,11 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task ReadTargets_FillsGroupName()
         {
-            var targets = await _catalog.ReadTargetsAsync(_bridge, CancellationToken.None);
+            var result = await _catalog.ReadTargetsAsync(_bridge, CancellationToken.None);
 
-            targets.Should().NotBeNull();
-            targets!.Groups.Should().Equal(RoomsAndZones);
+            result.Ok.Should().BeTrue();
+            var targets = result.Value!;
+            targets.Groups.Should().Equal(RoomsAndZones);
             targets.Scenes[0].GroupName.Should().Be("Theater");
             targets.Scenes[0].Group.Should().Be("Theater");
             targets.Scenes[1].GroupName.Should().Be("Downstairs");
@@ -301,20 +305,25 @@ namespace JellyfinHuePlugin.Tests.Services
         [Theory]
         [InlineData(true)]
         [InlineData(false)]
-        public async Task ReadTargets_WhenEitherReadFails_ReturnsNull(bool groupsFail)
+        public async Task ReadTargets_WhenEitherReadFails_TheFailingReadsReasonReachesTheCaller(bool groupsFail)
         {
+            // Distinct reason text per branch proves it is that read's own reason making it out,
+            // not a fixed or fallback string.
+            const string groupsReason = "The bridge answered 503 Service Unavailable.";
+            const string scenesReason = "The bridge rejected the API key. Authenticate again.";
             if (groupsFail)
             {
-                _hue.Setup(GroupsRead("room", "zone")).ReturnsAsync((IReadOnlyList<HueGroupResource>?)null);
+                _hue.Setup(GroupsRead("room", "zone")).ReturnsAsync(HueResult<IReadOnlyList<HueGroupResource>>.Failure(groupsReason));
             }
             else
             {
-                _hue.Setup(h => h.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlyList<HueSceneResource>?)null);
+                _hue.Setup(h => h.GetScenesAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(HueResult<IReadOnlyList<HueSceneResource>>.Failure(scenesReason));
             }
 
-            var targets = await _catalog.ReadTargetsAsync(_bridge, CancellationToken.None);
+            var result = await _catalog.ReadTargetsAsync(_bridge, CancellationToken.None);
 
-            targets.Should().BeNull();
+            result.Ok.Should().BeFalse();
+            result.Reason.Should().Be(groupsFail ? groupsReason : scenesReason);
         }
 
         [Fact]

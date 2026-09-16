@@ -66,21 +66,22 @@ namespace JellyfinHuePlugin.Tests.Api
         }
 
         [Fact]
-        public async Task Authenticate_Failure_ReturnsTheGuidanceText()
+        public async Task Authenticate_Failure_ReturnsTheServicesReason()
         {
-            _hue.Setup(h => h.AuthenticateAsync("192.168.1.50", It.IsAny<CancellationToken>())).ReturnsAsync((AuthenticationOutcome?)null);
+            _hue.Setup(h => h.AuthenticateAsync("192.168.1.50", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(HueResult<AuthenticationOutcome>.Failure("The link button wasn't pressed. Press it on the bridge, then try again."));
 
             var result = Value(await _controller.Authenticate(new AuthenticationRequest { BridgeIp = "192.168.1.50" }, CancellationToken.None));
 
             result.Success.Should().BeFalse();
-            result.Error.Should().Contain("Press the link button");
+            result.Error.Should().Be("The link button wasn't pressed. Press it on the bridge, then try again.");
             _store.SaveCount.Should().Be(0);
         }
 
         [Fact]
         public async Task Authenticate_NewAddress_CreatesAnEntry()
         {
-            _hue.Setup(h => h.AuthenticateAsync("192.168.1.70", It.IsAny<CancellationToken>())).ReturnsAsync(new AuthenticationOutcome("NEWKEY", HardwareId));
+            _hue.Setup(h => h.AuthenticateAsync("192.168.1.70", It.IsAny<CancellationToken>())).ReturnsAsync(HueResult<AuthenticationOutcome>.Success(new AuthenticationOutcome("NEWKEY", HardwareId)));
 
             var result = Value(await _controller.Authenticate(new AuthenticationRequest { BridgeIp = "192.168.1.70", BridgeName = "Attic" }, CancellationToken.None));
 
@@ -97,7 +98,7 @@ namespace JellyfinHuePlugin.Tests.Api
         [Fact]
         public async Task Authenticate_ExistingById_UpdatesInPlace()
         {
-            _hue.Setup(h => h.AuthenticateAsync("192.168.1.50", It.IsAny<CancellationToken>())).ReturnsAsync(new AuthenticationOutcome(Key, HardwareId));
+            _hue.Setup(h => h.AuthenticateAsync("192.168.1.50", It.IsAny<CancellationToken>())).ReturnsAsync(HueResult<AuthenticationOutcome>.Success(new AuthenticationOutcome(Key, HardwareId)));
 
             var result = Value(await _controller.Authenticate(new AuthenticationRequest { BridgeIp = "192.168.1.50", BridgeId = "b1" }, CancellationToken.None));
 
@@ -109,7 +110,7 @@ namespace JellyfinHuePlugin.Tests.Api
         [Fact]
         public async Task Authenticate_ExistingByAddressWithNewKey_ClearsThenRelearnsThePin()
         {
-            _hue.Setup(h => h.AuthenticateAsync("192.168.1.50", It.IsAny<CancellationToken>())).ReturnsAsync(new AuthenticationOutcome("ROTATED", "ffff88fffe000000"));
+            _hue.Setup(h => h.AuthenticateAsync("192.168.1.50", It.IsAny<CancellationToken>())).ReturnsAsync(HueResult<AuthenticationOutcome>.Success(new AuthenticationOutcome("ROTATED", "ffff88fffe000000")));
             string? keyAtInvalidation = null;
             _catalog.Setup(c => c.Invalidate(It.IsAny<HueBridge>())).Callback<HueBridge>(b => keyAtInvalidation = b.Username);
 
@@ -128,7 +129,7 @@ namespace JellyfinHuePlugin.Tests.Api
         [Fact]
         public async Task Authenticate_NeverLogsTheKey()
         {
-            _hue.Setup(h => h.AuthenticateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(new AuthenticationOutcome("SECRET-NEW", HardwareId));
+            _hue.Setup(h => h.AuthenticateAsync(It.IsAny<string>(), It.IsAny<CancellationToken>())).ReturnsAsync(HueResult<AuthenticationOutcome>.Success(new AuthenticationOutcome("SECRET-NEW", HardwareId)));
 
             await _controller.Authenticate(new AuthenticationRequest { BridgeIp = "192.168.1.50" }, CancellationToken.None);
 
@@ -149,24 +150,28 @@ namespace JellyfinHuePlugin.Tests.Api
         }
 
         [Fact]
-        public async Task GetTargets_ReadFailure_Is500()
+        public async Task GetTargets_ReadFailure_Is500WithTheCatalogsReason()
         {
-            _catalog.Setup(c => c.ReadTargetsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync((HueTargets?)null);
+            _catalog.Setup(c => c.ReadTargetsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(HueResult<HueTargets>.Failure("The bridge answered 503 Service Unavailable."));
 
-            Status(await _controller.GetTargets("b1", CancellationToken.None)).Should().Be(500);
+            var response = await _controller.GetTargets("b1", CancellationToken.None);
+
+            Status(response).Should().Be(500);
+            ((ObjectResult)response.Result!).Value.Should().Be("The bridge answered 503 Service Unavailable.");
         }
 
         [Fact]
         public async Task GetTargets_KeysRoomsAndZonesByGroupedLightIdAndScenesById()
         {
             using var cts = new CancellationTokenSource();
-            _catalog.Setup(c => c.ReadTargetsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(new HueTargets(
+            _catalog.Setup(c => c.ReadTargetsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync(HueResult<HueTargets>.Success(new HueTargets(
                 new[]
                 {
                     new HueGroupResource("room-1", "gl-1", "Theater", "room"),
                     new HueGroupResource("zone-5", "gl-5", "Downstairs", "zone")
                 },
-                new[] { new HueSceneResource("sc-1", "Movie", "room-1") { GroupName = "Theater" } }));
+                new[] { new HueSceneResource("sc-1", "Movie", "room-1") { GroupName = "Theater" } })));
 
             var targets = Value(await _controller.GetTargets("b1", cts.Token));
 
@@ -181,9 +186,9 @@ namespace JellyfinHuePlugin.Tests.Api
         private static LightControlProfile TestProfile(string bridgeId = "b1") =>
             new() { Name = "Living Room", BridgeId = bridgeId, TargetGroupId = "gl-1", PlaySceneId = "", PlayBrightness = 55 };
 
-        private void ExecutorReturns(LightCommandOutcome outcome) =>
+        private void ExecutorReturns(LightCommandOutcome outcome, string? reason = null) =>
             _executor.Setup(e => e.ExecuteAsync(It.IsAny<LightAction>(), It.IsAny<HueBridge>(), It.IsAny<LightControlProfile>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(outcome);
+                .ReturnsAsync(new LightCommandResult(outcome, reason));
 
         [Fact]
         public async Task TestLightControl_MissingOrUnknownActionOrMissingProfile_Is400()
@@ -201,7 +206,7 @@ namespace JellyfinHuePlugin.Tests.Api
             var result = Value(await _controller.TestLightControl(new TestLightRequest { Action = LightAction.Play, Profile = TestProfile(bridgeId: "nope") }, CancellationToken.None));
 
             result.Success.Should().BeFalse();
-            result.Error.Should().Be("Bridge not configured");
+            result.Error.Should().Be("This profile has no bridge, or its bridge has no key.");
             _executor.VerifyNoOtherCalls();
         }
 
@@ -223,7 +228,7 @@ namespace JellyfinHuePlugin.Tests.Api
             var result = Value(await _controller.TestLightControl(new TestLightRequest { Action = LightAction.Play, Profile = TestProfile(bridgeId: "") }, CancellationToken.None));
 
             result.Success.Should().BeFalse();
-            result.Error.Should().Be("Bridge not configured");
+            result.Error.Should().Be("This profile has no bridge, or its bridge has no key.");
             _executor.VerifyNoOtherCalls();
         }
 
@@ -240,14 +245,14 @@ namespace JellyfinHuePlugin.Tests.Api
         }
 
         [Theory]
-        [InlineData(LightCommandOutcome.Succeeded, true, null)]
-        [InlineData(LightCommandOutcome.BridgeNotConfigured, false, "Bridge not configured")]
-        [InlineData(LightCommandOutcome.SceneUnresolved, false, "Scene not found on the bridge, or the bridge could not be reached; re-select it or check the server logs")]
-        [InlineData(LightCommandOutcome.GroupUnresolved, false, "Target group not found on the bridge, or the bridge could not be reached; re-select it or check the server logs")]
-        [InlineData(LightCommandOutcome.Failed, false, "The bridge did not accept the command; check the server logs")]
-        public async Task TestLightControl_MapsTheOutcome(LightCommandOutcome outcome, bool success, string? error)
+        [InlineData(LightCommandOutcome.Succeeded, null, true, null)]
+        [InlineData(LightCommandOutcome.BridgeNotConfigured, null, false, "This profile has no bridge, or its bridge has no key.")]
+        [InlineData(LightCommandOutcome.SceneUnresolved, null, false, "That scene isn't on the bridge any more. Open the profile and pick it again.")]
+        [InlineData(LightCommandOutcome.GroupUnresolved, null, false, "That room or zone isn't on the bridge any more. Open the profile and pick it again.")]
+        [InlineData(LightCommandOutcome.Failed, "The bridge answered 503 Service Unavailable.", false, "The bridge answered 503 Service Unavailable.")]
+        public async Task TestLightControl_MapsTheOutcome(LightCommandOutcome outcome, string? reason, bool success, string? error)
         {
-            ExecutorReturns(outcome);
+            ExecutorReturns(outcome, reason);
 
             var result = Value(await _controller.TestLightControl(new TestLightRequest { Action = LightAction.Play, Profile = TestProfile() }, CancellationToken.None));
 
@@ -266,37 +271,44 @@ namespace JellyfinHuePlugin.Tests.Api
         }
 
         [Fact]
-        public async Task VerifyConnection_NoAnswer_FailsWithGuidance()
+        public async Task VerifyConnection_NoAnswer_ReturnsTheServicesReasonUnprefixed()
         {
-            _hue.Setup(h => h.GetBridgeInfoAsync("192.168.1.50", It.IsAny<CancellationToken>())).ReturnsAsync((HueBridgeInfo?)null);
+            _hue.Setup(h => h.GetBridgeInfoAsync("192.168.1.50", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(HueResult<HueBridgeInfo>.Failure("The bridge at 192.168.1.50 didn't answer."));
 
             var result = Value(await _controller.VerifyConnection(new VerifyConnectionRequest { BridgeIp = "192.168.1.50", Username = Key }, CancellationToken.None));
 
             result.Success.Should().BeFalse();
-            result.Error.Should().Contain("/api/0/config");
+            // A whole sentence with no "Connection failed: " prefix (the design spec's Components
+            // — server section): today's "Connection failed: Connection failed: …" is what that
+            // prefix used to make possible.
+            result.Error.Should().Be("The bridge at 192.168.1.50 didn't answer.");
         }
 
         [Fact]
         public async Task VerifyConnection_UnsupportedBridge_ReportsFactsAndFails()
         {
-            _hue.Setup(h => h.GetBridgeInfoAsync("192.168.1.50", It.IsAny<CancellationToken>())).ReturnsAsync(new HueBridgeInfo(HardwareId, "1940000000", "1.40.0", "BSB002"));
+            _hue.Setup(h => h.GetBridgeInfoAsync("192.168.1.50", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(HueResult<HueBridgeInfo>.Success(new HueBridgeInfo(HardwareId, "1940000000", "1.40.0", "BSB002")));
 
             var result = Value(await _controller.VerifyConnection(new VerifyConnectionRequest { BridgeIp = "192.168.1.50", Username = Key }, CancellationToken.None));
 
             result.Success.Should().BeFalse();
             result.SupportsV2.Should().BeFalse();
             result.SoftwareVersion.Should().Be("1940000000");
+            result.Error.Should().Be("Bridge software 1940000000 doesn't support the v2 API; 1948086000 or newer is required.");
             _hue.Verify(h => h.GetLightsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>()), Times.Never);
         }
 
         [Fact]
         public async Task VerifyConnection_Success_PinsTheProbeToTheLearnedId()
         {
-            _hue.Setup(h => h.GetBridgeInfoAsync("192.168.1.50", It.IsAny<CancellationToken>())).ReturnsAsync(new HueBridgeInfo(HardwareId, "2071476020", "1.78.0", "BSB003"));
+            _hue.Setup(h => h.GetBridgeInfoAsync("192.168.1.50", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(HueResult<HueBridgeInfo>.Success(new HueBridgeInfo(HardwareId, "2071476020", "1.78.0", "BSB003")));
             HueBridge? probe = null;
             _hue.Setup(h => h.GetLightsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>()))
                 .Callback<HueBridge, CancellationToken>((b, _) => probe = b)
-                .ReturnsAsync(new[] { new HueLightResource("l1", "Lamp", true, 50) });
+                .ReturnsAsync(HueResult<IReadOnlyList<HueLightResource>>.Success(new[] { new HueLightResource("l1", "Lamp", true, 50) }));
 
             var result = Value(await _controller.VerifyConnection(new VerifyConnectionRequest { BridgeIp = "192.168.1.50", Username = Key }, CancellationToken.None));
 
@@ -308,15 +320,17 @@ namespace JellyfinHuePlugin.Tests.Api
         }
 
         [Fact]
-        public async Task VerifyConnection_NoLights_NamesTheCertificateAsAPossibleCause()
+        public async Task VerifyConnection_NoLights_ReturnsTheServicesReason()
         {
-            _hue.Setup(h => h.GetBridgeInfoAsync("192.168.1.50", It.IsAny<CancellationToken>())).ReturnsAsync(new HueBridgeInfo(HardwareId, "2071476020", "1.78.0", "BSB003"));
-            _hue.Setup(h => h.GetLightsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>())).ReturnsAsync((IReadOnlyList<HueLightResource>?)null);
+            _hue.Setup(h => h.GetBridgeInfoAsync("192.168.1.50", It.IsAny<CancellationToken>()))
+                .ReturnsAsync(HueResult<HueBridgeInfo>.Success(new HueBridgeInfo(HardwareId, "2071476020", "1.78.0", "BSB003")));
+            _hue.Setup(h => h.GetLightsAsync(It.IsAny<HueBridge>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(HueResult<IReadOnlyList<HueLightResource>>.Failure("The bridge's certificate doesn't match the stored one. Authenticate again to store the new one."));
 
             var result = Value(await _controller.VerifyConnection(new VerifyConnectionRequest { BridgeIp = "192.168.1.50", Username = Key }, CancellationToken.None));
 
             result.Success.Should().BeFalse();
-            result.Error.Should().Contain("certificate");
+            result.Error.Should().Be("The bridge's certificate doesn't match the stored one. Authenticate again to store the new one.");
         }
 
         [Fact]

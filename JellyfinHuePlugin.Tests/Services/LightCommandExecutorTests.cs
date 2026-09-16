@@ -40,9 +40,9 @@ namespace JellyfinHuePlugin.Tests.Services
             _hue = new Mock<HueService>(new NullLogger<HueService>(), new MdnsBridgeDiscovery(NullLogger<MdnsBridgeDiscovery>.Instance)) { CallBase = false };
             _hue.Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()))
                 .Callback<HueBridge, string, GroupedLightState, CancellationToken>((_, _, s, _) => _sent.Add(s))
-                .ReturnsAsync(true);
+                .ReturnsAsync(HueOutcome.Success);
             _hue.Setup(h => h.RecallSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(true);
+                .ReturnsAsync(HueOutcome.Success);
 
             _catalog = new Mock<HueResourceCatalog>(_hue.Object, NullLogger<HueResourceCatalog>.Instance) { CallBase = false };
             _catalog.Setup(c => c.ResolveGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -63,8 +63,9 @@ namespace JellyfinHuePlugin.Tests.Services
             TargetGroupId = "1"
         };
 
-        private Task<LightCommandOutcome> Execute(LightAction action, LightControlProfile profile, CancellationToken token = default)
-            => _executor.ExecuteAsync(action, _bridge, profile, token);
+        /// <summary>The outcome alone, for the many tests that don't care about Reason (LightCommandExecutorTests.Failed_CarriesTheServicesReason does).</summary>
+        private async Task<LightCommandOutcome> Execute(LightAction action, LightControlProfile profile, CancellationToken token = default)
+            => (await _executor.ExecuteAsync(action, _bridge, profile, token)).Outcome;
 
         private void VerifyGroupedLight(Func<GroupedLightState, bool> match, Times times) =>
             _hue.Verify(h => h.SetGroupedLightAsync(_bridge, "gl-1", It.Is<GroupedLightState>(s => match(s)), It.IsAny<CancellationToken>()), times);
@@ -223,9 +224,9 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             var bridge = new HueBridge { Id = "b", Name = "Empty", IpAddress = "", Username = "" };
 
-            var outcome = await _executor.ExecuteAsync(LightAction.Play, bridge, MakeProfile(), CancellationToken.None);
+            var result = await _executor.ExecuteAsync(LightAction.Play, bridge, MakeProfile(), CancellationToken.None);
 
-            outcome.Should().Be(LightCommandOutcome.BridgeNotConfigured);
+            result.Should().Be(new LightCommandResult(LightCommandOutcome.BridgeNotConfigured, null));
             _hue.VerifyNoOtherCalls();
             _catalog.VerifyNoOtherCalls();
         }
@@ -236,8 +237,9 @@ namespace JellyfinHuePlugin.Tests.Services
             _catalog.Setup(c => c.ResolveGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((string?)null);
 
-            (await Execute(LightAction.Play, MakeProfile())).Should().Be(LightCommandOutcome.GroupUnresolved);
+            var result = await _executor.ExecuteAsync(LightAction.Play, _bridge, MakeProfile(), CancellationToken.None);
 
+            result.Should().Be(new LightCommandResult(LightCommandOutcome.GroupUnresolved, null));
             _sent.Should().BeEmpty();
         }
 
@@ -249,8 +251,9 @@ namespace JellyfinHuePlugin.Tests.Services
             var profile = MakeProfile();
             profile.StopSceneId = "gone";
 
-            (await Execute(LightAction.Stop, profile)).Should().Be(LightCommandOutcome.SceneUnresolved);
+            var result = await _executor.ExecuteAsync(LightAction.Stop, _bridge, profile, CancellationToken.None);
 
+            result.Should().Be(new LightCommandResult(LightCommandOutcome.SceneUnresolved, null));
             _hue.Verify(h => h.RecallSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()), Times.Never);
             _sent.Should().BeEmpty();
         }
@@ -259,7 +262,7 @@ namespace JellyfinHuePlugin.Tests.Services
         public async Task BridgeRejectsGroupedLightCommand_IsFailed()
         {
             _hue.Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(false);
+                .ReturnsAsync(HueOutcome.Failure("The bridge answered 503 Service Unavailable."));
 
             (await Execute(LightAction.Play, MakeProfile())).Should().Be(LightCommandOutcome.Failed);
         }
@@ -268,11 +271,26 @@ namespace JellyfinHuePlugin.Tests.Services
         public async Task BridgeRejectsSceneRecall_IsFailed()
         {
             _hue.Setup(h => h.RecallSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(false);
+                .ReturnsAsync(HueOutcome.Failure("The bridge answered 503 Service Unavailable."));
             var profile = MakeProfile();
             profile.PauseSceneId = "scene-pause";
 
             (await Execute(LightAction.Pause, profile)).Should().Be(LightCommandOutcome.Failed);
+        }
+
+        [Fact]
+        public async Task Failed_CarriesTheServicesReason()
+        {
+            // The one thing that changed on this outcome: Failed now carries the reason the
+            // failing HueService call reported, so the page (through TestLightResult.Error) can
+            // name the bridge's actual answer instead of a fixed "did not accept the command".
+            _hue.Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(HueOutcome.Failure("The bridge answered 503 Service Unavailable."));
+
+            var result = await _executor.ExecuteAsync(LightAction.Play, _bridge, MakeProfile(), CancellationToken.None);
+
+            result.Outcome.Should().Be(LightCommandOutcome.Failed);
+            result.Reason.Should().Be("The bridge answered 503 Service Unavailable.");
         }
 
         [Fact]
@@ -281,7 +299,10 @@ namespace JellyfinHuePlugin.Tests.Services
             _hue.Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()))
                 .ThrowsAsync(new InvalidOperationException("bridge offline"));
 
-            (await Execute(LightAction.Stop, MakeProfile())).Should().Be(LightCommandOutcome.Failed);
+            var result = await _executor.ExecuteAsync(LightAction.Stop, _bridge, MakeProfile(), CancellationToken.None);
+
+            result.Outcome.Should().Be(LightCommandOutcome.Failed);
+            result.Reason.Should().Be(HueService.UnhandledReason);
         }
 
         [Fact]

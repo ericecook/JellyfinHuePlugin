@@ -53,9 +53,9 @@ namespace JellyfinHuePlugin.Tests.Managers
             _hue = new Mock<HueService>(new NullLogger<HueService>(), new MdnsBridgeDiscovery(NullLogger<MdnsBridgeDiscovery>.Instance)) { CallBase = false };
             _hue.Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()))
                 .Callback<HueBridge, string, GroupedLightState, CancellationToken>((_, _, s, _) => _sentBrightness.Add((int?)s.Brightness))
-                .ReturnsAsync(true);
+                .ReturnsAsync(HueOutcome.Success);
             _hue.Setup(h => h.RecallSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(true);
+                .ReturnsAsync(HueOutcome.Success);
 
             _catalog = new Mock<HueResourceCatalog>(_hue.Object, NullLogger<HueResourceCatalog>.Instance) { CallBase = false };
             _catalog.Setup(c => c.ResolveGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
@@ -129,10 +129,10 @@ namespace JellyfinHuePlugin.Tests.Managers
                 It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()), times);
 
         /// <summary>Blocks every call that sends the given brightness, for the rest of the test, until the returned release completes.</summary>
-        private (Task Entered, TaskCompletionSource<bool> Release) GateBrightness(int brightness)
+        private (Task Entered, TaskCompletionSource<HueOutcome> Release) GateBrightness(int brightness)
         {
             var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource<HueOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
             _hue.Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(),
                     It.Is<GroupedLightState>(s => s.Brightness == brightness), It.IsAny<CancellationToken>()))
                 .Callback<HueBridge, string, GroupedLightState, CancellationToken>((_, _, s, _) =>
@@ -410,7 +410,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             var stop = _manager.OnPlaybackStoppedAsync(Stop(session, new Movie()));
 
             VerifyBrightness(100, Times.Never()); // queued behind the blocked play
-            release.SetResult(true);
+            release.SetResult(HueOutcome.Success);
             await Task.WhenAll(start, stop);
 
             _sentBrightness.Should().Equal(20, 100);
@@ -514,7 +514,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             var start = _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
 
             VerifyBrightness(20, Times.Once()); // only the first play; the second waits behind the blocked stop
-            release.SetResult(true);
+            release.SetResult(HueOutcome.Success);
             await Task.WhenAll(stop, start);
 
             VerifyBrightness(20, Times.Exactly(2));
@@ -531,7 +531,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             var start = _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
 
             VerifyBrightness(20, Times.Never()); // start waits behind the blocked stop, sharing its queue
-            release.SetResult(true);
+            release.SetResult(HueOutcome.Success);
             await Task.WhenAll(stop, start);
 
             VerifyBrightness(20, Times.Once());
@@ -550,7 +550,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             var start2 = _manager.OnPlaybackStartAsync(Progress(session, new Movie()));
 
             VerifyBrightness(20, Times.Once()); // only the first start; start2 waits behind the blocked session-ended stop
-            release.SetResult(true);
+            release.SetResult(HueOutcome.Success);
             await Task.WhenAll(ended, start2);
 
             VerifyBrightness(20, Times.Exactly(2));
@@ -565,7 +565,7 @@ namespace JellyfinHuePlugin.Tests.Managers
         {
             CancellationToken observed = default;
             var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            var release = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var release = new TaskCompletionSource<HueOutcome>(TaskCreationOptions.RunContinuationsAsynchronously);
             _hue.Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()))
                 .Callback<HueBridge, string, GroupedLightState, CancellationToken>((_, _, _, token) => { observed = token; entered.TrySetResult(); })
                 .Returns(() => release.Task);
@@ -575,7 +575,7 @@ namespace JellyfinHuePlugin.Tests.Managers
             await entered.Task;
             _manager.Dispose();
             observed.IsCancellationRequested.Should().BeTrue();
-            release.SetResult(true);
+            release.SetResult(HueOutcome.Success);
             await start;
 
             await _manager.OnPlaybackProgressAsync(Progress(session, new Movie(), paused: true));

@@ -31,6 +31,9 @@ namespace JellyfinHuePlugin.Services
         Failed
     }
 
+    /// <summary>What ExecuteAsync did, and why when Outcome is Failed. Reason is null for every other outcome.</summary>
+    public readonly record struct LightCommandResult(LightCommandOutcome Outcome, string? Reason);
+
     /// <summary>
     /// The one place that turns a light action into HueService calls, for playback and for the
     /// plugin page's Test buttons. Resolves the profile's target group and scenes through the
@@ -54,32 +57,32 @@ namespace JellyfinHuePlugin.Services
         /// Sends the profile's commands for the action to the bridge and reports the outcome.
         /// Warns and returns <see cref="LightCommandOutcome.BridgeNotConfigured"/> when the bridge
         /// has no IP or username; returns an unresolved outcome when the catalog cannot resolve the
-        /// target (the catalog warns); returns <see cref="LightCommandOutcome.Failed"/> when
-        /// HueService reports failure or throws (logged). Lets OperationCanceledException
-        /// propagate when the token is cancelled.
+        /// target (the catalog warns); returns <see cref="LightCommandOutcome.Failed"/>, with the
+        /// service's reason, when HueService reports failure or throws (logged). Lets
+        /// OperationCanceledException propagate when the token is cancelled.
         /// </summary>
-        public virtual async Task<LightCommandOutcome> ExecuteAsync(LightAction action, HueBridge bridge, LightControlProfile profile, CancellationToken cancellationToken)
+        public virtual async Task<LightCommandResult> ExecuteAsync(LightAction action, HueBridge bridge, LightControlProfile profile, CancellationToken cancellationToken)
         {
             if (string.IsNullOrWhiteSpace(bridge.IpAddress) || string.IsNullOrWhiteSpace(bridge.Username))
             {
                 _logger.LogWarning("Bridge {BridgeName} not fully configured", bridge.Name);
-                return LightCommandOutcome.BridgeNotConfigured;
+                return new LightCommandResult(LightCommandOutcome.BridgeNotConfigured, null);
             }
 
             var started = Stopwatch.GetTimestamp();
             try
             {
-                var outcome = action switch
+                var result = action switch
                 {
                     LightAction.Play => await PlayAsync(bridge, profile, cancellationToken),
                     LightAction.Pause => await PauseAsync(bridge, profile, cancellationToken),
                     LightAction.Stop => await StopAsync(bridge, profile, cancellationToken),
-                    _ => LightCommandOutcome.Failed
+                    _ => new LightCommandResult(LightCommandOutcome.Failed, null)
                 };
 
                 _logger.LogDebug("[{ProfileName}] {Action} command finished in {ElapsedMs} ms ({Outcome})",
-                    profile.Name, action, (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds, outcome);
-                return outcome;
+                    profile.Name, action, (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds, result.Outcome);
+                return result;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -88,7 +91,7 @@ namespace JellyfinHuePlugin.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error controlling Hue lights for state {State}", action);
-                return LightCommandOutcome.Failed;
+                return new LightCommandResult(LightCommandOutcome.Failed, HueService.UnhandledReason);
             }
         }
 
@@ -101,9 +104,10 @@ namespace JellyfinHuePlugin.Services
         /// <summary>The page clamps on save, but a profile can also arrive through the generic configuration save or the test endpoint.</summary>
         private static int Percent(int brightness) => Math.Clamp(brightness, 0, 100);
 
-        private static LightCommandOutcome Sent(bool accepted) => accepted ? LightCommandOutcome.Succeeded : LightCommandOutcome.Failed;
+        private static LightCommandResult Sent(HueOutcome outcome) =>
+            outcome.Ok ? new LightCommandResult(LightCommandOutcome.Succeeded, null) : new LightCommandResult(LightCommandOutcome.Failed, outcome.Reason);
 
-        private async Task<LightCommandOutcome> PlayAsync(HueBridge bridge, LightControlProfile profile, CancellationToken cancellationToken)
+        private async Task<LightCommandResult> PlayAsync(HueBridge bridge, LightControlProfile profile, CancellationToken cancellationToken)
         {
             var durationMs = DurationMs(profile.EnablePlayTransition, profile.PlayTransitionDuration);
 
@@ -112,7 +116,7 @@ namespace JellyfinHuePlugin.Services
                 var sceneId = await _catalog.ResolveSceneAsync(bridge, profile.PlaySceneId, cancellationToken);
                 if (sceneId == null)
                 {
-                    return LightCommandOutcome.SceneUnresolved;
+                    return new LightCommandResult(LightCommandOutcome.SceneUnresolved, null);
                 }
 
                 _logger.LogInformation("[{ProfileName}] Activating play scene {SceneId}", profile.Name, profile.PlaySceneId);
@@ -122,7 +126,7 @@ namespace JellyfinHuePlugin.Services
             var groupedLightId = await _catalog.ResolveGroupedLightAsync(bridge, profile.TargetGroupId, cancellationToken);
             if (groupedLightId == null)
             {
-                return LightCommandOutcome.GroupUnresolved;
+                return new LightCommandResult(LightCommandOutcome.GroupUnresolved, null);
             }
 
             if (profile.TurnOffLightsOnPlay)
@@ -138,7 +142,7 @@ namespace JellyfinHuePlugin.Services
                 new GroupedLightState { On = true, Brightness = brightness, DurationMs = durationMs }, cancellationToken));
         }
 
-        private async Task<LightCommandOutcome> PauseAsync(HueBridge bridge, LightControlProfile profile, CancellationToken cancellationToken)
+        private async Task<LightCommandResult> PauseAsync(HueBridge bridge, LightControlProfile profile, CancellationToken cancellationToken)
         {
             var durationMs = DurationMs(profile.EnablePauseTransition, profile.PauseTransitionDuration);
 
@@ -147,7 +151,7 @@ namespace JellyfinHuePlugin.Services
                 var sceneId = await _catalog.ResolveSceneAsync(bridge, profile.PauseSceneId, cancellationToken);
                 if (sceneId == null)
                 {
-                    return LightCommandOutcome.SceneUnresolved;
+                    return new LightCommandResult(LightCommandOutcome.SceneUnresolved, null);
                 }
 
                 _logger.LogInformation("[{ProfileName}] Activating pause scene {SceneId}", profile.Name, profile.PauseSceneId);
@@ -157,7 +161,7 @@ namespace JellyfinHuePlugin.Services
             var groupedLightId = await _catalog.ResolveGroupedLightAsync(bridge, profile.TargetGroupId, cancellationToken);
             if (groupedLightId == null)
             {
-                return LightCommandOutcome.GroupUnresolved;
+                return new LightCommandResult(LightCommandOutcome.GroupUnresolved, null);
             }
 
             var brightness = Percent(profile.PauseBrightness);
@@ -166,7 +170,7 @@ namespace JellyfinHuePlugin.Services
                 new GroupedLightState { On = true, Brightness = brightness, DurationMs = durationMs }, cancellationToken));
         }
 
-        private async Task<LightCommandOutcome> StopAsync(HueBridge bridge, LightControlProfile profile, CancellationToken cancellationToken)
+        private async Task<LightCommandResult> StopAsync(HueBridge bridge, LightControlProfile profile, CancellationToken cancellationToken)
         {
             var durationMs = DurationMs(profile.EnableStopTransition, profile.StopTransitionDuration);
 
@@ -175,7 +179,7 @@ namespace JellyfinHuePlugin.Services
                 var sceneId = await _catalog.ResolveSceneAsync(bridge, profile.StopSceneId, cancellationToken);
                 if (sceneId == null)
                 {
-                    return LightCommandOutcome.SceneUnresolved;
+                    return new LightCommandResult(LightCommandOutcome.SceneUnresolved, null);
                 }
 
                 _logger.LogInformation("[{ProfileName}] Activating stop scene {SceneId}", profile.Name, profile.StopSceneId);
@@ -185,7 +189,7 @@ namespace JellyfinHuePlugin.Services
             var groupedLightId = await _catalog.ResolveGroupedLightAsync(bridge, profile.TargetGroupId, cancellationToken);
             if (groupedLightId == null)
             {
-                return LightCommandOutcome.GroupUnresolved;
+                return new LightCommandResult(LightCommandOutcome.GroupUnresolved, null);
             }
 
             var brightness = Percent(profile.StopBrightness);

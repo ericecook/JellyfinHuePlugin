@@ -1,10 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Net.Http;
 using System.Net.Security;
+using System.Net.Sockets;
+using System.Security.Authentication;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Threading.Tasks;
 using FluentAssertions;
+using JellyfinHuePlugin.Configuration;
 using JellyfinHuePlugin.Services;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -164,6 +169,62 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             HueService.ShouldAcceptBridgeCertificate(RequestWithoutOption(), null, SslPolicyErrors.None, Roots, NullLogger.Instance, chainOnly: true)
                 .Should().BeFalse();
+        }
+
+        /// <summary>
+        /// Spec Fact 9, proven end to end through the production pipeline rather than by calling
+        /// ShouldAcceptBridgeCertificate directly: a loopback SslStream server presents a
+        /// self-signed certificate no root in HueService trusts, over a real TLS handshake, to a
+        /// HueService built with its real (non-mock) constructor -- the same HttpClientHandler and
+        /// ServerCertificateCustomValidationCallback a deployed plugin uses. If SendWithRetryAsync's
+        /// verdict-tagging (CertificateRejectionOption -> Exception.Data -> DescribeThrownRequest)
+        /// did not actually work, this would surface as the generic "didn't answer" reason instead.
+        /// </summary>
+        [Fact]
+        public async Task PinnedRequest_RealHandshakeRejectsTheCertificate_ReasonNamesTheStoredCertificate()
+        {
+            using var serverCert = MakeSelfSigned("not-a-trusted-hue-root");
+            using var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+            var serverTask = Task.Run(async () =>
+            {
+                using var tcpClient = await listener.AcceptTcpClientAsync();
+                using var sslStream = new SslStream(tcpClient.GetStream(), leaveInnerStreamOpen: false);
+                try
+                {
+                    await sslStream.AuthenticateAsServerAsync(serverCert, false, SslProtocols.None, false);
+                }
+                catch (Exception)
+                {
+                    // Expected: the client aborts the handshake once its callback rejects the cert.
+                }
+            });
+
+            var mdns = new MdnsBridgeDiscovery(NullLogger<MdnsBridgeDiscovery>.Instance);
+            using var service = new HueService(NullLogger<HueService>.Instance, mdns);
+            var bridge = new HueBridge
+            {
+                Id = "b1",
+                Name = "Loopback",
+                IpAddress = $"127.0.0.1:{port}",
+                Username = "0123456789012345678901234567890123456789",
+                HardwareId = BridgeId // already known, so PrepareAsync skips straight to the pinned request
+            };
+
+            var result = await service.GetGroupsAsync(bridge, new[] { "room" });
+
+            await serverTask;
+            result.Ok.Should().BeFalse();
+            result.Reason.Should().Be("The bridge's certificate doesn't match the stored one. Authenticate again to store the new one.");
+        }
+
+        private static X509Certificate2 MakeSelfSigned(string cn)
+        {
+            using var key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            var request = new CertificateRequest($"CN={cn}", key, HashAlgorithmName.SHA256);
+            return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
         }
     }
 }

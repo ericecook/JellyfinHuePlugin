@@ -71,10 +71,10 @@ namespace JellyfinHuePlugin.Tests.Managers
 
             _mockHueService
                 .Setup(h => h.SetGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<GroupedLightState>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(true);
+                .ReturnsAsync(HueOutcome.Success);
             _mockHueService
                 .Setup(h => h.RecallSceneAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<CancellationToken>()))
-                .ReturnsAsync(true);
+                .ReturnsAsync(HueOutcome.Success);
 
             _mockCatalog = new Mock<HueResourceCatalog>(_mockHueService.Object, NullLogger<HueResourceCatalog>.Instance) { CallBase = false };
             _mockCatalog.Setup(c => c.ResolveGroupedLightAsync(It.IsAny<HueBridge>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))

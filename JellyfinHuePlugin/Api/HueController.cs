@@ -59,10 +59,11 @@ namespace JellyfinHuePlugin.Api
         {
             _logger.LogInformation("API: Attempting authentication with bridge {BridgeIp}", request.BridgeIp);
 
-            var outcome = await _hueService.AuthenticateAsync(request.BridgeIp, cancellationToken);
+            var result = await _hueService.AuthenticateAsync(request.BridgeIp, cancellationToken);
 
-            if (outcome != null)
+            if (result.Ok)
             {
+                var outcome = result.Value!;
                 var username = outcome.Username;
                 var config = _configuration.Current;
 
@@ -111,7 +112,7 @@ namespace JellyfinHuePlugin.Api
             return Ok(new AuthenticationResult
             {
                 Success = false,
-                Error = "Authentication failed. Press the link button on the bridge and try again; the Jellyfin log names the reason (link button, unsupported bridge software, or certificate)."
+                Error = result.Reason
             });
         }
 
@@ -133,12 +134,13 @@ namespace JellyfinHuePlugin.Api
 
             _logger.LogInformation("API: Getting rooms, zones and scenes from bridge {BridgeName}", bridge.Name);
 
-            var targets = await _catalog.ReadTargetsAsync(bridge, cancellationToken);
-            if (targets == null)
+            var result = await _catalog.ReadTargetsAsync(bridge, cancellationToken);
+            if (!result.Ok)
             {
-                return StatusCode(500, "Failed to retrieve rooms, zones and scenes");
+                return StatusCode(500, result.Reason);
             }
 
+            var targets = result.Value!;
             return Ok(new TargetsResult
             {
                 Groups = targets.Groups.ToDictionary(g => g.GroupedLightId),
@@ -159,23 +161,24 @@ namespace JellyfinHuePlugin.Api
             var bridge = _configuration.Current.FindProfileBridge(profile);
             if (bridge == null)
             {
-                return Ok(new TestLightResult { Error = TestError(LightCommandOutcome.BridgeNotConfigured) });
+                return Ok(new TestLightResult { Error = TestError(new LightCommandResult(LightCommandOutcome.BridgeNotConfigured, null)) });
             }
 
             _logger.LogInformation("API: Testing {Action} for profile {ProfileName} on bridge {BridgeName}", action, profile.Name, bridge.Name);
 
-            var outcome = await _executor.ExecuteAsync(action, bridge, profile, cancellationToken);
-            return Ok(new TestLightResult { Success = outcome == LightCommandOutcome.Succeeded, Error = TestError(outcome) });
+            var result = await _executor.ExecuteAsync(action, bridge, profile, cancellationToken);
+            return Ok(new TestLightResult { Success = result.Outcome == LightCommandOutcome.Succeeded, Error = TestError(result) });
         }
 
         /// <summary>The reason the page shows under the Test button; null on success.</summary>
-        private static string? TestError(LightCommandOutcome outcome) => outcome switch
+        private static string? TestError(LightCommandResult result) => result.Outcome switch
         {
             LightCommandOutcome.Succeeded => null,
-            LightCommandOutcome.BridgeNotConfigured => "Bridge not configured",
-            LightCommandOutcome.SceneUnresolved => "Scene not found on the bridge, or the bridge could not be reached; re-select it or check the server logs",
-            LightCommandOutcome.GroupUnresolved => "Target group not found on the bridge, or the bridge could not be reached; re-select it or check the server logs",
-            _ => "The bridge did not accept the command; check the server logs"
+            LightCommandOutcome.BridgeNotConfigured => "This profile has no bridge, or its bridge has no key.",
+            LightCommandOutcome.SceneUnresolved => "That scene isn't on the bridge any more. Open the profile and pick it again.",
+            LightCommandOutcome.GroupUnresolved => "That room or zone isn't on the bridge any more. Open the profile and pick it again.",
+            LightCommandOutcome.Failed => result.Reason ?? HueService.UnhandledReason,
+            _ => HueService.UnhandledReason
         };
 
         [HttpPost("verifyconnection")]
@@ -187,12 +190,13 @@ namespace JellyfinHuePlugin.Api
 
             try
             {
-                var info = await _hueService.GetBridgeInfoAsync(request.BridgeIp, cancellationToken);
-                if (info == null)
+                var infoResult = await _hueService.GetBridgeInfoAsync(request.BridgeIp, cancellationToken);
+                if (!infoResult.Ok)
                 {
-                    return Ok(new VerifyConnectionResult { Success = false, Error = "The bridge did not answer /api/0/config. Check the address; the Jellyfin log names the reason." });
+                    return Ok(new VerifyConnectionResult { Success = false, Error = infoResult.Reason });
                 }
 
+                var info = infoResult.Value!;
                 var result = new VerifyConnectionResult
                 {
                     HardwareId = info.HardwareId,
@@ -204,20 +208,20 @@ namespace JellyfinHuePlugin.Api
 
                 if (!info.SupportsV2)
                 {
-                    result.Error = $"Bridge software {info.SoftwareVersion} does not support API v2; {HueService.MinimumV2SoftwareVersion} or newer is required.";
+                    result.Error = HueService.UnsupportedVersionReason(info.SoftwareVersion);
                     return Ok(result);
                 }
 
                 // Pin the probe to the id just learned, exactly as a configured bridge would be.
                 var probe = new HueBridge { Name = "verify", IpAddress = request.BridgeIp, Username = request.Username, HardwareId = info.HardwareId };
-                var lights = await _hueService.GetLightsAsync(probe, cancellationToken);
-                if (lights != null)
+                var lightsResult = await _hueService.GetLightsAsync(probe, cancellationToken);
+                if (lightsResult.Ok)
                 {
                     result.Success = true;
                     return Ok(result);
                 }
 
-                result.Error = "Bridge returned no data. The API key may be invalid, or the bridge certificate was rejected; the Jellyfin log names the reason.";
+                result.Error = lightsResult.Reason;
                 return Ok(result);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -227,7 +231,7 @@ namespace JellyfinHuePlugin.Api
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Bridge verification failed for {BridgeIp}", request.BridgeIp);
-                return Ok(new VerifyConnectionResult { Success = false, Error = "Connection failed: " + ex.Message });
+                return Ok(new VerifyConnectionResult { Success = false, Error = HueService.UnhandledReason });
             }
         }
     }

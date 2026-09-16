@@ -101,28 +101,30 @@ namespace JellyfinHuePlugin.Services
 
         /// <summary>
         /// The bridge's rooms and zones, then its scenes with GroupName filled, read from the bridge
-        /// on every call; nothing is cached. Null when either read fails.
+        /// on every call; nothing is cached. A failed read's reason reaches the caller.
         /// </summary>
-        public virtual async Task<HueTargets?> ReadTargetsAsync(HueBridge bridge, CancellationToken cancellationToken)
+        public virtual async Task<HueResult<HueTargets>> ReadTargetsAsync(HueBridge bridge, CancellationToken cancellationToken)
         {
-            var groups = await _hueService.GetGroupsAsync(bridge, RoomAndZone, cancellationToken);
-            if (groups == null)
+            var groupsResult = await _hueService.GetGroupsAsync(bridge, RoomAndZone, cancellationToken);
+            if (!groupsResult.Ok)
             {
-                return null;
+                return HueResult<HueTargets>.Failure(groupsResult.Reason!);
             }
 
-            var scenes = await _hueService.GetScenesAsync(bridge, cancellationToken);
-            if (scenes == null)
+            var scenesResult = await _hueService.GetScenesAsync(bridge, cancellationToken);
+            if (!scenesResult.Ok)
             {
-                return null;
+                return HueResult<HueTargets>.Failure(scenesResult.Reason!);
             }
 
+            var groups = groupsResult.Value!;
+            var scenes = scenesResult.Value!;
             var groupsById = groups.ToDictionary(g => g.Id, StringComparer.Ordinal);
             var enriched = scenes
                 .Select(s => groupsById.TryGetValue(s.GroupId, out var g) ? s with { GroupName = g.Name } : s)
                 .ToList();
 
-            return new HueTargets(groups, enriched);
+            return HueResult<HueTargets>.Success(new HueTargets(groups, enriched));
         }
 
         /// <summary>
@@ -238,14 +240,17 @@ namespace JellyfinHuePlugin.Services
                     return new LoadResult(home, false, false);
                 }
 
-                var groups = await _hueService.GetGroupsAsync(bridge, BridgeHome, cancellationToken);
-                if (groups == null)
+                var groupsResult = await _hueService.GetGroupsAsync(bridge, BridgeHome, cancellationToken);
+                if (!groupsResult.Ok)
                 {
+                    // The reason travels no further than this: ResolveGroupedLightAsync only ever
+                    // reports "unreachable" vs. "not found" (LogUnresolved), not the reason text
+                    // itself -- only ReadTargetsAsync's caller sees the reason, per the design spec.
                     return new LoadResult(null, true, false);
                 }
 
                 // No bridge home with a grouped_light service: not cached, so the next resolve reads again.
-                var fresh = groups.FirstOrDefault(g => g.Type == "bridge_home")?.GroupedLightId;
+                var fresh = groupsResult.Value!.FirstOrDefault(g => g.Type == "bridge_home")?.GroupedLightId;
                 if (fresh == null)
                 {
                     return new LoadResult(null, false, false);

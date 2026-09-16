@@ -79,10 +79,11 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task GetBridgeInfo_ParsesConfigAndLowersTheId()
         {
-            var info = await _service.GetBridgeInfoAsync("https://192.168.1.50/");
+            var result = await _service.GetBridgeInfoAsync("https://192.168.1.50/");
 
-            info.Should().NotBeNull();
-            info!.HardwareId.Should().Be(BridgeId);
+            result.Ok.Should().BeTrue();
+            var info = result.Value!;
+            info.HardwareId.Should().Be(BridgeId);
             info.SoftwareVersion.Should().Be("1968004000");
             info.ModelId.Should().Be("BSB002");
             info.SupportsV2.Should().BeTrue();
@@ -103,17 +104,18 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             _handler.Responses["/api/0/config"] = (HttpStatusCode.OK, $@"{{""swversion"":""{swversion}"",""bridgeid"":""{BridgeId}""}}");
 
-            var info = await _service.GetBridgeInfoAsync("192.168.1.50");
+            var result = await _service.GetBridgeInfoAsync("192.168.1.50");
 
-            info!.SupportsV2.Should().Be(expected);
+            result.Value!.SupportsV2.Should().Be(expected);
         }
 
         [Fact]
         public async Task GetBridgeInfo_InvalidAddress_SendsNothing()
         {
-            var info = await _service.GetBridgeInfoAsync("user@host");
+            var result = await _service.GetBridgeInfoAsync("user@host");
 
-            info.Should().BeNull();
+            result.Ok.Should().BeFalse();
+            result.Reason.Should().Be("\"user@host\" isn't a valid address.");
             _handler.Requests.Should().BeEmpty();
             _log.Lines.Should().ContainSingle(l => l.Contains("is not a valid host"));
         }
@@ -123,9 +125,10 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             _handler.Responses["/api"] = (HttpStatusCode.OK, $@"[{{""success"":{{""username"":""{Key}""}}}}]");
 
-            var outcome = await _service.AuthenticateAsync("192.168.1.50");
+            var result = await _service.AuthenticateAsync("192.168.1.50");
 
-            outcome.Should().Be(new AuthenticationOutcome(Key, BridgeId));
+            result.Ok.Should().BeTrue();
+            result.Value.Should().Be(new AuthenticationOutcome(Key, BridgeId));
             var post = _handler.Requests.Single(r => r.Path == "/api");
             post.Method.Should().Be(HttpMethod.Post);
             post.ExpectedBridgeId.Should().Be(BridgeId);
@@ -141,10 +144,44 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             _handler.Responses["/api"] = (HttpStatusCode.OK, @"[{""error"":{""type"":101,""address"":"""",""description"":""link button not pressed""}}]");
 
-            var outcome = await _service.AuthenticateAsync("192.168.1.50");
+            var result = await _service.AuthenticateAsync("192.168.1.50");
 
-            outcome.Should().BeNull();
+            result.Ok.Should().BeFalse();
+            result.Reason.Should().Be("The link button wasn't pressed. Press it on the bridge, then try again.");
             _log.Lines.Should().Contain(l => l.Contains("Authentication failed") && l.Contains("101"));
+        }
+
+        [Fact]
+        public async Task Authenticate_AnotherHueErrorType_ReasonNamesTheDescription()
+        {
+            _handler.Responses["/api"] = (HttpStatusCode.OK, @"[{""error"":{""type"":7,""address"":"""",""description"":""invalid value, false, for parameter, generateclientkey""}}]");
+
+            var result = await _service.AuthenticateAsync("192.168.1.50");
+
+            result.Ok.Should().BeFalse();
+            result.Reason.Should().Be("The bridge refused the request: invalid value, false, for parameter, generateclientkey.");
+        }
+
+        [Fact]
+        public async Task Authenticate_HtmlResponse_ReasonSaysNotABridge()
+        {
+            _handler.Responses["/api"] = (HttpStatusCode.OK, "<html><body>not a bridge</body></html>");
+
+            var result = await _service.AuthenticateAsync("192.168.1.50");
+
+            result.Ok.Should().BeFalse();
+            result.Reason.Should().Be("Something answered at that address, but it isn't a Hue bridge.");
+        }
+
+        [Fact]
+        public async Task Authenticate_UnparseableResponse_ReasonSaysCouldNotRead()
+        {
+            _handler.Responses["/api"] = (HttpStatusCode.OK, "{not json");
+
+            var result = await _service.AuthenticateAsync("192.168.1.50");
+
+            result.Ok.Should().BeFalse();
+            result.Reason.Should().Be("The bridge sent a response the plugin couldn't read.");
         }
 
         [Fact]
@@ -152,9 +189,10 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             _handler.Responses["/api/0/config"] = (HttpStatusCode.OK, $@"{{""swversion"":""1940000000"",""bridgeid"":""{BridgeId}""}}");
 
-            var outcome = await _service.AuthenticateAsync("192.168.1.50");
+            var result = await _service.AuthenticateAsync("192.168.1.50");
 
-            outcome.Should().BeNull();
+            result.Ok.Should().BeFalse();
+            result.Reason.Should().Be("Bridge software 1940000000 doesn't support the v2 API; 1948086000 or newer is required.");
             _handler.Requests.Should().NotContain(r => r.Path == "/api");
             _log.Lines.Should().Contain(l => l.Contains("not a supported v2 bridge"));
         }
@@ -164,9 +202,9 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             _handler.Responses["/clip/v2/resource/grouped_light/gl-1"] = (HttpStatusCode.OK, Empty);
 
-            var ok = await _service.SetGroupedLightAsync(Bridge(), "gl-1", new GroupedLightState { On = true, Brightness = 20, DurationMs = 400 });
+            var outcome = await _service.SetGroupedLightAsync(Bridge(), "gl-1", new GroupedLightState { On = true, Brightness = 20, DurationMs = 400 });
 
-            ok.Should().BeTrue();
+            outcome.Ok.Should().BeTrue();
             var put = _handler.Requests.Single();
             put.Method.Should().Be(HttpMethod.Put);
             put.Path.Should().Be("/clip/v2/resource/grouped_light/gl-1");
@@ -209,9 +247,10 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             _handler.Responses["/clip/v2/resource/grouped_light/gl-1"] = (HttpStatusCode.OK, @"{""errors"":[{""description"":""invalid value""}],""data"":[]}");
 
-            var ok = await _service.SetGroupedLightAsync(Bridge(), "gl-1", new GroupedLightState { On = true });
+            var outcome = await _service.SetGroupedLightAsync(Bridge(), "gl-1", new GroupedLightState { On = true });
 
-            ok.Should().BeFalse();
+            outcome.Ok.Should().BeFalse();
+            outcome.Reason.Should().Be("The bridge refused the request: invalid value.");
             _log.Lines.Should().Contain("Bridge error for grouped_light gl-1: invalid value");
         }
 
@@ -224,17 +263,18 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             _handler.Responses["/clip/v2/resource/grouped_light/gl-1"] = (status, body);
 
-            var ok = await _service.SetGroupedLightAsync(Bridge(), "gl-1", new GroupedLightState { On = true });
+            var outcome = await _service.SetGroupedLightAsync(Bridge(), "gl-1", new GroupedLightState { On = true });
 
-            ok.Should().BeFalse();
+            outcome.Ok.Should().BeFalse();
         }
 
         [Fact]
         public async Task SetGroupedLight_InvalidKey_SendsNothingAndNeverLogsIt()
         {
-            var ok = await _service.SetGroupedLightAsync(Bridge(key: "bad/key"), "gl-1", new GroupedLightState { On = true });
+            var outcome = await _service.SetGroupedLightAsync(Bridge(key: "bad/key"), "gl-1", new GroupedLightState { On = true });
 
-            ok.Should().BeFalse();
+            outcome.Ok.Should().BeFalse();
+            outcome.Reason.Should().Be("That API key isn't in the format a Hue bridge issues.");
             _handler.Requests.Should().BeEmpty();
             _log.Lines.Should().ContainSingle(l => l.Contains("API key is not valid"));
             _log.Lines.Should().NotContain(l => l.Contains("bad/key"));
@@ -243,9 +283,9 @@ namespace JellyfinHuePlugin.Tests.Services
         [Fact]
         public async Task SetGroupedLight_InvalidGroupedLightId_SendsNothing()
         {
-            var ok = await _service.SetGroupedLightAsync(Bridge(), "gl/../1", new GroupedLightState { On = true });
+            var outcome = await _service.SetGroupedLightAsync(Bridge(), "gl/../1", new GroupedLightState { On = true });
 
-            ok.Should().BeFalse();
+            outcome.Ok.Should().BeFalse();
             _handler.Requests.Should().BeEmpty();
         }
 
@@ -300,9 +340,9 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             _handler.Responses["/api/0/config"] = (HttpStatusCode.OK, $@"{{""swversion"":""1940000000"",""bridgeid"":""{BridgeId}""}}");
 
-            var ok = await _service.SetGroupedLightAsync(Bridge(bridgeId: ""), "gl-1", new GroupedLightState { On = true });
+            var outcome = await _service.SetGroupedLightAsync(Bridge(bridgeId: ""), "gl-1", new GroupedLightState { On = true });
 
-            ok.Should().BeFalse();
+            outcome.Ok.Should().BeFalse();
             _handler.Requests.Should().NotContain(r => r.Path.StartsWith("/clip"));
         }
 
@@ -311,9 +351,9 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             _handler.Responses["/clip/v2/resource/scene/sc-1"] = (HttpStatusCode.OK, Empty);
 
-            var ok = await _service.RecallSceneAsync(Bridge(), "sc-1", 400);
+            var outcome = await _service.RecallSceneAsync(Bridge(), "sc-1", 400);
 
-            ok.Should().BeTrue();
+            outcome.Ok.Should().BeTrue();
             var put = _handler.Requests.Single();
             put.Path.Should().Be("/clip/v2/resource/scene/sc-1");
             put.Header.Should().Be(Key);
@@ -342,9 +382,9 @@ namespace JellyfinHuePlugin.Tests.Services
             _handler.Responses["/clip/v2/resource/bridge_home"] = (HttpStatusCode.OK,
                 @"{""errors"":[],""data"":[{""id"":""home-1"",""id_v1"":""/groups/0"",""services"":[{""rid"":""gl-0"",""rtype"":""grouped_light""}]}]}");
 
-            var groups = await _service.GetGroupsAsync(Bridge(), AllGroupTypes);
+            var result = await _service.GetGroupsAsync(Bridge(), AllGroupTypes);
 
-            groups.Should().BeEquivalentTo(new[]
+            result.Value.Should().BeEquivalentTo(new[]
             {
                 new HueGroupResource("room-1", "gl-1", "Theater", "room"),
                 new HueGroupResource("zone-1", "gl-5", "Downstairs", "zone"),
@@ -354,14 +394,15 @@ namespace JellyfinHuePlugin.Tests.Services
         }
 
         [Fact]
-        public async Task GetGroups_AnyFailure_ReturnsNull()
+        public async Task GetGroups_AnyFailure_ReasonNamesTheStatus()
         {
             _handler.Responses["/clip/v2/resource/room"] = (HttpStatusCode.OK, Empty);
             // zone is unrouted → 404
 
-            var groups = await _service.GetGroupsAsync(Bridge(), AllGroupTypes);
+            var result = await _service.GetGroupsAsync(Bridge(), AllGroupTypes);
 
-            groups.Should().BeNull();
+            result.Ok.Should().BeFalse();
+            result.Reason.Should().Be("The bridge answered 404 Not Found.");
         }
 
         [Fact]
@@ -370,9 +411,9 @@ namespace JellyfinHuePlugin.Tests.Services
             _handler.Responses["/clip/v2/resource/bridge_home"] = (HttpStatusCode.OK,
                 @"{""errors"":[],""data"":[{""id"":""home-1"",""id_v1"":""/groups/0"",""services"":[{""rid"":""gl-0"",""rtype"":""grouped_light""}]}]}");
 
-            var groups = await _service.GetGroupsAsync(Bridge(), new[] { "bridge_home" });
+            var result = await _service.GetGroupsAsync(Bridge(), new[] { "bridge_home" });
 
-            groups.Should().Equal(new HueGroupResource("home-1", "gl-0", "All Lights", "bridge_home"));
+            result.Value.Should().Equal(new HueGroupResource("home-1", "gl-0", "All Lights", "bridge_home"));
             _handler.Requests.Should().ContainSingle().Which.Path.Should().Be("/clip/v2/resource/bridge_home");
         }
 
@@ -382,9 +423,9 @@ namespace JellyfinHuePlugin.Tests.Services
             _handler.Responses["/clip/v2/resource/scene"] = (HttpStatusCode.OK,
                 @"{""errors"":[],""data"":[{""id"":""sc-1"",""id_v1"":""/scenes/abc123"",""metadata"":{""name"":""Movie""},""group"":{""rid"":""room-1"",""rtype"":""room""}}]}");
 
-            var scenes = await _service.GetScenesAsync(Bridge());
+            var result = await _service.GetScenesAsync(Bridge());
 
-            scenes.Should().ContainSingle().Which.Should().Be(new HueSceneResource("sc-1", "Movie", "room-1"));
+            result.Value.Should().ContainSingle().Which.Should().Be(new HueSceneResource("sc-1", "Movie", "room-1"));
         }
 
         [Fact]
@@ -393,13 +434,81 @@ namespace JellyfinHuePlugin.Tests.Services
             _handler.Responses["/clip/v2/resource/light"] = (HttpStatusCode.OK,
                 @"{""errors"":[],""data"":[{""id"":""l-1"",""id_v1"":""/lights/8"",""metadata"":{""name"":""Lamp""},""on"":{""on"":true},""dimming"":{""brightness"":42.5}},{""id"":""l-2"",""metadata"":{""name"":""Plug""},""on"":{""on"":false}}]}");
 
-            var lights = await _service.GetLightsAsync(Bridge());
+            var result = await _service.GetLightsAsync(Bridge());
 
-            lights.Should().BeEquivalentTo(new[]
+            result.Value.Should().BeEquivalentTo(new[]
             {
                 new HueLightResource("l-1", "Lamp", true, 42.5),
                 new HueLightResource("l-2", "Plug", false, null)
             });
+        }
+
+        // --- One test per mapped reason not already exercised above (link button, another Hue
+        // error, unsupported software, HTML instead of JSON and an unparseable body are covered by
+        // the Authenticate_* tests; invalid host by GetBridgeInfo_InvalidAddress_SendsNothing). ---
+
+        [Fact]
+        public async Task GetGroups_BridgeRejects401_ReasonNamesTheKeyRejection()
+        {
+            _handler.Responses["/clip/v2/resource/room"] = (HttpStatusCode.Unauthorized, @"{""errors"":[{""description"":""unauthorized""}],""data"":[]}");
+
+            var result = await _service.GetGroupsAsync(Bridge(), new[] { "room" });
+
+            result.Ok.Should().BeFalse();
+            result.Reason.Should().Be("The bridge rejected the API key. Authenticate again.");
+        }
+
+        [Fact]
+        public async Task GetGroups_BridgeAnswersServiceUnavailable_ReasonNamesTheStatus()
+        {
+            _handler.Responses["/clip/v2/resource/room"] = (HttpStatusCode.ServiceUnavailable, @"{""errors"":[{""description"":""busy""}],""data"":[]}");
+
+            var result = await _service.GetGroupsAsync(Bridge(), new[] { "room" });
+
+            result.Ok.Should().BeFalse();
+            result.Reason.Should().Be("The bridge answered 503 Service Unavailable.");
+        }
+
+        [Fact]
+        public async Task GetGroups_UnparseableBody_ReasonSaysCouldNotRead()
+        {
+            _handler.Responses["/clip/v2/resource/room"] = (HttpStatusCode.OK, "{not json");
+
+            var result = await _service.GetGroupsAsync(Bridge(), new[] { "room" });
+
+            result.Ok.Should().BeFalse();
+            result.Reason.Should().Be("The bridge sent a response the plugin couldn't read.");
+        }
+
+        /// <summary>Throws synchronously on every send, simulating a timeout, a refused connection or a DNS failure -- the request never got a response at all.</summary>
+        private sealed class ThrowingHandler : HttpMessageHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+                => throw new HttpRequestException("Connection refused", new System.Net.Sockets.SocketException());
+        }
+
+        [Fact]
+        public async Task GetBridgeInfo_RequestThrew_ReasonSaysTheBridgeDidntAnswer()
+        {
+            var service = new HueService(_log, new ThrowingHandler());
+
+            var result = await service.GetBridgeInfoAsync("192.168.1.50");
+
+            result.Ok.Should().BeFalse();
+            result.Reason.Should().Be("The bridge at 192.168.1.50 didn't answer.");
+        }
+
+        [Fact]
+        public async Task GetGroups_RequestThrew_ReasonSaysTheBridgeDidntAnswer()
+        {
+            // A configured HardwareId lets PrepareAsync skip straight to the clip v2 request, so
+            // it's the resource fetch itself -- not the earlier bridge-info lookup -- that throws.
+            var service = new HueService(_log, new ThrowingHandler());
+
+            var result = await service.GetGroupsAsync(Bridge(), AllGroupTypes);
+
+            result.Ok.Should().BeFalse();
+            result.Reason.Should().Be("The bridge at 192.168.1.50 didn't answer.");
         }
 
         [Fact]
