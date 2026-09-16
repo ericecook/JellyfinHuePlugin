@@ -25,6 +25,20 @@ jobs:
           VERSION=$(grep '^version:' build.yaml | sed 's/version: *"\(.*\)"/\1/')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      # The zip is labelled with the build.yaml version and the manifest entry with the
+      # release tag; a mismatch would ship one under the other. deploy.sh keeps them in
+      # step, but a hand-made release would not.
+      - name: Check the tag matches build.yaml
+        if: github.event_name == 'release'
+        run: |
+          if [ "${{ github.event.release.tag_name }}" != "v${{ steps.version.outputs.version }}" ]; then
+            echo "Release tag ${{ github.event.release.tag_name }} does not match build.yaml version ${{ steps.version.outputs.version }}" >&2
+            exit 1
+          fi
+
+      - name: Test
+        run: dotnet test -c Release
+
       - name: Build plugin
         run: dotnet publish JellyfinHuePlugin/JellyfinHuePlugin.csproj -c Release -o ./output -p:AssemblyVersion=${{ steps.version.outputs.version }} -p:FileVersion=${{ steps.version.outputs.version }}
 
