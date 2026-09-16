@@ -1,0 +1,13 @@
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:latest
+    container_name: jellyfin
+    # Run as the host user so /srv/jellyfin stays writable without sudo (dev-deploy.sh copies into it).
+    user: "1000:1000"
+    ports:
+      - "8096:8096"
+    volumes:
+      - /srv/jellyfin/config:/config
+      - /srv/jellyfin/cache:/cache
+      - /media/Jellyfin:/media
+    restart: unless-stopped
