@@ -78,6 +78,92 @@ const TEMPLATES = [
 
 const DRAG_TYPE = 'application/x-hue-profile';
 
+// Every sentence the page can produce, grouped the way the design spec's message tables are, so a call site
+// holds a name and its values and never prose. Entries are plain strings, or functions of the values a call
+// site has on hand. Not every entry is wired to a call site yet - validation, discovery-inline, the device
+// picker and the two delete confirms move onto this catalog in later tasks; their entries live here now so
+// nothing is invented twice.
+const MESSAGES = {
+    // "This bridge/profile was removed" was eight different sentences before this catalog; now it is one,
+    // shared by every place that finds the thing it was about to act on already gone.
+    gone: subject => `This ${subject} was removed.`,
+
+    bridges: {
+        empty: 'No bridges configured. Click "Add Bridge" to discover and pair a Hue bridge.',
+        statusChecking: 'Checking…',
+        statusNoKey: 'Not authenticated',
+        statusConnected: 'Connected',
+        // The check itself can fail for a reason (the bridge answered) or for no reason at all (it never did)
+        statusFailed: reason => reason || 'The bridge could not be checked.',
+        // confirm, buttons Delete/Cancel - wired once confirmAction reaches the delete flows
+        deleteBridge: name => `Delete bridge "${name}"?`,
+        // dialog 'Not deleted'
+        bridgeInUse: names => `These profiles use this bridge: ${names}. Reassign or delete them first.`
+    },
+
+    bridgeModal: {
+        // field errors - wired once the bridge modal gains inline validation
+        addressMissing: "Enter the bridge's IP address.",
+        keyMissing: 'Authenticate with the bridge, or paste an API key.',
+        addressTaken: 'Another bridge already uses this address.',
+        // inline, beside the picker - still a toast until discovery moves inline
+        discoveryMany: n => `Found ${n} bridges — select one.`,
+        discoveryOne: ip => `Bridge found at ${ip}.`,
+        discoveryNone: 'No bridges answered. Enter the address manually.',
+        // Keeps its prefix when a reason exists; a bare `reason || fallback` here would silently drop
+        // "Discovery failed: " whenever discovery did return a reason
+        discoveryFailed: reason => reason ? `Discovery failed: ${reason}` : 'Discovery failed.',
+        // The modal's one status line, shared with discovery once that moves inline too. Falls back so an
+        // empty Error can never render a blank status line
+        verifyFailed: reason => reason || 'The bridge could not be checked.',
+        pairingAttempt: (n, max) => `Attempting to pair… (${n}/${max})`,
+        pairingRetry: s => `Retrying in ${s}s…`,
+        // Read after every failed attempt, so three failures in a row can read the same reason three times.
+        // Falls back so an empty Error can never render a blank progress line
+        pairingFailed: reason => reason || 'Pairing failed.',
+        pairingSaving: 'Paired; saving…',
+        pairedAfterClose: ip => `Pairing with ${ip} finished; the bridge was saved.`,
+        addedAfterClose: name => `Bridge "${name}" was saved.`,
+        // dialog 'Not saved'
+        bridgeNotShown: "The paired bridge isn't in the stored configuration, because another change was saved at the same moment. Pair it again."
+    },
+
+    profiles: {
+        empty: 'No profiles configured. Add your first profile to get started!',
+        // confirm, buttons Delete/Cancel - wired once confirmAction reaches the delete flows
+        deleteProfile: name => `Delete profile "${name}"?`,
+        // Falls back so a Success: false result with an empty Error can never render a blank line
+        testFailed: reason => reason || 'The test failed.',
+        // dialog 'Could not load'
+        renderFailed: message => `The profile list could not be drawn: ${message}`,
+        // field errors - wired once the editor gains inline validation
+        nameMissing: 'Enter a name for this profile.',
+        mediaTypeMissing: 'Enable Movies, TV Shows, or both.',
+        valueMissing: field => `Enter a value for ${field}.`,
+        bridgeMissing: 'Choose a bridge for this profile.',
+        targetsNoBridge: 'Choose a bridge to load its rooms and scenes.',
+        targetsFailed: (bridge, reason) => `Rooms and scenes couldn't be loaded from ${bridge}: ${reason} The saved selections are kept.`
+    },
+
+    devicePicker: {
+        // field errors - wired once the device picker gains inline validation
+        deviceNotChosen: 'Select a device.',
+        deviceIdMissing: 'Enter a Device ID.',
+        deviceDuplicate: 'That Device ID is already in the list.',
+        devicesFailed: "The device list couldn't be loaded from Jellyfin. Enter a Device ID manually."
+    },
+
+    load: {
+        failed: reason => `The plugin configuration couldn't be loaded: ${reason}`,
+        // dialog 'Not saved'
+        notLoaded: "The configuration hasn't finished loading.",
+        // dialog 'Not saved'
+        saveFailed: reason => `The change couldn't be saved: ${reason}`,
+        // dialog 'Could not refresh'
+        refreshFailed: reason => `The bridge list couldn't be reloaded: ${reason} Reload the page.`
+    }
+};
+
 function stateIds(state) {
     const name = state.name;
     const lower = name.toLowerCase();
@@ -119,14 +205,80 @@ function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
-// A short, truthful reason for a failed request: the HTTP status when the server answered, the message for
-// a network or script error
-function describeError(error) {
-    if (error && typeof error.status === 'number') {
+// A truthful, admin-facing reason for a failed request. The rejected value is the raw fetch Response
+// (Fact 1); its body is read once (Fact 2 - a second read throws) and resolved in order: a JSON object's
+// detail or title, or its first errors entry (ASP.NET model validation); a JSON string body (Fact 3); a
+// non-empty text body, trimmed; HTTP <status> <statusText> from the status (Fact 4, an empty body); the
+// exception's own message; 'unknown error' when nothing else is known.
+async function describeFailure(error) {
+    const isResponse = error instanceof Response || (error && typeof error.status === 'number' && typeof error.text === 'function');
+    if (isResponse) {
+        let body = '';
+        try {
+            body = await error.text();
+        } catch (_) {
+            body = '';
+        }
+        if (body) {
+            try {
+                const parsed = JSON.parse(body);
+                if (parsed && typeof parsed === 'object') {
+                    if (parsed.detail) return parsed.detail;
+                    if (parsed.title) return parsed.title;
+                    if (parsed.errors) {
+                        const first = Object.values(parsed.errors)[0];
+                        const message = Array.isArray(first) ? first[0] : first;
+                        if (message) return message;
+                    }
+                } else if (typeof parsed === 'string' && parsed) {
+                    return parsed;
+                }
+            } catch (_) {
+                // Not JSON: falls through to the raw text below
+            }
+            const trimmed = body.trim();
+            if (trimmed) return trimmed;
+        }
         return `HTTP ${error.status}${error.statusText ? ' ' + error.statusText : ''}`;
     }
     if (error && error.message) return error.message;
     return 'unknown error';
+}
+
+// Creates its message element the first time a field is invalid - no markup for this exists in
+// configPage.html yet, E wires ARIA to these ids later - right after the field, and marks the field so its
+// own styling can show the invalid state. clearFieldError undoes both.
+function fieldError(input, text) {
+    const id = input.id + 'Error';
+    let el = document.getElementById(id);
+    if (!el) {
+        el = document.createElement('div');
+        el.id = id;
+        el.className = 'fieldDescription hue-field-error';
+        input.insertAdjacentElement('afterend', el);
+    }
+    el.textContent = text;
+    el.style.display = '';
+    input.classList.add('hue-field-invalid');
+}
+
+function clearFieldError(input) {
+    const el = document.getElementById(input.id + 'Error');
+    if (el) el.style.display = 'none';
+    input.classList.remove('hue-field-invalid');
+}
+
+// The generic inline-status line: set the text and show or hide with it, so a call site never has to spell
+// out style.display itself. Used for Test results, pairing progress and the targets status line alike.
+function inlineStatus(el, text) {
+    el.textContent = text || '';
+    el.style.display = text ? '' : 'none';
+}
+
+// A success the page cannot show any other way. Jellyfin escapes this itself (Fact 6): never build it from
+// unescaped HTML.
+function toast(text) {
+    Dashboard.alert(text);
 }
 
 const deepCopy = value => JSON.parse(JSON.stringify(value));
@@ -465,13 +617,26 @@ export default function HueConfigPage(view) {
 
     const isGone = () => state.destroyed || !view.isConnected;
 
-    // ---- Queue operations ----
+    // ---- Messages ----
+    // Two of the five channel helpers live here because they need the page's own isGone(); the other three
+    // (fieldError/clearFieldError, inlineStatus, toast) are pure and live at module level above.
 
     // Errors that must stay until read: a Jellyfin dialog, not a toast. The dialog puts the message through
     // innerHTML, so it is escaped here; the title is set as text.
     function showError(title, detail) {
         Dashboard.alert({ title, message: escapeHtml(detail) });
     }
+
+    // Dashboard.confirm never resolves a promise (Fact 7): it always needs a callback, called exactly once,
+    // true for the confirm button and false for Cancel and for Back alike - both read as "no". Every value
+    // confirm renders is raw HTML (Fact 6); a call site must escape what it puts into options itself.
+    function confirmAction(options, onYes) {
+        Dashboard.confirm(options, options.title, confirmed => {
+            if (confirmed && !isGone()) onYes();
+        });
+    }
+
+    // ---- Queue operations ----
 
     // A modal's save button while its commit is out: disabled and reading "Saving…"
     function setSaving(button, saving, idleText) {
@@ -487,11 +652,11 @@ export default function HueConfigPage(view) {
 
     // An empty page after a failed load would look like a fresh install, and a save from it would overwrite
     // everything, so the failure replaces the bridge list and offers Retry
-    function renderLoadFailure(error) {
+    function renderLoadFailure(reason) {
         const container = $('#bridgesList');
         container.innerHTML = '<div class="hue-test-error hue-load-error"></div>' +
             '<button is="emby-button" type="button" class="raised" id="retryLoadButton"><span>Retry</span></button>';
-        container.querySelector('.hue-test-error').textContent = `Could not load the plugin configuration: ${describeError(error)}.`;
+        inlineStatus(container.querySelector('.hue-test-error'), MESSAGES.load.failed(reason));
         container.querySelector('#retryLoadButton').addEventListener('click', load);
     }
 
@@ -513,10 +678,11 @@ export default function HueConfigPage(view) {
                 updateConfigSectionVisibility();
                 $('#addBridgeButton').disabled = false;
             });
-        }).catch(error => {
+        }).catch(async error => {
             console.error('Error fetching configuration:', error);
             state.loaded = false;
-            if (!isGone()) renderLoadFailure(error);
+            const reason = await describeFailure(error);
+            if (!isGone()) renderLoadFailure(reason);
         }).then(() => Dashboard.hideLoadingMsg());
     }
 
@@ -526,7 +692,7 @@ export default function HueConfigPage(view) {
     // gone by the time its turn comes saves nothing.
     function commit(mutate) {
         if (!state.loaded) {
-            showError('Not saved', 'The configuration has not finished loading.');
+            showError('Not saved', MESSAGES.load.notLoaded);
             return Promise.resolve(false);
         }
         return enqueue(() => {
@@ -543,9 +709,9 @@ export default function HueConfigPage(view) {
                 adoptLists(draft.Bridges, draft.Profiles);
                 return true;
             });
-        }).catch(error => {
+        }).catch(async error => {
             console.error('Saving the configuration failed', error);
-            if (!isGone()) showError('Not saved', 'The configuration could not be saved: ' + describeError(error));
+            if (!isGone()) showError('Not saved', MESSAGES.load.saveFailed(await describeFailure(error)));
             return false;
         });
     }
@@ -581,10 +747,10 @@ export default function HueConfigPage(view) {
                     if (isGone()) return { result, adopted: false };
                     adoptLists(config.Bridges || [], config.Profiles || []);
                     return { result, adopted: true };
-                }, error => {
+                }, async error => {
                     console.error('Reloading the configuration failed', error);
                     if (isGone()) return { result, adopted: false };
-                    showError('Could not refresh', `The bridge list could not be reloaded: ${describeError(error)}. Reload the page.`);
+                    showError('Could not refresh', MESSAGES.load.refreshFailed(await describeFailure(error)));
                     return { result, adopted: false };
                 });
             });
@@ -603,7 +769,7 @@ export default function HueConfigPage(view) {
         state.bridgeStatus = {};
         const container = $('#bridgesList');
         if (state.bridges.length === 0) {
-            container.innerHTML = '<div class="fieldDescription">No bridges configured. Click "Add Bridge" to discover and pair a Hue bridge.</div>';
+            container.innerHTML = `<div class="fieldDescription">${MESSAGES.bridges.empty}</div>`;
             return;
         }
 
@@ -616,7 +782,7 @@ export default function HueConfigPage(view) {
                         <div class="hue-card-subtitle">${escapeHtml(bridge.IpAddress)}</div>
                         <div class="bridge-info"></div>
                         <div class="bridge-status ${hasKey ? 'bridge-status--checking' : 'bridge-status--nokey'}">
-                            <span class="bridge-status-dot"></span><span class="bridge-status-text">${hasKey ? 'Checking...' : 'Not authenticated'}</span>
+                            <span class="bridge-status-dot"></span><span class="bridge-status-text">${hasKey ? MESSAGES.bridges.statusChecking : MESSAGES.bridges.statusNoKey}</span>
                         </div>
                     </div>
                     <div class="hue-card-actions">
@@ -630,7 +796,7 @@ export default function HueConfigPage(view) {
         state.bridges.forEach(bridge => {
             if (!bridge.Username) return;
             const bridgeId = bridge.Id;
-            state.bridgeStatus[bridgeId] = { state: 'checking', text: 'Checking...', result: null };
+            state.bridgeStatus[bridgeId] = { state: 'checking', text: MESSAGES.bridges.statusChecking, result: null };
             ApiClient.ajax({
                 type: 'POST',
                 url: ApiClient.getUrl('api/hueplugin/verifyconnection'),
@@ -638,9 +804,9 @@ export default function HueConfigPage(view) {
                 contentType: 'application/json',
                 dataType: 'json'
             }).then(result => {
-                updateBridgeStatus(generation, bridgeId, result.Success, result.Success ? 'Connected' : (result.Error || 'Auth failed'), result);
+                updateBridgeStatus(generation, bridgeId, result.Success, result.Success ? MESSAGES.bridges.statusConnected : MESSAGES.bridges.statusFailed(result.Error), result);
             }).catch(() => {
-                updateBridgeStatus(generation, bridgeId, false, 'Connection error');
+                updateBridgeStatus(generation, bridgeId, false, MESSAGES.bridges.statusFailed());
             });
         });
     }
@@ -671,7 +837,7 @@ export default function HueConfigPage(view) {
         if (!bridge) return;
         const affected = profilesUsingBridge(state.profiles, state.bridges, bridgeId);
         if (affected.length > 0) {
-            Dashboard.alert(`Cannot delete this bridge. The following profiles still use it: ${affected.map(p => `"${p.Name}"`).join(', ')}. Reassign or delete those profiles first.`);
+            showError('Not deleted', MESSAGES.bridges.bridgeInUse(affected.map(p => `"${p.Name}"`).join(', ')));
             return;
         }
         if (!confirm(`Delete bridge "${bridge.Name}"?`)) return;
@@ -680,13 +846,13 @@ export default function HueConfigPage(view) {
         commit(draft => {
             const i = indexOfId(draft.Bridges, bridgeId);
             if (i < 0) {
-                showError('Not saved', 'This bridge was already removed.');
+                showError('Not saved', MESSAGES.gone('bridge'));
                 return false;
             }
             // Checked again on the lists being saved: a profile save that was still out may have moved a profile here
             const nowUsing = profilesUsingBridge(draft.Profiles, draft.Bridges, bridgeId);
             if (nowUsing.length > 0) {
-                showError('Not deleted', `These profiles now use this bridge: ${nowUsing.map(p => `"${p.Name}"`).join(', ')}. Reassign or delete them first.`);
+                showError('Not deleted', MESSAGES.bridges.bridgeInUse(nowUsing.map(p => `"${p.Name}"`).join(', ')));
                 return false;
             }
             draft.Bridges.splice(i, 1);
@@ -815,7 +981,7 @@ export default function HueConfigPage(view) {
         if (session.mode === 'edit') {
             stored = state.bridges[indexOfId(state.bridges, session.bridgeId)];
             if (!stored) {
-                showError('Not saved', 'This bridge was removed.');
+                showError('Not saved', MESSAGES.gone('bridge'));
                 return;
             }
             if (refusedAddress(session, ip)) return;
@@ -838,12 +1004,12 @@ export default function HueConfigPage(view) {
                 }
                 const i = indexOfId(draft.Bridges, session.bridgeId);
                 if (i < 0) {
-                    showError('Not saved', 'This bridge was removed.');
+                    showError('Not saved', MESSAGES.gone('bridge'));
                     return false;
                 }
                 // Checked again on the lists being saved: a bridge added meanwhile may have this address
                 if (normalizeAddress(ip) !== normalizeAddress(draft.Bridges[i].IpAddress) && addressTakenByAnother(draft.Bridges, ip, session.bridgeId)) {
-                    showError('Not saved', 'Another bridge already uses this address.');
+                    showError('Not saved', MESSAGES.bridgeModal.addressTaken);
                     return false;
                 }
                 // Unchanged address and key: only the name was possibly edited, so only the name is written here.
@@ -854,15 +1020,16 @@ export default function HueConfigPage(view) {
                     draft.Bridges[i].Name = name;
                 }
             }).then(saved => {
-                // A save already sent completes even if the modal was cancelled meanwhile
+                // A save already sent completes even if the modal was cancelled meanwhile; the page is gone
+                // from under it, so only a toast can say it landed
                 if (!live()) {
-                    if (saved && session.mode === 'add') Dashboard.alert(`Bridge "${storedName}" added!`);
+                    if (saved && session.mode === 'add') toast(MESSAGES.bridgeModal.addedAfterClose(storedName));
                     return;
                 }
                 idle();
                 if (!saved) return;
                 closeModal('bridgeModal');
-                if (session.mode === 'add') Dashboard.alert(`Bridge "${storedName}" added!`);
+                // The card already shows the added bridge once the modal closes; nothing more to say
             });
         };
 
@@ -929,7 +1096,7 @@ export default function HueConfigPage(view) {
         function tryPair() {
             attempt++;
             buttonText.textContent = `Attempt ${attempt}/${maxAttempts}...`;
-            progressText.textContent = `Attempting to pair... (${attempt}/${maxAttempts})`;
+            progressText.textContent = MESSAGES.bridgeModal.pairingAttempt(attempt, maxAttempts);
             countdown.textContent = '';
 
             pairOnce(request).then(({ result, adopted }) => {
@@ -939,9 +1106,10 @@ export default function HueConfigPage(view) {
                 }
                 // Cancelled: no further attempts, and nothing shown in a modal that has moved on
                 if (!live()) return;
+                progressText.textContent = MESSAGES.bridgeModal.pairingFailed(result.Error);
                 if (attempt < maxAttempts) {
                     let remaining = 3;
-                    countdown.textContent = `Retrying in ${remaining}s...`;
+                    countdown.textContent = MESSAGES.bridgeModal.pairingRetry(remaining);
                     const interval = setInterval(() => {
                         if (!live()) {
                             clearInterval(interval);
@@ -949,7 +1117,7 @@ export default function HueConfigPage(view) {
                         }
                         remaining--;
                         if (remaining > 0) {
-                            countdown.textContent = `Retrying in ${remaining}s...`;
+                            countdown.textContent = MESSAGES.bridgeModal.pairingRetry(remaining);
                         } else {
                             clearInterval(interval);
                             session.countdown = null;
@@ -960,8 +1128,7 @@ export default function HueConfigPage(view) {
                     session.countdown = interval;
                 } else {
                     idle();
-                    progressText.textContent = `Authentication failed after ${maxAttempts} attempts.`;
-                    countdown.textContent = 'Press the link button on your Hue bridge and try again.';
+                    countdown.textContent = '';
                 }
             }).catch(error => {
                 console.error('Authentication error:', error);
@@ -982,13 +1149,13 @@ export default function HueConfigPage(view) {
         const live = () => isLiveBridgeSession(session);
         if (live()) {
             bridgeField('#bridgeKey').value = result.Username;
-            bridgeField('#bridgeAuthProgressText').textContent = 'Paired; saving…';
+            bridgeField('#bridgeAuthProgressText').textContent = MESSAGES.bridgeModal.pairingSaving;
             bridgeField('#bridgeAuthCountdown').textContent = '';
         }
 
         const finish = stored => {
             if (!live()) {
-                if (stored) Dashboard.alert(`Pairing with ${ip} completed; the bridge was saved.`);
+                if (stored) toast(MESSAGES.bridgeModal.pairedAfterClose(ip));
                 return;
             }
             setBridgeBusy(false);
@@ -996,7 +1163,7 @@ export default function HueConfigPage(view) {
             showPairingProgress(false);
             if (!stored) return;
             closeModal('bridgeModal');
-            Dashboard.alert(session.mode === 'edit' ? `Bridge "${stored.Name}" paired again.` : `Bridge "${stored.Name}" added and authenticated!`);
+            // The card already shows the paired bridge once the modal closes; nothing more to say
         };
 
         if (!adopted) {
@@ -1006,7 +1173,7 @@ export default function HueConfigPage(view) {
         const storedBridge = () => state.bridges[indexOfId(state.bridges, result.Id)] || null;
         const bridge = storedBridge();
         if (!bridge) {
-            showError('Bridge not shown', 'The paired bridge is not in the stored configuration, probably because another change was saved at the same moment. Pair it again.');
+            showError('Not saved', MESSAGES.bridgeModal.bridgeNotShown);
             finish(null);
             return;
         }
@@ -1019,7 +1186,7 @@ export default function HueConfigPage(view) {
         commit(draft => {
             const i = indexOfId(draft.Bridges, result.Id);
             if (i < 0) {
-                showError('Not saved', 'The paired bridge was removed before its name could be saved.');
+                showError('Not saved', MESSAGES.gone('bridge'));
                 return false;
             }
             draft.Bridges[i].Name = typedName;
@@ -1036,7 +1203,7 @@ export default function HueConfigPage(view) {
             const container = $('#profilesList');
             const profiles = state.profiles;
             if (profiles.length === 0) {
-                container.innerHTML = '<div class="fieldDescription">No profiles configured. Add your first profile to get started!</div>';
+                container.innerHTML = `<div class="fieldDescription">${MESSAGES.profiles.empty}</div>`;
                 return;
             }
 
@@ -1067,7 +1234,7 @@ export default function HueConfigPage(view) {
             }).join('') + '</div>';
         } catch (error) {
             console.error('Error rendering profiles:', error);
-            Dashboard.alert('Error rendering profiles: ' + error.message);
+            showError('Could not load', MESSAGES.profiles.renderFailed(error.message));
         }
     }
 
@@ -1087,7 +1254,7 @@ export default function HueConfigPage(view) {
         const profile = state.profiles[indexOfId(state.profiles, profileId)];
         const card = profileCard(profileId);
         if (!profile || !card) return;
-        card.querySelector('.profile-test-error').style.display = 'none';
+        inlineStatus(card.querySelector('.profile-test-error'), null);
         showTestState(card.querySelector('.profile-menu-button'), 'busy');
 
         runTest(action, profile).then(result => {
@@ -1095,11 +1262,7 @@ export default function HueConfigPage(view) {
             const current = profileCard(profileId);
             if (!current) return;
             showTestState(current.querySelector('.profile-menu-button'), result.Success ? 'ok' : 'fail', '&#x22EE;');
-            if (!result.Success) {
-                const errorLine = current.querySelector('.profile-test-error');
-                errorLine.textContent = result.Error || 'Test failed; check the server logs';
-                errorLine.style.display = '';
-            }
+            inlineStatus(current.querySelector('.profile-test-error'), result.Success ? null : MESSAGES.profiles.testFailed(result.Error));
         });
     }
 
@@ -1109,7 +1272,7 @@ export default function HueConfigPage(view) {
         commit(draft => {
             const i = indexOfId(draft.Profiles, profileId);
             if (i < 0) {
-                showError('Not saved', 'This profile was removed before it could be duplicated.');
+                showError('Not saved', MESSAGES.gone('profile'));
                 return false;
             }
             const copy = deepCopy(draft.Profiles[i]);
@@ -1123,7 +1286,7 @@ export default function HueConfigPage(view) {
         commit(draft => {
             const from = indexOfId(draft.Profiles, profileId);
             if (from < 0) {
-                showError('Not saved', 'This profile was removed before it could be moved.');
+                showError('Not saved', MESSAGES.gone('profile'));
                 return false;
             }
             const to = from + direction;
@@ -1138,7 +1301,7 @@ export default function HueConfigPage(view) {
         commit(draft => {
             const i = indexOfId(draft.Profiles, profileId);
             if (i < 0) {
-                showError('Not saved', 'This profile was already removed.');
+                showError('Not saved', MESSAGES.gone('profile'));
                 return false;
             }
             draft.Profiles.splice(i, 1);
@@ -1200,7 +1363,7 @@ export default function HueConfigPage(view) {
                 const from = indexOfId(draft.Profiles, draggedId);
                 const to = indexOfId(draft.Profiles, targetId);
                 if (from < 0 || to < 0) {
-                    showError('Not saved', 'A profile was removed before the move could be saved.');
+                    showError('Not saved', MESSAGES.gone('profile'));
                     return false;
                 }
                 const moved = draft.Profiles.splice(from, 1)[0];
@@ -1381,13 +1544,12 @@ export default function HueConfigPage(view) {
     function testEditorAction(button) {
         const action = button.dataset.testAction;
         const errorLine = editor(`#profileTest${action}Error`);
-        errorLine.style.display = 'none';
+        inlineStatus(errorLine, null);
 
         // A blank number would test a value nobody typed
         const problem = validateEditorNumbers(action);
         if (problem) {
-            errorLine.textContent = problem;
-            errorLine.style.display = '';
+            inlineStatus(errorLine, problem);
             return;
         }
         const session = state.editorSession;
@@ -1397,10 +1559,7 @@ export default function HueConfigPage(view) {
             // The editor was closed or reopened while this test was out; the result belongs to that session
             if (session !== state.editorSession) return;
             showTestState(button, result.Success ? 'ok' : 'fail', 'Test');
-            if (!result.Success) {
-                errorLine.textContent = result.Error || 'Test failed; check the server logs';
-                errorLine.style.display = '';
-            }
+            inlineStatus(errorLine, result.Success ? null : MESSAGES.profiles.testFailed(result.Error));
         });
     }
 
@@ -1436,7 +1595,7 @@ export default function HueConfigPage(view) {
             if (index >= 0) {
                 draft.Profiles[index] = profile;
             } else if (!session.isNew) {
-                showError('Not saved', 'This profile was removed while the editor was open.');
+                showError('Not saved', MESSAGES.gone('profile'));
                 return false;
             } else {
                 draft.Profiles.push(profile);
@@ -1521,9 +1680,7 @@ export default function HueConfigPage(view) {
     }
 
     function renderTargetsStatus(text) {
-        const status = editor('#profileTargetsStatus');
-        status.textContent = text || '';
-        status.style.display = text ? '' : 'none';
+        inlineStatus(editor('#profileTargetsStatus'), text);
     }
 
     // Rooms, zones and scenes for the bridge the editor shows, read from the bridge on every call so ones made
@@ -1548,7 +1705,7 @@ export default function HueConfigPage(view) {
         renderTargetsStatus(null);
 
         if (!bridgeId) {
-            renderTargetsStatus('Choose a bridge to load its rooms and scenes.');
+            renderTargetsStatus(MESSAGES.profiles.targetsNoBridge);
             return;
         }
 
@@ -1561,15 +1718,17 @@ export default function HueConfigPage(view) {
             fillGroupSelect(groupSelect, (targets && targets.Groups) || {});
             sceneSelects.forEach(select => fillSceneSelect(select, (targets && targets.Scenes) || {}));
             syncEditorVisibility();
-        }).catch(error => {
+        }).catch(async error => {
             if (!current()) return;
             console.error('Error loading rooms, zones and scenes for profile:', error);
+            const reason = await describeFailure(error);
+            if (!current()) return; // the editor may have moved on while the body was read
             [groupSelect].concat(sceneSelects).forEach(select => {
                 Array.from(select.options).forEach(option => {
                     if (option.text === loadingLabel) option.text = 'Saved selection (not loaded)';
                 });
             });
-            renderTargetsStatus(`Could not load rooms, zones and scenes from ${bridgeName}: ${describeError(error)}. The saved selections are kept.`);
+            renderTargetsStatus(MESSAGES.profiles.targetsFailed(bridgeName, reason));
         });
     }
 
