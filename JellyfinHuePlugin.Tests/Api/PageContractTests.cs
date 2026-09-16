@@ -88,7 +88,7 @@ namespace JellyfinHuePlugin.Tests.Api
                 .FirstOrDefault(p => p.Name == "bridgeId");
 
             parameter.Should().NotBeNull(because: "GetTargets must keep a parameter literally named 'bridgeId'");
-            parameter!.ParameterType.Should().Be(typeof(string));
+            parameter!.ParameterType.Should().Be<string>();
             parameter.GetCustomAttribute<FromQueryAttribute>().Should().NotBeNull();
         }
 

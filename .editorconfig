@@ -24,3 +24,28 @@ csharp_indent_case_contents = true
 csharp_indent_switch_labels = true
 csharp_style_var_for_built_in_types = false:suggestion
 csharp_style_var_when_type_is_apparent = true:suggestion
+
+# Analyzer rules (AnalysisMode=Recommended, warnings are errors; see Directory.Build.props)
+
+# LoggerMessage delegates and lazy argument evaluation: a plugin that logs a few lines per
+# playback event gains nothing from either, and both would touch every log call.
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1873.severity = none
+
+# PluginConfiguration spells out every default, including false and 0, on purpose: the file
+# doubles as the settings reference.
+dotnet_diagnostic.CA1805.severity = none
+
+# HueResult<T>.Success / Failure are the readable factories at thirty-odd call sites; the
+# non-generic-holder shape CA1000 wants would only move the type argument to the other side.
+dotnet_diagnostic.CA1000.severity = none
+
+[JellyfinHuePlugin.Tests/**.cs]
+# Test names are Method_Scenario_Expectation.
+dotnet_diagnostic.CA1707.severity = none
+# Inline constant arrays read better in a test than a hoisted static field.
+dotnet_diagnostic.CA1861.severity = none
+# xunit fixtures dispose their fields; nothing derives from a test class.
+dotnet_diagnostic.CA1816.severity = none
+# The XML these tests deserialize is written by the test itself.
+dotnet_diagnostic.CA5369.severity = none

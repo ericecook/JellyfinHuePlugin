@@ -20,7 +20,7 @@ namespace JellyfinHuePlugin.Tests.Services
     /// CLIP v2 wire shapes through the handler seam: paths, the application-key header, the
     /// expected-bridge-id option, request bodies, envelope handling and input validation.
     /// </summary>
-    public class HueServiceV2Tests
+    public sealed class HueServiceV2Tests : IDisposable
     {
         private const string BridgeId = "001788fffe123456";
         private const string Key = "Qn74cB7YlKursSzMYyPL4pr5oLWxayBqhKyjFD10";
@@ -69,6 +69,12 @@ namespace JellyfinHuePlugin.Tests.Services
         {
             _service = new HueService(_log, _handler);
             _handler.Responses["/api/0/config"] = (HttpStatusCode.OK, ConfigBody);
+        }
+
+        public void Dispose()
+        {
+            _service.Dispose();
+            _handler.Dispose();
         }
 
         private static HueBridge Bridge(string bridgeId = BridgeId, string ip = "192.168.1.50", string key = Key) =>
@@ -319,7 +325,7 @@ namespace JellyfinHuePlugin.Tests.Services
             await _service.SetGroupedLightAsync(Bridge(bridgeId: ""), "gl-1", new GroupedLightState { On = false });
 
             _handler.Requests.Count(r => r.Path == "/api/0/config").Should().Be(1);
-            _handler.Requests.Where(r => r.Path.StartsWith("/clip")).Should().OnlyContain(r => r.ExpectedBridgeId == BridgeId);
+            _handler.Requests.Where(r => r.Path.StartsWith("/clip", StringComparison.Ordinal)).Should().OnlyContain(r => r.ExpectedBridgeId == BridgeId);
         }
 
         [Fact]
@@ -354,7 +360,7 @@ namespace JellyfinHuePlugin.Tests.Services
             var outcome = await _service.SetGroupedLightAsync(Bridge(bridgeId: ""), "gl-1", new GroupedLightState { On = true });
 
             outcome.Ok.Should().BeFalse();
-            _handler.Requests.Should().NotContain(r => r.Path.StartsWith("/clip"));
+            _handler.Requests.Should().NotContain(r => r.Path.StartsWith("/clip", StringComparison.Ordinal));
         }
 
         [Fact]

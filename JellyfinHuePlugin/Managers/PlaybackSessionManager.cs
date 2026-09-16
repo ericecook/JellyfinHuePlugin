@@ -25,7 +25,7 @@ namespace JellyfinHuePlugin.Managers
     /// <see cref="SessionPolicy"/>; sends go through one <see cref="SessionCommandQueue"/>
     /// per session into <see cref="LightCommandExecutor"/>.
     /// </summary>
-    public class PlaybackSessionManager : IHostedService, IDisposable
+    public sealed class PlaybackSessionManager : IHostedService, IDisposable
     {
         private readonly ISessionManager _sessionManager;
         private readonly ILogger<PlaybackSessionManager> _logger;

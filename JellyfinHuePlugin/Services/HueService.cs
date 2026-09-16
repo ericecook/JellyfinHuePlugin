@@ -116,7 +116,7 @@ namespace JellyfinHuePlugin.Services
 
         // Judged by the extracted, independently-testable decision function; anything that isn't a
         // bridge request (the cloud discovery endpoint) needs system trust.
-        private static HttpMessageHandler CreateDefaultHandler(ILogger logger, IReadOnlyList<X509Certificate2> roots) => new HttpClientHandler
+        private static HttpClientHandler CreateDefaultHandler(ILogger logger, IReadOnlyList<X509Certificate2> roots) => new HttpClientHandler
         {
             AllowAutoRedirect = false, // Prevent HTTP->HTTPS redirects
             ServerCertificateCustomValidationCallback = (request, certificate, _, errors) =>
@@ -128,7 +128,7 @@ namespace JellyfinHuePlugin.Services
         // regardless of whatever NewRequest happened to store in the option. Routed through the
         // same decision function as the main handler so there is exactly one place that decides
         // whether a bridge certificate is acceptable.
-        private static HttpMessageHandler CreateBridgeInfoHandler(ILogger logger, IReadOnlyList<X509Certificate2> roots) => new HttpClientHandler
+        private static HttpClientHandler CreateBridgeInfoHandler(ILogger logger, IReadOnlyList<X509Certificate2> roots) => new HttpClientHandler
         {
             AllowAutoRedirect = false,
             ServerCertificateCustomValidationCallback = (request, certificate, _, errors) =>
@@ -201,7 +201,7 @@ namespace JellyfinHuePlugin.Services
         // CLIP v2
         // ---------------------------------------------------------------------------------
 
-        private HttpRequestMessage NewRequest(HttpMethod method, Uri uri, string? applicationKey, string? expectedBridgeId, object? body)
+        private static HttpRequestMessage NewRequest(HttpMethod method, Uri uri, string? applicationKey, string? expectedBridgeId, object? body)
         {
             var request = new HttpRequestMessage(method, uri);
             // HttpRequestOptions.TryGetValue<string?> reports "absent" whenever the stored value is a
@@ -536,7 +536,8 @@ namespace JellyfinHuePlugin.Services
             }
 
             var info = infoResult.Value!;
-            BridgeUri.TryParseHost(bridgeIp, out var host);
+            // GetBridgeInfoAsync already rejected an unparsable address; host is only for the log lines.
+            _ = BridgeUri.TryParseHost(bridgeIp, out var host);
             if (!info.SupportsV2)
             {
                 _logger.LogWarning("Bridge {Host} is not a supported v2 bridge (software {Version})", host, info.SoftwareVersion);
@@ -922,6 +923,9 @@ namespace JellyfinHuePlugin.Services
             {
                 _bridgeInfoClient.Dispose();
             }
+
+            // Not sealed: the tests mock this class with Moq.
+            GC.SuppressFinalize(this);
         }
     }
 

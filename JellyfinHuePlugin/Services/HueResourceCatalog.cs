@@ -30,6 +30,7 @@ namespace JellyfinHuePlugin.Services
         // exact mechanism that keeps Invalidate from racing a write - can be unit-tested
         // directly, the same way HueService exposes ShouldAcceptBridgeCertificate for its own
         // narrow, otherwise-untestable concurrency/security seam.
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable", Justification = "Entries live for the process lifetime and are never removed; a SemaphoreSlim whose AvailableWaitHandle is never touched holds no unmanaged resource.")]
         internal sealed class Entry
         {
             // Serializes the actual bridge fetch (at most one in flight per bridge).
