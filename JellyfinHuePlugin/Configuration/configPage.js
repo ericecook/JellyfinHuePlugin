@@ -497,12 +497,16 @@ function fillSceneSelect(select, scenes) {
 function renderStateSection(state) {
     const ids = stateIds(state);
     const id = selector => selector.slice(1);
-    const sliderRow = (kind, slider, input, desc, value) => {
+    // labelId names the row's visible <label>. The label's own `for` can only point at one control and
+    // points at the number input, so the range is named through aria-labelledby instead; both inputs point
+    // at the description line beside them, so "Very Dim (8%)" is announced with the control rather than
+    // stranded next to it.
+    const sliderRow = (kind, slider, input, desc, value, labelId) => {
         const spec = SLIDERS[kind];
         const step = spec.step ? ` step="${spec.step}"` : '';
         return `<div class="hue-slider-row">
-                <input type="range" id="${id(slider)}" min="${spec.min}" max="${spec.max}" value="${value}" />
-                <input type="number" id="${id(input)}" is="emby-input" class="hue-number" min="${spec.min}" max="${spec.max}" value="${value}"${step} />
+                <input type="range" id="${id(slider)}" min="${spec.min}" max="${spec.max}" value="${value}" aria-labelledby="${labelId}" aria-describedby="${id(desc)}" />
+                <input type="number" id="${id(input)}" is="emby-input" class="hue-number" min="${spec.min}" max="${spec.max}" value="${value}"${step} aria-describedby="${id(desc)}" />
             </div>
             <div id="${id(desc)}" class="fieldDescription">${spec.describe(value)}</div>`;
     };
@@ -539,8 +543,8 @@ function renderStateSection(state) {
             </select>
         </div>${turnOff}
         <div id="${id(ids.brightnessContainer)}" class="inputContainer">
-            <label class="inputLabel" for="${id(ids.brightness)}">Brightness</label>
-            ${sliderRow('brightness', ids.brightnessSlider, ids.brightness, ids.brightnessDesc, PROFILE_DEFAULTS[fields.brightness])}
+            <label class="inputLabel" id="${id(ids.brightness)}Label" for="${id(ids.brightness)}">Brightness</label>
+            ${sliderRow('brightness', ids.brightnessSlider, ids.brightness, ids.brightnessDesc, PROFILE_DEFAULTS[fields.brightness], `${id(ids.brightness)}Label`)}
         </div>
         <div class="checkboxContainer hue-check-tight">
             <label>
@@ -549,7 +553,8 @@ function renderStateSection(state) {
             </label>
         </div>
         <div id="${id(ids.transitionContainer)}" class="inputContainer hue-subfield" style="display:none;">
-            ${sliderRow('transition', ids.transitionSlider, ids.transition, ids.transitionDesc, PROFILE_DEFAULTS[fields.transition])}
+            <label class="inputLabel" id="${id(ids.transition)}Label" for="${id(ids.transition)}">Transition Duration</label>
+            ${sliderRow('transition', ids.transitionSlider, ids.transition, ids.transitionDesc, PROFILE_DEFAULTS[fields.transition], `${id(ids.transition)}Label`)}
         </div>${grace}
     </div>`;
 }
