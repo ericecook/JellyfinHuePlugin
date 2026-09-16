@@ -131,6 +131,15 @@ PluginServiceRegistrator.cs               Composition root (Jellyfin DI + hosted
 └── Models/                               Hue API data models
 ```
 
+## Development
+
+```bash
+dotnet build -c Release
+dotnet test
+```
+
+`dev-deploy.sh` publishes the plugin into a local Jellyfin container (see `docker-compose.yml`), and `deploy.sh` cuts a release.
+
 ## Troubleshooting
 
 See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for common issues including:
