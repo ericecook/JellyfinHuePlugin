@@ -1644,7 +1644,18 @@ export default function HueConfigPage(view) {
         overlay.querySelectorAll('.profile-tab-content').forEach(content => {
             content.style.display = content.id === `tab-${tabName}` ? 'block' : 'none';
         });
-        overlay.querySelectorAll('.profile-tab').forEach(tab => tab.classList.toggle('active', tab.dataset.tab === tabName));
+        overlay.querySelectorAll('.profile-tab').forEach(tab => {
+            const selected = tab.dataset.tab === tabName;
+            tab.classList.toggle('active', selected);
+            // aria-selected names the shown tab; the roving tabindex keeps the tablist a single Tab stop,
+            // so Tab moves past the bar into the panel rather than through four buttons.
+            tab.setAttribute('aria-selected', selected ? 'true' : 'false');
+            if (selected) {
+                tab.removeAttribute('tabindex');
+            } else {
+                tab.setAttribute('tabindex', '-1');
+            }
+        });
         // A new tab starts at its top: the body scrolls on large screens, the whole sheet on small ones
         const tabBar = overlay.querySelector('.hue-tab-bar');
         overlay.querySelector('.hue-modal-body').scrollTop = 0;

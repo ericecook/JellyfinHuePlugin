@@ -502,7 +502,7 @@
                 </div>
 
                 <!-- Bridge Modal: adds a bridge, or edits one and pairs it again -->
-                <div id="bridgeModal" class="hue-modal-overlay">
+                <div id="bridgeModal" class="hue-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="bridgeModalTitle">
                     <div class="hue-modal hue-modal--narrow">
                         <div class="hue-modal-header">
                             <h2 id="bridgeModalTitle">Add Hue Bridge</h2>
@@ -584,23 +584,25 @@
                 </div>
 
                 <!-- Profile Editor Modal -->
-                <div id="profileEditorModal" class="hue-modal-overlay">
+                <div id="profileEditorModal" class="hue-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="profileEditorTitle">
                     <div class="hue-modal">
                         <div class="hue-modal-header">
                             <h2 id="profileEditorTitle">Add Profile</h2>
                         </div>
 
                         <!-- Tabs -->
-                        <div class="hue-tab-bar">
-                            <button type="button" class="hue-tab profile-tab active" data-tab="general">General</button>
-                            <button type="button" class="hue-tab profile-tab" data-tab="filters">Filters</button>
-                            <button type="button" class="hue-tab profile-tab" data-tab="lights">Lights</button>
-                            <button type="button" class="hue-tab profile-tab" data-tab="advanced">Advanced</button>
+                        <!-- Plain <button>s on purpose: emby-tabs would suppress the focus ring these have
+                             today (see the focus-outline note at the top of this style block). -->
+                        <div class="hue-tab-bar" role="tablist" aria-label="Profile settings">
+                            <button type="button" class="hue-tab profile-tab active" data-tab="general" role="tab" id="profileTabGeneral" aria-controls="tab-general" aria-selected="true">General</button>
+                            <button type="button" class="hue-tab profile-tab" data-tab="filters" role="tab" id="profileTabFilters" aria-controls="tab-filters" aria-selected="false" tabindex="-1">Filters</button>
+                            <button type="button" class="hue-tab profile-tab" data-tab="lights" role="tab" id="profileTabLights" aria-controls="tab-lights" aria-selected="false" tabindex="-1">Lights</button>
+                            <button type="button" class="hue-tab profile-tab" data-tab="advanced" role="tab" id="profileTabAdvanced" aria-controls="tab-advanced" aria-selected="false" tabindex="-1">Advanced</button>
                         </div>
 
                         <div class="hue-modal-body">
                             <!-- General Tab -->
-                            <div id="tab-general" class="profile-tab-content">
+                            <div id="tab-general" class="profile-tab-content" role="tabpanel" aria-labelledby="profileTabGeneral">
                                 <div class="inputContainer">
                                     <label class="inputLabel" for="profileName">Profile Name</label>
                                     <input type="text" id="profileName" is="emby-input" placeholder="e.g., Living Room Roku" />
@@ -637,7 +639,7 @@
                             </div>
 
                             <!-- Filters Tab -->
-                            <div id="tab-filters" class="profile-tab-content" style="display:none;">
+                            <div id="tab-filters" class="profile-tab-content" role="tabpanel" aria-labelledby="profileTabFilters" style="display:none;">
                                 <h3>Client Filters (AND logic)</h3>
                                 <div class="fieldDescription hue-section-intro">
                                     Leave all filters empty to match ALL clients. Otherwise, the device must match ALL specified filters.
@@ -685,7 +687,7 @@
                             </div>
 
                             <!-- Lights Tab -->
-                            <div id="tab-lights" class="profile-tab-content" style="display:none;">
+                            <div id="tab-lights" class="profile-tab-content" role="tabpanel" aria-labelledby="profileTabLights" style="display:none;">
                                 <h3>Light Control</h3>
 
                                 <div class="selectContainer">
@@ -707,7 +709,7 @@
                             </div>
 
                             <!-- Advanced Tab -->
-                            <div id="tab-advanced" class="profile-tab-content" style="display:none;">
+                            <div id="tab-advanced" class="profile-tab-content" role="tabpanel" aria-labelledby="profileTabAdvanced" style="display:none;">
                                 <h3>Advanced Options</h3>
 
                                 <div class="checkboxContainer checkboxContainer-withDescription">
