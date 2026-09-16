@@ -2014,9 +2014,22 @@ export default function HueConfigPage(view) {
     }
 
     function removeProfileDeviceId(deviceId) {
+        const list = editor('#profileDeviceIdList');
+        const focusWasInList = list.contains(document.activeElement);
+        const removedIndex = Math.max(0, state.profileDeviceIds.indexOf(deviceId));
         state.profileDeviceIds = state.profileDeviceIds.filter(id => id !== deviceId);
         renderProfileDeviceIdList();
         populateKnownDeviceSelect();
+        // Only if focus was actually in the list the rebuild just destroyed: the row that took the
+        // removed one's place, else the new last row, else whichever control now owns an empty list.
+        if (!focusWasInList) return;
+        const buttons = list.querySelectorAll('[data-action="remove-device"]');
+        if (buttons.length) {
+            buttons[Math.min(removedIndex, buttons.length - 1)].focus();
+        } else {
+            const showButton = editor('#profileShowAddDeviceId');
+            (showButton.style.display === 'none' ? editor('#profileNewDeviceId') : showButton).focus();
+        }
     }
 
     // ---- Modals and lifecycle ----
@@ -2199,7 +2212,11 @@ export default function HueConfigPage(view) {
         $('#templateMenu').addEventListener('click', e => {
             const option = e.target instanceof Element ? e.target.closest('[data-template]') : null;
             if (!option) return;
-            $('#templateMenu').style.display = 'none';
+            // The chosen option may hold focus (picked via Enter); move it to the trigger before the
+            // menu hides, so the editor opened next (addProfile -> openModal) captures that instead of <body>.
+            const templateMenu = $('#templateMenu');
+            if (templateMenu.contains(document.activeElement)) $('#addProfileTemplateButton').focus();
+            templateMenu.style.display = 'none';
             addProfile(option.dataset.template);
         });
 
