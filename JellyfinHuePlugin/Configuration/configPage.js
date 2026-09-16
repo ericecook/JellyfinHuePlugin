@@ -260,9 +260,6 @@ function fieldAnchor(input) {
     return input.closest('.hue-field-row') || input.closest('.inputContainer, .selectContainer, .checkboxContainer') || input;
 }
 
-// Creates its message element the first time a field is invalid - no markup for this exists in
-// configPage.html yet, E wires ARIA to these ids later - right after fieldAnchor's block, and marks the
-// field so its own styling can show the invalid state. clearFieldError undoes both.
 // aria-describedby is a list, and a slider's number input already names its description line (E's slider
 // work). Adding an error id must therefore append, and clearing must remove only that id - assigning over
 // the attribute would silently delete the description and leave the field describing nothing once the
@@ -287,6 +284,8 @@ function removeDescribedBy(input, id) {
     }
 }
 
+// Creates its message element the first time a field is invalid, right after fieldAnchor's block, and
+// marks the field so its own styling can show the invalid state. clearFieldError undoes both.
 function fieldError(input, text) {
     const id = input.id + 'Error';
     let el = document.getElementById(id);
