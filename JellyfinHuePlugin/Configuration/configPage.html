@@ -7,6 +7,24 @@
 <body>
     <div id="HuePluginConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-controller="__plugin/HueLightingControl.js">
         <style>
+            /* Focus outlines are deliberately not styled here.
+
+               Jellyfin suppresses them globally - 136 `outline: none` declarations, 105 of them `!important` -
+               and uses `:focus-visible` nowhere, so nothing in the dashboard shows a focus ring outside TV
+               layout. Every one of those rules is scoped to a Jellyfin component class (.emby-button,
+               .emby-input, .emby-select, .emby-textarea, .emby-tab-button); there is no generic `button`, `*`
+               or `:focus` rule, and this page sets `outline` nowhere itself.
+
+               The fix therefore belongs upstream, and an upstream fix reaches this page for free: these
+               controls *are* those classes, rendered in the dashboard's own document under the same
+               stylesheet. Styling focus here would make this one page an outlier and have to be unpicked
+               later.
+
+               It is also why the editor's tab buttons show a focus ring while the emby-* controls do not: a
+               plain <button> matches none of the suppressing selectors.
+
+               Verified against Jellyfin 12.0, 2026-09-16. */
+
             /* Modal */
             .hue-modal-overlay {
                 display: none;
