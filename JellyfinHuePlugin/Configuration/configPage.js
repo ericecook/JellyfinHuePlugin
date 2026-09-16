@@ -567,7 +567,18 @@ function showTestState(button, state, idleHtml) {
         button.innerHTML = '<span class="hue-spinner"></span>';
         return;
     }
-    button.disabled = false;
+    // 'busy' disabled this button on its own, ahead of any setFormBusy sweep - a light-command round trip
+    // and the save queue have no ordering relationship, so this result can land while the editor's own lock
+    // is still up. Re-enabling unconditionally would let this one control slip past a lock everything else
+    // is still under. When the modal it lives in is locked, it stays disabled and joins that lock's captured
+    // set instead, so the eventual setFormBusy(root, false) re-enables it along with everything else rather
+    // than stranding it disabled forever.
+    const lockedRoot = button.closest('.hue-modal-overlay');
+    if (lockedRoot && lockedRoot.hueBusyControls) {
+        if (lockedRoot.hueBusyControls.indexOf(button) < 0) lockedRoot.hueBusyControls.push(button);
+    } else {
+        button.disabled = false;
+    }
     if (state === 'idle') {
         button.innerHTML = idleHtml;
         return;
