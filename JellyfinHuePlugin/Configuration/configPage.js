@@ -1345,7 +1345,13 @@ export default function HueConfigPage(view) {
     // Every close path goes through here - the menu's own item, a click anywhere else (onDocumentClick),
     // Escape - so this is the one place that can guarantee no trigger is left claiming to be expanded.
     function closeProfileMenus() {
-        $('#profilesList').querySelectorAll('.hue-dropdown.is-open').forEach(menu => menu.classList.remove('is-open'));
+        // If focus is inside a menu that is about to close, move it to that menu's own trigger first -
+        // otherwise the browser drops it on <body>, which is wrong for Escape-on-a-menu on its own terms,
+        // and which openModal would then capture as the place to return focus to when Edit is chosen.
+        $('#profilesList').querySelectorAll('.hue-dropdown.is-open').forEach(menu => {
+            if (menu.contains(document.activeElement)) menu.parentElement.querySelector('.profile-menu-button').focus();
+            menu.classList.remove('is-open');
+        });
         $('#profilesList').querySelectorAll('.profile-menu-button[aria-expanded="true"]')
             .forEach(button => button.setAttribute('aria-expanded', 'false'));
     }
