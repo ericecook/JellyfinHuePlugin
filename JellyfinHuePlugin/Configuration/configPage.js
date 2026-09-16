@@ -189,7 +189,8 @@ function stateIds(state) {
         transitionDesc: `#profile${name}TransitionDesc`,
         graceEnabled: `#profileEnable${name}GracePeriod`,
         graceContainer: `#${lower}GracePeriodContainer`,
-        grace: `#profile${name}GracePeriod`
+        grace: `#profile${name}GracePeriod`,
+        graceDesc: `#profile${name}GraceDesc`
     };
 }
 
@@ -559,8 +560,8 @@ function renderStateSection(state) {
         </div>
         <div id="${id(ids.graceContainer)}" class="inputContainer hue-subfield" style="display:none;">
             <label class="inputLabel" for="${id(ids.grace)}">Seconds</label>
-            <input type="number" id="${id(ids.grace)}" is="emby-input" class="hue-number" min="1" max="600" value="30" />
-            <div class="fieldDescription">Skip pause lighting during the first N seconds of playback</div>
+            <input type="number" id="${id(ids.grace)}" is="emby-input" class="hue-number" min="1" max="600" value="30" aria-describedby="${id(ids.graceDesc)}" />
+            <div id="${id(ids.graceDesc)}" class="fieldDescription">Skip pause lighting during the first N seconds of playback</div>
         </div>`;
     return `<div class="hue-state-section" data-state="${state.name}">
         <div class="hue-state-header">
@@ -696,7 +697,11 @@ export default function HueConfigPage(view) {
         draggedProfileId: null,
         // The open bridge modal: { mode: 'add'|'edit', bridgeId, ended, countdown }; every async result checks it
         // is still the live one
-        bridgeSession: null
+        bridgeSession: null,
+        // The element that had focus before openModal ran, so onModalHidden can put it back where it came
+        // from rather than dropping it on <body>, where the next Tab would restart at the top of the
+        // dashboard; null while no modal is open.
+        focusBeforeModal: null
     };
 
     const isGone = () => state.destroyed || !view.isConnected;
@@ -707,7 +712,27 @@ export default function HueConfigPage(view) {
 
     // Errors that must stay until read: a Jellyfin dialog, not a toast. The dialog puts the message through
     // innerHTML, so it is escaped here; the title is set as text.
+    //
+    // Dashboard.alert renders its own dialog (a .dialogContainer) at body level, outside both hue modals -
+    // so while either overlay claims aria-modal="true", an alert fired over it (commit's save-failure path,
+    // saveCurrentProfile's "gone" path) would tell assistive tech to ignore everything outside the hue
+    // dialog, hiding the one message the admin most needs. aria-modal is dropped from whichever overlay is
+    // open before the alert fires, and restored once the alert's own dialog actually leaves the DOM. That
+    // can't be "the next line" - Dashboard.alert's dialog is dismissed asynchronously and this function
+    // does not await it - so a MutationObserver watches body until no .dialogContainer remains, which is
+    // also correct if a second alert stacks on top of the first: the earlier one's observer still sees a
+    // .dialogContainer left standing and waits.
     function showError(title, detail) {
+        const openOverlays = Object.values(overlays).filter(o => o.style.display === 'block' && o.getAttribute('aria-modal') === 'true');
+        if (openOverlays.length) {
+            openOverlays.forEach(o => o.removeAttribute('aria-modal'));
+            const observer = new MutationObserver(() => {
+                if (document.querySelector('.dialogContainer')) return;
+                observer.disconnect();
+                openOverlays.forEach(o => { if (document.contains(o)) o.setAttribute('aria-modal', 'true'); });
+            });
+            observer.observe(document.body, { childList: true, subtree: true });
+        }
         Dashboard.alert({ title, message: escapeHtml(detail) });
     }
 
@@ -1319,7 +1344,7 @@ export default function HueConfigPage(view) {
                     <div class="hue-card-header">
                         <h3 class="hue-card-title">${escapeHtml(profile.Name || 'Unnamed Profile')}${disabled ? ' <span class="hue-card-flag">Disabled</span>' : ''}</h3>
                         <div class="profile-menu">
-                            <button is="emby-button" type="button" class="raised profile-menu-button" data-action="toggle-menu" aria-haspopup="true" aria-expanded="false" aria-label="Profile actions">&#x22EE;</button>
+                            <button is="emby-button" type="button" class="raised profile-menu-button" data-action="toggle-menu" aria-expanded="false" aria-label="Profile actions for ${escapeHtml(profile.Name || 'Unnamed Profile')}">&#x22EE;</button>
                             <div class="hue-dropdown">
                                 ${item('edit', 'edit', 'Edit')}
                                 ${item('test', 'play_arrow', 'Test Play', ' data-test-action="Play"')}
@@ -1369,14 +1394,22 @@ export default function HueConfigPage(view) {
         const profile = state.profiles[indexOfId(state.profiles, profileId)];
         const card = profileCard(profileId);
         if (!profile || !card) return;
+        const trigger = card.querySelector('.profile-menu-button');
+        // The click handler's closeProfileMenus just moved focus onto this trigger (it was inside the menu
+        // that is closing); showTestState('busy') is about to disable that same trigger, which blurs it to
+        // <body> one statement later. Captured here so it can be handed back once the trigger is enabled
+        // again, rather than left on <body> for the hardware check's own Tab-to-menu-then-Test-Play path.
+        const hadFocus = document.activeElement === trigger;
         inlineStatus(card.querySelector('.profile-test-error'), null);
-        showTestState(card.querySelector('.profile-menu-button'), 'busy');
+        showTestState(trigger, 'busy');
 
         runTest(action, profile).then(result => {
             // The list may have been redrawn while the test ran; the result goes to the card as it is now
             const current = profileCard(profileId);
             if (!current) return;
-            showTestState(current.querySelector('.profile-menu-button'), result.Success ? 'ok' : 'fail', '&#x22EE;');
+            const currentTrigger = current.querySelector('.profile-menu-button');
+            showTestState(currentTrigger, result.Success ? 'ok' : 'fail', '&#x22EE;');
+            if (hadFocus) currentTrigger.focus();
             inlineStatus(current.querySelector('.profile-test-error'), result.Success ? null : MESSAGES.profiles.testFailed(result.Error));
         });
     }
@@ -2038,8 +2071,6 @@ export default function HueConfigPage(view) {
     // modal instead of navigating away underneath it. The entry keeps the router's state so its index stays
     // intact. closeModal's history.back() lands asynchronously, so don't open a modal in the same task that
     // closed one.
-    // The element that opened the modal, so onModalHidden can put focus back where it came from rather
-    // than dropping it on <body>, where the next Tab would restart at the top of the dashboard.
     function focusableIn(overlay) {
         return Array.from(overlay.querySelectorAll('a[href], button, input, select, textarea, [tabindex]'))
             .filter(el => !el.disabled && el.tabIndex !== -1 && el.offsetParent !== null);
@@ -2111,6 +2142,16 @@ export default function HueConfigPage(view) {
                 e.preventDefault();
                 return;
             }
+            // The page's other dropdown - its options are real buttons a keyboard user can Tab into, so
+            // Escape has to reach it too. Same opener-focus guard addProfileTemplateButton's own click
+            // handler uses when a chosen option closes this menu.
+            const templateMenu = $('#templateMenu');
+            if (templateMenu.style.display === 'block') {
+                if (templateMenu.contains(document.activeElement)) $('#addProfileTemplateButton').focus();
+                templateMenu.style.display = 'none';
+                e.preventDefault();
+                return;
+            }
             if (open) {
                 closeModal(open);
                 e.preventDefault();
@@ -2121,6 +2162,15 @@ export default function HueConfigPage(view) {
         if (e.key === 'Tab' && open) {
             const items = focusableIn(overlays[open]);
             if (!items.length) return;
+            // Disabling the control just activated (setFormBusy locks the form mid-save; showTestState
+            // disables a Test button on click) blurs it to <body> - which matches neither edge below, so
+            // without this recovery no preventDefault runs and native Tab walks into the dashboard behind
+            // the overlay. Checked first so it also catches any other way focus ends up outside the modal.
+            if (!overlays[open].contains(document.activeElement)) {
+                (e.shiftKey ? items[items.length - 1] : items[0]).focus();
+                e.preventDefault();
+                return;
+            }
             const first = items[0];
             const last = items[items.length - 1];
             if (e.shiftKey && document.activeElement === first) {
