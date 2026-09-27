@@ -257,21 +257,41 @@ async function describeFailure(error) {
     return 'unknown error';
 }
 
-// Where a field's message belongs: right after the block that visually owns it. A field paired with a
-// button in a .hue-field-row (the bridge address and key rows; the device picker's select-and-Add and its
+// Puts a field's message where it reads as that field's own. A field paired with a button in a
+// .hue-field-row (the bridge address and key rows; the device picker's select-and-Add and its
 // manual-entry-and-Add) would become a third flex item beside that button if the message landed inside the
 // row itself, so the message goes after the row instead. Everything else sits in an .inputContainer,
-// .selectContainer or .checkboxContainer that the message can simply follow.
-function fieldAnchor(input) {
-    return input.closest('.hue-field-row') || input.closest('.inputContainer, .selectContainer, .checkboxContainer') || input;
+// .selectContainer or .checkboxContainer, and the message goes last inside it: the container's own bottom
+// margin then falls below the message, where following the container would put that margin between the
+// field and its message and leave the message resting on whatever comes next. A .checkboxContainer without
+// -withDescription is a row upstream, so a message inside one would sit beside the label; it follows that
+// container instead.
+function placeFieldError(input, el) {
+    const row = input.closest('.hue-field-row');
+    const container = input.closest('.inputContainer, .selectContainer, .checkboxContainer');
+    const stacks = container && !container.matches('.checkboxContainer:not(.checkboxContainer-withDescription)');
+    if (row) {
+        row.insertAdjacentElement('afterend', el);
+    } else if (stacks) {
+        container.appendChild(el);
+    } else {
+        (container || input).insertAdjacentElement('afterend', el);
+    }
 }
 
-// aria-describedby is a list, and a slider's number input already names its description line (E's slider
-// work). Adding an error id must therefore append, and clearing must remove only that id - assigning over
-// the attribute would silently delete the description and leave the field describing nothing once the
-// error clears.
+// aria-describedby is a list, and a field with help text already names that line (the grace period; each
+// slider row's inputs name their readout). Adding an error id must therefore append, and clearing must
+// remove only that id - assigning over the attribute would silently delete the description and leave the
+// field describing nothing once the error clears.
 function describedBy(input) {
     return (input.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
+}
+
+// A slider row's readout ("Dim (20%)"), when input has one. It is the line already under the field and
+// already named by aria-describedby, so it carries the field's message itself rather than gaining a second
+// line beneath it that says the same thing.
+function readoutOf(input) {
+    return describedBy(input).map(id => document.getElementById(id)).find(el => el && el.classList.contains('hue-readout')) || null;
 }
 
 function addDescribedBy(input, id) {
@@ -290,22 +310,32 @@ function removeDescribedBy(input, id) {
     }
 }
 
-// Creates its message element the first time a field is invalid, right after fieldAnchor's block, and
-// marks the field so its own styling can show the invalid state. clearFieldError undoes both.
+// Shows a field's message and marks the field so its own styling can show the invalid state: in the field's
+// readout when it has one, otherwise in a message element created the first time the field is invalid.
+// clearFieldError undoes both.
 function fieldError(input, text, speak = true) {
-    const id = input.id + 'Error';
-    let el = document.getElementById(id);
-    if (!el) {
-        el = document.createElement('div');
-        el.id = id;
-        el.className = 'fieldDescription hue-field-error';
-        fieldAnchor(input).insertAdjacentElement('afterend', el);
+    const readout = readoutOf(input);
+    if (readout) {
+        // What the readout said is kept once, so a second message on a field still invalid cannot replace it
+        if (!readout.classList.contains('hue-readout-invalid')) readout.dataset.readout = readout.textContent;
+        readout.textContent = text;
+        readout.dataset.message = text;
+        readout.classList.add('hue-readout-invalid');
+    } else {
+        const id = input.id + 'Error';
+        let el = document.getElementById(id);
+        if (!el) {
+            el = document.createElement('div');
+            el.id = id;
+            el.className = 'fieldDescription hue-field-error';
+            placeFieldError(input, el);
+        }
+        el.textContent = text;
+        el.style.display = '';
+        addDescribedBy(input, id);
     }
-    el.textContent = text;
-    el.style.display = '';
     input.classList.add('hue-field-invalid');
     input.setAttribute('aria-invalid', 'true');
-    addDescribedBy(input, id);
     // Almost every caller paints the message and leaves focus on the button that was pressed, where a screen
     // reader never encounters it - pressing Save and hearing nothing reads as a broken button. The exception
     // is a caller that sends the user to the field itself: there the message is read on arrival, as the
@@ -314,6 +344,13 @@ function fieldError(input, text, speak = true) {
 }
 
 function clearFieldError(input) {
+    const readout = readoutOf(input);
+    if (readout && readout.classList.contains('hue-readout-invalid')) {
+        // Only while the message is still what it shows: the editor refills its readouts before it clears
+        // its errors, and what the readout said when it was flagged would overwrite the new value's text
+        if (readout.textContent === readout.dataset.message) readout.textContent = readout.dataset.readout;
+        readout.classList.remove('hue-readout-invalid');
+    }
     const el = document.getElementById(input.id + 'Error');
     if (el) el.style.display = 'none';
     input.classList.remove('hue-field-invalid');
@@ -324,12 +361,7 @@ function clearFieldError(input) {
 // Every field error a modal might still be showing from an earlier session, hidden and unmarked - called
 // when the profile editor or the bridge modal opens, so nothing stale survives into the next one.
 function clearAllFieldErrors(root) {
-    root.querySelectorAll('.hue-field-error').forEach(el => { el.style.display = 'none'; });
-    root.querySelectorAll('.hue-field-invalid').forEach(el => {
-        el.classList.remove('hue-field-invalid');
-        el.removeAttribute('aria-invalid');
-        removeDescribedBy(el, el.id + 'Error');
-    });
+    root.querySelectorAll('.hue-field-invalid').forEach(clearFieldError);
 }
 
 // The live region that covers el. A modal owns its own because aria-modal="true" makes assistive technology
@@ -580,7 +612,7 @@ function renderStateSection(state) {
                 <input type="range" id="${id(slider)}" min="${spec.min}" max="${spec.max}" value="${value}" aria-labelledby="${labelId}" aria-describedby="${id(desc)}" />
                 <input type="number" id="${id(input)}" is="emby-input" class="hue-number" min="${spec.min}" max="${spec.max}" value="${value}"${step} aria-describedby="${id(desc)}" />
             </div>
-            <div id="${id(desc)}" class="fieldDescription">${spec.describe(value)}</div>`;
+            <div id="${id(desc)}" class="fieldDescription hue-readout">${spec.describe(value)}</div>`;
     };
     const fields = stateFields(state);
     const turnOff = !state.turnOff ? '' : `
