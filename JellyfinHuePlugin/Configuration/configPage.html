@@ -615,12 +615,14 @@
 
                         <!-- Tabs -->
                         <!-- Plain <button>s on purpose: emby-tabs would suppress the focus ring these have
-                             today (see the focus-outline note at the top of this style block). -->
+                             today (see the focus-outline note at the top of this style block). Each is its
+                             own Tab stop: this page has no arrow-key handling, so a tab taken out of the
+                             Tab order could not be reached by keyboard at all. -->
                         <div class="hue-tab-bar" role="tablist" aria-label="Profile settings">
                             <button type="button" class="hue-tab profile-tab active" data-tab="general" role="tab" id="profileTabGeneral" aria-controls="tab-general" aria-selected="true">General</button>
-                            <button type="button" class="hue-tab profile-tab" data-tab="filters" role="tab" id="profileTabFilters" aria-controls="tab-filters" aria-selected="false" tabindex="-1">Filters</button>
-                            <button type="button" class="hue-tab profile-tab" data-tab="lights" role="tab" id="profileTabLights" aria-controls="tab-lights" aria-selected="false" tabindex="-1">Lights</button>
-                            <button type="button" class="hue-tab profile-tab" data-tab="advanced" role="tab" id="profileTabAdvanced" aria-controls="tab-advanced" aria-selected="false" tabindex="-1">Advanced</button>
+                            <button type="button" class="hue-tab profile-tab" data-tab="filters" role="tab" id="profileTabFilters" aria-controls="tab-filters" aria-selected="false">Filters</button>
+                            <button type="button" class="hue-tab profile-tab" data-tab="lights" role="tab" id="profileTabLights" aria-controls="tab-lights" aria-selected="false">Lights</button>
+                            <button type="button" class="hue-tab profile-tab" data-tab="advanced" role="tab" id="profileTabAdvanced" aria-controls="tab-advanced" aria-selected="false">Advanced</button>
                         </div>
 
                         <div class="hue-modal-body">

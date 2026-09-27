@@ -1907,14 +1907,9 @@ export default function HueConfigPage(view) {
         overlay.querySelectorAll('.profile-tab').forEach(tab => {
             const selected = tab.dataset.tab === tabName;
             tab.classList.toggle('active', selected);
-            // aria-selected names the shown tab; the roving tabindex keeps the tablist a single Tab stop,
-            // so Tab moves past the bar into the panel rather than through four buttons.
+            // aria-selected names the shown tab. Every tab stays in the Tab order: nothing here handles arrow
+            // keys, so a roving tabindex would leave the other three unreachable by keyboard.
             tab.setAttribute('aria-selected', selected ? 'true' : 'false');
-            if (selected) {
-                tab.removeAttribute('tabindex');
-            } else {
-                tab.setAttribute('tabindex', '-1');
-            }
         });
         // A new tab starts at its top: the body scrolls on large screens, the whole sheet on small ones
         const tabBar = overlay.querySelector('.hue-tab-bar');
