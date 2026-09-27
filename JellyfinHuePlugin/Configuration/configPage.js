@@ -151,6 +151,8 @@ const MESSAGES = {
         nameMissing: 'Enter a name for this profile.',
         mediaTypeMissing: 'Enable Movies, TV Shows, or both.',
         valueMissing: field => `Enter a value for ${field}.`,
+        // under a section's Test button when a blank number stopped it; the field itself says which
+        notTested: 'Not tested.',
         bridgeMissing: 'Choose a bridge for this profile.',
         targetsNoBridge: 'Choose a bridge to load its rooms and scenes.',
         targetsFailed: (bridge, reason) => `Rooms and scenes couldn't be loaded from ${bridge}: ${reason} The saved selections are kept.`
@@ -279,17 +281,18 @@ function placeFieldError(input, el) {
     }
 }
 
-// aria-describedby is a list, and a field with help text already names that line (the grace period; each
-// slider row's inputs name their readout). Adding an error id must therefore append, and clearing must
-// remove only that id - assigning over the attribute would silently delete the description and leave the
-// field describing nothing once the error clears.
+// aria-describedby is a list. Adding an error id must append and clearing must remove only that id:
+// assigning over the attribute would silently delete whatever a field already names there and leave it
+// describing nothing once the error clears. (Today's fields that name a line carry their message in that
+// line instead - readoutOf - so none of them reaches this; the next one that does must not lose it.)
 function describedBy(input) {
     return (input.getAttribute('aria-describedby') || '').split(/\s+/).filter(Boolean);
 }
 
-// A slider row's readout ("Dim (20%)"), when input has one. It is the line already under the field and
-// already named by aria-describedby, so it carries the field's message itself rather than gaining a second
-// line beneath it that says the same thing.
+// The line under a number field, when input has one marked as its readout: a slider row's "Dim (20%)", the
+// grace period's help text. It is already under the field and already named by aria-describedby, so it
+// carries the field's message itself. A second line beneath it would say the same thing twice, and a line
+// added when focus leaves the field would move whatever the user was on the way to click.
 function readoutOf(input) {
     return describedBy(input).map(id => document.getElementById(id)).find(el => el && el.classList.contains('hue-readout')) || null;
 }
@@ -316,8 +319,13 @@ function removeDescribedBy(input, id) {
 function fieldError(input, text, speak = true) {
     const readout = readoutOf(input);
     if (readout) {
-        // What the readout said is kept once, so a second message on a field still invalid cannot replace it
-        if (!readout.classList.contains('hue-readout-invalid')) readout.dataset.readout = readout.textContent;
+        // What the readout said is kept once, so a second message on a field still invalid cannot replace it.
+        // So is the room it took: help text that wraps to two lines on a phone would otherwise give way to
+        // a one-line message and pull everything below it up, under a click already on its way.
+        if (!readout.classList.contains('hue-readout-invalid')) {
+            readout.dataset.readout = readout.textContent;
+            readout.style.minHeight = `${readout.offsetHeight}px`;
+        }
         readout.textContent = text;
         readout.dataset.message = text;
         readout.classList.add('hue-readout-invalid');
@@ -349,6 +357,7 @@ function clearFieldError(input) {
         // Only while the message is still what it shows: the editor refills its readouts before it clears
         // its errors, and what the readout said when it was flagged would overwrite the new value's text
         if (readout.textContent === readout.dataset.message) readout.textContent = readout.dataset.readout;
+        readout.style.minHeight = '';
         readout.classList.remove('hue-readout-invalid');
     }
     const el = document.getElementById(input.id + 'Error');
@@ -506,7 +515,7 @@ function upsertBridge(bridges, bridge) {
 }
 
 // An editor number as saved: clamped to min..max, and a blank or non-numeric field read as min
-// (validateEditorNumbers stops Save and Test before that can matter)
+// (firstBlankNumberField stops Save and Test before that can matter)
 function numberFrom(input, min, max) {
     const value = parseInt(input.value, 10);
     return isNaN(value) ? min : Math.max(min, Math.min(max, value));
@@ -633,7 +642,7 @@ function renderStateSection(state) {
         <div id="${id(ids.graceContainer)}" class="inputContainer hue-subfield" style="display:none;">
             <label class="inputLabel" for="${id(ids.grace)}">Seconds</label>
             <input type="number" id="${id(ids.grace)}" is="emby-input" class="hue-number" min="1" max="600" value="30" aria-describedby="${id(ids.graceDesc)}" />
-            <div id="${id(ids.graceDesc)}" class="fieldDescription">Skip pause lighting during the first N seconds of playback</div>
+            <div id="${id(ids.graceDesc)}" class="fieldDescription hue-readout">Skip pause lighting during the first N seconds of playback</div>
         </div>`;
     return `<div class="hue-state-section" data-state="${state.name}">
         <div class="hue-state-header">
@@ -1880,11 +1889,16 @@ export default function HueConfigPage(view) {
         return numberFields(action).find(f => editor(f.container).style.display !== 'none' && isBlankNumber(editor(f.input))) || null;
     }
 
-    // The first visible number field that is blank or not a number, as a message naming it; null when all are
-    // usable. Only the text is wanted here; the per-section Test buttons don't switch tabs or take focus.
-    function validateEditorNumbers(action) {
-        const field = firstBlankNumberField(action);
-        return field ? MESSAGES.profiles.valueMissing(field.name) : null;
+    // Focus leaving a number field that is still blank. Never while it is focused: a field being retyped is
+    // blank for a moment on the way. The window losing focus is not the user leaving the field either.
+    // Shown always, spoken unless focus went somewhere the message is read out anyway: the field's own
+    // slider, which shares its line, or the footer, where Save reads it on the way back and Cancel closes.
+    function flagIfLeftBlank(field, goingTo) {
+        const input = editor(field.input);
+        if (!document.hasFocus() || input.offsetParent === null || !isBlankNumber(input)) return;
+        const heardAnyway = goingTo instanceof Element
+            && (goingTo.closest('.hue-modal-footer') !== null || readoutOf(goingTo) === readoutOf(input));
+        fieldError(input, MESSAGES.profiles.valueMissing(field.name), !heardAnyway);
     }
 
     // The editor's own required fields, walked in tab order so Save can jump to the first one that needs
@@ -1961,10 +1975,17 @@ export default function HueConfigPage(view) {
         const errorLine = editor(`#profileTest${action}Error`);
         inlineStatus(errorLine, null);
 
-        // A blank number would test a value nobody typed
-        const problem = validateEditorNumbers(action);
-        if (problem) {
-            inlineStatus(errorLine, problem);
+        // A blank number would test a value nobody typed. The field says which, as it has since focus left
+        // it, so the button answers only that nothing was tested: the same sentence in two places is one too
+        // many on screen, and said twice running it is no news to a screen reader, which would hear nothing.
+        // Test doesn't switch tabs or take focus; it does bring the field into view.
+        const blank = firstBlankNumberField(action);
+        if (blank) {
+            const message = MESSAGES.profiles.valueMissing(blank.name);
+            fieldError(editor(blank.input), message, false);
+            editor(blank.input).scrollIntoView({ block: 'nearest' });
+            inlineStatus(errorLine, MESSAGES.profiles.notTested);
+            announce(errorLine, `${MESSAGES.profiles.notTested} ${message}`);
             return;
         }
         const session = state.editorSession;
@@ -2523,6 +2544,7 @@ export default function HueConfigPage(view) {
             bindSlider('transition', ids.transitionSlider, ids.transition, ids.transitionDesc);
             if (s.gracePeriod) editor(ids.grace).addEventListener('input', () => clearFieldError(editor(ids.grace)));
         });
+        numberFields(null).forEach(field => editor(field.input).addEventListener('blur', e => flagIfLeftBlank(field, e.relatedTarget)));
         // Validation's own fields: each clears only itself, except the two media-type checkboxes, which
         // share one message anchored to the first of them
         editor('#profileName').addEventListener('input', () => clearFieldError(editor('#profileName')));
